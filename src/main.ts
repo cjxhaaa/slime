@@ -4,7 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime } from './slime/Slime';
 import { Bubble } from './ui/Bubble';
-import { HandCursor } from './ui/HandCursor';
+import { PawCursor } from './ui/PawCursor';
 import { VelocityTracker } from './ui/VelocityTracker';
 
 interface Meeting {
@@ -29,7 +29,7 @@ function petWindow(): ReturnType<typeof getCurrentWindow> {
 
 const slime = new Slime(0, 0);
 const bubble = new Bubble();
-const hand = new HandCursor();
+const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
 
 /** Screen-space to canvas-space conversion state, refreshed whenever the window moves or rescales. */
@@ -188,7 +188,7 @@ interface Rect {
 let previousDirty: Rect | null = null;
 let fullRepaint = true;
 let pointerDown = false;
-let showingHand = false;
+let showingPaw = false;
 
 function unionRect(a: Rect | null, b: Rect | null): Rect | null {
   if (!a) return b;
@@ -201,6 +201,16 @@ function unionRect(a: Rect | null, b: Rect | null): Rect | null {
     width: Math.max(a.x + a.width, b.x + b.width) - x,
     height: Math.max(a.y + a.height, b.y + b.height) - y,
   };
+}
+
+function rectsOverlap(a: Rect | null, b: Rect | null): boolean {
+  if (!a || !b) return false;
+  return (
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height
+  );
 }
 
 function padRect(rect: Rect, pad: number): Rect {
@@ -275,7 +285,7 @@ function frame(now: number): void {
     else bubble.hide();
   }
   bubble.update(elapsed);
-  hand.update(elapsed);
+  paw.update(elapsed);
 
   // Clicks are only taken while the pointer is actually over something interactive, so the rest of
   // the desktop keeps working normally underneath a window that covers all of it.
@@ -294,41 +304,51 @@ function frame(now: number): void {
   const wantsClicks =
     grabbed || (cursor !== null && (slime.hitTest(cursor.x, cursor.y) || overBubble));
 
-  // The drawn hand replaces the OS cursor exactly while the overlay is taking clicks, so the two
+  // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is
   // ignoring the mouse anyway.
-  const showHand = wantsClicks && cursor !== null;
-  if (showHand !== showingHand) {
-    showingHand = showHand;
-    canvas.classList.toggle('hide-cursor', showHand);
+  const showPaw = wantsClicks && cursor !== null;
+  if (showPaw !== showingPaw) {
+    showingPaw = showPaw;
+    canvas.classList.toggle('hide-cursor', showPaw);
   }
-  hand.visible = showHand;
-  hand.pose = grabbed ? 'grab' : 'point';
-  hand.setPressed(pointerDown);
-  if (cursor) hand.moveTo(cursor.x, cursor.y);
+  paw.visible = showPaw;
+  paw.pose = grabbed ? 'grab' : 'open';
+  paw.setPressed(pointerDown);
+  if (cursor) paw.moveTo(cursor.x, cursor.y);
 
   // Repaint just what moved.
   const painted = unionRect(
     slime.bounds(),
     unionRect(
       bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
-      showHand || hand.hasRipples() ? hand.bounds() : null,
+      showPaw || paw.hasRipples() ? paw.bounds() : null,
     ),
   );
-  const dirty = fullRepaint ? { x: 0, y: 0, width, height } : unionRect(previousDirty, painted);
+  // Two regions, not their union: what has to be erased (last frame) and what has to be drawn
+  // (this frame). Unioning them is only cheaper when they overlap. Once the slime is moving faster
+  // than its own width per frame — which a throw does immediately — the union is mostly empty
+  // space between the two, several times the area actually touched.
+  const regions: Rect[] = fullRepaint
+    ? [{ x: 0, y: 0, width, height }]
+    : rectsOverlap(previousDirty, painted)
+      ? [unionRect(previousDirty, painted)!]
+      : ([previousDirty, painted].filter(Boolean) as Rect[]);
   previousDirty = painted;
   fullRepaint = false;
 
-  if (dirty) {
+  if (regions.length > 0) {
     context.save();
-    context.beginPath();
-    context.rect(dirty.x, dirty.y, dirty.width, dirty.height);
-    context.clip();
-    context.clearRect(dirty.x, dirty.y, dirty.width, dirty.height);
+    const clip = new Path2D();
+    for (const region of regions) {
+      clip.rect(region.x, region.y, region.width, region.height);
+      context.clearRect(region.x, region.y, region.width, region.height);
+    }
+    context.clip(clip);
 
     slime.draw(context);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.x, anchorY);
-    hand.draw(context);
+    paw.draw(context);
 
     context.restore();
   }
@@ -342,7 +362,7 @@ function wirePointer(): void {
     pressedAt = performance.now();
     pressedPoint = { x: event.clientX, y: event.clientY };
     pointerDown = true;
-    hand.setPressed(true);
+    paw.setPressed(true);
     cursor = { x: event.clientX, y: event.clientY };
     if (slime.hitTest(event.clientX, event.clientY)) {
       grabbed = true;
@@ -351,6 +371,9 @@ function wirePointer(): void {
       dragVelocity.add(event.clientX, event.clientY, event.timeStamp);
       // Capture keeps the move and up events coming to this element for the whole gesture, so a
       // fast flick cannot hand the stream to something else mid-throw and strand `grabbed`.
+      // Silence the 30Hz cursor poll: this gesture is fed by DOM events at frame rate, so every
+      // polled emission for its duration is IPC traffic competing with the render of the drag.
+      void invoke('set_pointer_owned', { owned: true }).catch(() => {});
       try {
         canvas.setPointerCapture(event.pointerId);
       } catch {
@@ -387,12 +410,13 @@ function wirePointer(): void {
     const heldFor = performance.now() - pressedAt;
     const moved = Math.hypot(event.clientX - pressedPoint.x, event.clientY - pressedPoint.y);
     pointerDown = false;
-    hand.setPressed(false);
+    paw.setPressed(false);
     if (grabbed) {
       grabbed = false;
       const thrown = dragVelocity.release(event.timeStamp);
       slime.release(thrown.vx, thrown.vy);
       dragVelocity.reset();
+      void invoke('set_pointer_owned', { owned: false }).catch(() => {});
       if (canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
       }
@@ -402,12 +426,12 @@ function wirePointer(): void {
       if (alertMeeting) {
         // The bubble is part of the alert's target, so a click anywhere on it joins.
         joinAlertMeeting();
-        hand.ping(event.clientX, event.clientY);
+        paw.ping(event.clientX, event.clientY);
       } else if (slime.hitTest(event.clientX, event.clientY)) {
         // Only the body gets poked. Clicks land here from the hover bubble too, and denting the
         // slime from an inch away because the pointer was over its speech bubble looks like a bug.
         slime.poke(event.clientX, event.clientY);
-        hand.ping(event.clientX, event.clientY);
+        paw.ping(event.clientX, event.clientY);
       }
     }
   };

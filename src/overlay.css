@@ -24,7 +24,7 @@ body {
 }
 
 /*
- * Hides the OS cursor so the drawn hand can stand in for it. Only ever applied while the overlay is
+ * Hides the OS cursor so the drawn paw can stand in for it. Only ever applied while the overlay is
  * accepting clicks, which it only does while the frame loop is actively asking — so a stall cannot
  * leave the pointer invisible: the click lease lapses, the window goes click-through, and the real
  * cursor is back.

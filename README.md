@@ -112,6 +112,19 @@ gesture whose whole job is to feel attached to the hand.
 The coalesced samples are not wasted, though — `getCoalescedEvents()` hands them back, and they go
 into the velocity fit, which wants every sample it can get.
 
+Two further sources of per-frame noise were removed rather than measured away. The 30 Hz cursor poll
+is silenced for the duration of a gesture (`set_pointer_owned`): it exists so the slime can watch a
+pointer it cannot receive events from, and during a drag it *is* receiving events at frame rate, so
+each emission was an IPC delivery deserialised and dispatched on the same thread rendering the drag.
+And the dirty region is now two rects rather than their union whenever they do not overlap — once
+the slime moves faster than its own width per frame, the union is mostly the empty space between
+where it was and where it is.
+
+**A caveat on the 60 fps figure:** it is measured from `requestAnimationFrame` intervals, which
+proves the frame loop is not hitching. It does not prove that a transparent, always-on-top, layered
+window is actually being *presented* at 60 Hz — on Windows those are separate things, and the
+presentation path for such a window is largely not ours to control.
+
 ## Throwing
 
 Release velocity is a least-squares fit of position against time over the trailing 90 ms, in real
@@ -127,13 +140,24 @@ A release after the hand had already come to rest returns zero: that is a drop, 
 release the deformation carries the release velocity forward, so the body leaves the hand still
 stretched rather than snapping back to a circle.
 
-## The hand cursor
+The body does **not** leave with the hand's full speed. It takes 45% of it, capped at 1400 px/s, and
+air drag bleeds that off over about a second. Handing over the raw fitted velocity was physically
+literal and felt wrong — every flick launched the slime across the screen like a ping-pong ball,
+when some of that momentum should be going into deforming it rather than moving it. Restitution is
+0.34, so it lands and settles instead of ricocheting.
 
-Over the pet, the OS cursor is hidden and a hand is drawn on the canvas instead: pointing when
-hovering, curling into a fist when pressed, with a ring that expands and fades at the click point.
+## The paw cursor
+
+Over the pet, the OS cursor is hidden and a cat paw is drawn on the canvas instead: toes spread when
+hovering, tucked in with the pad flattened when pressed, plus a ring that expands and fades at the
+click point.
 
 `cursor: pointer` would have been one line and has no latency, but an OS cursor cannot animate on
-click, and a hand that visibly closes is what tells you the press registered.
+click, and something that visibly closes is what tells you the press registered.
+
+This started as a realistic pointing hand, which did the job but read as clip-art next to a soft
+round jelly. A paw keeps the "you can grab this" meaning — the thing a cursor is actually for — that
+a purely abstract shape would have lost.
 
 Hiding the real cursor is safe for the same reason the overlay is safe: `cursor: none` is applied
 only while the overlay is accepting clicks, and it only accepts clicks while the frame loop is

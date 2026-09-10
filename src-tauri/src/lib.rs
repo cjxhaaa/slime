@@ -57,6 +57,13 @@ struct ClickState {
     lease_until_ms: AtomicU64,
     /// Mirrors what was last handed to the platform, so we do not call it every renewal.
     accepting: AtomicBool,
+    /// True while the frontend is mid-gesture and owns the pointer through DOM events.
+    ///
+    /// The cursor poll below exists only so the slime can watch a pointer it cannot receive events
+    /// from. During a drag it *is* receiving events, at frame rate, so every poll emission is pure
+    /// noise — thirty IPC deliveries a second, each deserialised and dispatched on the same webview
+    /// thread that is trying to render the drag.
+    pointer_owned: AtomicBool,
 }
 
 impl ClickState {
@@ -65,6 +72,7 @@ impl ClickState {
             epoch: Instant::now(),
             lease_until_ms: AtomicU64::new(0),
             accepting: AtomicBool::new(false),
+            pointer_owned: AtomicBool::new(false),
         }
     }
 
@@ -88,6 +96,16 @@ fn hold_clicks(app: AppHandle, state: tauri::State<ClickState>) {
     let deadline = state.now_ms() + CLICK_LEASE.as_millis() as u64;
     state.lease_until_ms.store(deadline, Ordering::SeqCst);
     apply_accepting(&app, &state, true);
+}
+
+/// Silences the cursor poll for the duration of a gesture the frontend is receiving directly.
+///
+/// Best-effort in the safe direction: if the "released" call is lost the poll simply stays quiet,
+/// which costs the slime its idle gaze tracking until the next gesture — never clicks, and never
+/// the pointer.
+#[tauri::command]
+fn set_pointer_owned(owned: bool, state: tauri::State<ClickState>) {
+    state.pointer_owned.store(owned, Ordering::SeqCst);
 }
 
 /// Gives clicks back immediately rather than waiting for the lease to lapse. Best-effort: if this
@@ -165,6 +183,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             hold_clicks,
             release_clicks,
+            set_pointer_owned,
             open_external,
             open_settings,
             quit_app,
@@ -227,6 +246,10 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let mut last = (f64::NAN, f64::NAN);
                 loop {
+                    if cursor_handle.state::<ClickState>().pointer_owned.load(Ordering::SeqCst) {
+                        tokio::time::sleep(Duration::from_millis(33)).await;
+                        continue;
+                    }
                     if let Ok(position) = cursor_handle.cursor_position() {
                         if position.x != last.0 || position.y != last.1 {
                             last = (position.x, position.y);

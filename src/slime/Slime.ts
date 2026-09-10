@@ -18,7 +18,19 @@ export interface Env {
 
 const GRAVITY = 2100;
 const GROUND_MARGIN = 12;
-const RESTITUTION = 0.42;
+/** Bouncier than a water balloon, deader than a rubber ball. */
+const RESTITUTION = 0.34;
+/**
+ * Fraction of the hand's speed the body actually leaves with, and the ceiling on the result.
+ *
+ * Together these are the whole "it has some weight" feel: a flick that would fit 3000 px/s of hand
+ * motion becomes a throw of at most 1400, and the drag below bleeds it off over about a second
+ * instead of letting it ricochet.
+ */
+const ThrowTransfer = 0.45;
+const MaxThrowSpeed = 1400;
+/** Time constant of the air drag, in seconds. Long enough to read as coasting, not as syrup. */
+const AirDragTau = 0.9;
 const HOP_SPEED = 780;
 const WALK_SPEED = 130;
 const SLEEPY_AFTER = 75;
@@ -170,10 +182,11 @@ export class Slime {
     this.grabbed = false;
     this.mood = 'surprised';
     this.moodUntil = this.clock + 0.7;
-    // Real pixels per second, clamped only to keep a violent flick inside the simulation's stable
-    // range rather than to scale it down.
-    this.vx = Math.max(-2600, Math.min(2600, vx));
-    this.vy = Math.max(-2600, Math.min(2600, vy));
+    // A thrown object does not leave with the hand's full speed, and a slime least of all — some of
+    // that momentum goes into deforming it rather than moving it. Handing over the raw fitted
+    // velocity made every flick launch it across the screen like a ping-pong ball.
+    this.vx = Math.max(-MaxThrowSpeed, Math.min(MaxThrowSpeed, vx * ThrowTransfer));
+    this.vy = Math.max(-MaxThrowSpeed, Math.min(MaxThrowSpeed, vy * ThrowTransfer));
     // The body keeps the elongation it had in the hand and unwinds from there, so the throw leaves
     // continuously instead of snapping back to a circle at the moment of release.
     this.trail.x = this.vx;
@@ -241,6 +254,11 @@ export class Slime {
       this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 8);
     } else {
       this.vy += GRAVITY * dt;
+      // Air drag. Without it a throw kept every pixel per second it was given until it hit
+      // something, which is what made the slime feel weightless however hard it was thrown.
+      const drag = Math.exp(-dt / AirDragTau);
+      this.vx *= drag;
+      this.vy *= drag;
       this.x += this.vx * dt;
       this.y += this.vy * dt;
       this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 6);
