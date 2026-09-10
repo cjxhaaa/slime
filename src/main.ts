@@ -483,9 +483,6 @@ async function main(): Promise<void> {
 
   await refreshGeometry();
 
-  // TEMP: exercise the exact path that produced the blank window — the command, not the tray.
-  setTimeout(() => void invoke('open_settings'), 4000);
-
   await listen<{ x: number; y: number }>('cursor', (event) => {
     // Never while dragging: the DOM stream owns the gesture. Feeding both meant this 30Hz poll
     // overwrote the per-frame DOM position with a staler, coarser one, which is what actually made
