@@ -127,11 +127,27 @@ Two smaller deliberate choices: `open_external` refuses anything that is not `ht
 settings list renders event titles with `textContent`. Both are because a calendar invite is data
 controlled by whoever can put an event on your calendar.
 
+## Developing it
+
+Two handles are attached to `window` for use from a devtools console:
+
+- `__slime` — the live simulation object, for reading position, velocity and mood.
+- `__simulateMeeting(minutes, title)` — fires the whole reminder performance immediately. Tuning the
+  alert animation is otherwise gated on an actual calendar entry, which makes it untunable.
+
+**You cannot screenshot the overlay with a normal screen capture.** It is a transparent WebView2
+window, so it is layered and DirectComposition-rendered: `BitBlt` from the screen DC omits it
+entirely, and `PrintWindow` (even with `PW_RENDERFULLCONTENT`) comes back solid black. Both fail
+silently, which looks exactly like the app having failed to draw. To check the rendering, open
+`http://127.0.0.1:1420/index.html` in an ordinary browser while `tauri dev` is running — the Tauri
+calls fail there and are handled, and everything visual behaves the same.
+
 ## Status
 
-Verified: the Rust side compiles clean, TypeScript typechecks, the bundle builds, and the overlay
-runs — transparent, always-on-top, click-through, with the slime simulating, tracking the cursor,
-sleeping, and responding to drags and pokes.
+Verified: the Rust side compiles clean, TypeScript typechecks, the production bundle builds, and the
+app runs at about 69 MB resident. The slime renders and simulates, tracks the cursor, and the full
+reminder performance was confirmed visually — amber body, wide eyes, airborne with the contact
+shadow shrinking away, speech bubble anchored to it.
 
 **Not verified end to end:** the Google OAuth round trip and the calendar poll. Both are written and
 compile, but they need a real OAuth client ID pasted into Settings, which is yours to create — I
@@ -140,6 +156,8 @@ fresh install.
 
 Not built yet:
 
+- Drag, throw and poke are wired and typecheck, but have only been exercised through synthetic
+  events — they want a few minutes of actual mouse-in-hand testing.
 - Reminder lead time is hardcoded at 5 minutes, and there is no settings control for it.
 - Multi-monitor: the overlay is pinned to the primary monitor only.
 - No autostart-on-login registration.
