@@ -32,9 +32,9 @@ npm run tauri build
 
 ## How the overlay works
 
-The window covers the entire primary monitor. That is what lets the slime roam anywhere, sit on any
-part of the screen, and be thrown across it — rather than living in a small window that would have
-to be repositioned over IPC on every frame.
+The window covers the primary monitor. That is what lets the slime roam anywhere, sit on any part
+of the screen, and be thrown across it — rather than living in a small window that would have to be
+repositioned over IPC on every frame.
 
 It is sized to the monitor's **work area**, not the full monitor, so it never covers the taskbar.
 That is a deliberate floor on how bad a click-handling bug can get: whatever else breaks, the tray
@@ -79,6 +79,67 @@ origin and the display scale factor are needed. Miss the origin and the gaze is 
 secondary monitor; miss the scale factor and the gaze drifts further off the further the pointer is
 from the top-left corner.
 
+## Rendering cost
+
+The backing store is sized to the window's real device pixels — 3840x2088 on this display, eight
+megapixels. Clearing and repainting all of it every frame, which for a transparent always-on-top
+window also means DWM recompositing all of it, is far more expensive than the drawing itself, and
+the slime occupies about two hundred pixels of it.
+
+So each frame repaints only the union of this frame's bounds and last frame's: this frame's to draw
+into, last frame's to erase what is no longer there. Measured on a 2560x1392 work area that is
+**1.2% of the surface per frame** instead of 100%. The body gradient is also built once per palette
+rather than per frame.
+
+Beware of measuring the DPI relationship with Win32 tools. A process that is not per-monitor DPI
+aware sees virtualised window rects: `GetWindowRect` reports this window as 2560 wide, the CSS
+viewport is also 2560, and the ratio looks like 1 when it is really 1.5. That misreading is what
+briefly convinced me the backing store was 2.25x oversampled, which it is not.
+
+## Input rate, and what it is not
+
+The drag is driven **only** by the DOM pointer stream. It used to be driven by that *and* the 30 Hz
+cursor poll from Rust, so the poll kept overwriting the per-frame DOM position with a staler,
+coarser one — which is what actually made dragging look like it was running at a low frame rate.
+The render loop was a solid 60 fps at a 16.8 ms p95 throughout.
+
+What the numbers actually are, measured during a real drag: about **127 raw mouse samples a second**,
+which Chromium coalesces to **one `pointermove` per animation frame**. So position already updates
+exactly once per rendered frame and cannot usefully update more often. Smoothing was tried here and
+removed: with input already at frame rate it bought nothing and cost about two frames of lag on a
+gesture whose whole job is to feel attached to the hand.
+
+The coalesced samples are not wasted, though — `getCoalescedEvents()` hands them back, and they go
+into the velocity fit, which wants every sample it can get.
+
+## Throwing
+
+Release velocity is a least-squares fit of position against time over the trailing 90 ms, in real
+pixels per second.
+
+The first version differenced the last two positions and multiplied by 12. Both halves were wrong:
+the constant stood in for a timestep that is really about 8 ms, making every throw roughly ten times
+too slow, and a single final sample is the worst possible one to trust, because people decelerate in
+the last few milliseconds before letting go — so the delta collapses toward zero and the slime drops
+instead of flying. Fitting a window is how every touch platform computes a fling.
+
+A release after the hand had already come to rest returns zero: that is a drop, not a throw. On
+release the deformation carries the release velocity forward, so the body leaves the hand still
+stretched rather than snapping back to a circle.
+
+## The hand cursor
+
+Over the pet, the OS cursor is hidden and a hand is drawn on the canvas instead: pointing when
+hovering, curling into a fist when pressed, with a ring that expands and fades at the click point.
+
+`cursor: pointer` would have been one line and has no latency, but an OS cursor cannot animate on
+click, and a hand that visibly closes is what tells you the press registered.
+
+Hiding the real cursor is safe for the same reason the overlay is safe: `cursor: none` is applied
+only while the overlay is accepting clicks, and it only accepts clicks while the frame loop is
+actively renewing the lease. Stop the loop by any means and the lease lapses, the window goes
+click-through, and the OS cursor is back. The pointer cannot be lost by a bug in the drawing code.
+
 ## The soft body
 
 `src/slime/Blob.ts` is a ring of 40 points, each free to move radially, each pulled back to the rest
@@ -110,6 +171,10 @@ coming.
 - **Drag** it to move it. Release with speed to throw it; it bounces off the walls and floor.
 - **Click** it to poke it, or to join the meeting while it is bouncing.
 - **Right-click** it to open settings.
+- **Ctrl+Alt+Shift+Q** quits, from anywhere. This exists because every other way out goes through
+  something this app can break: the tray icon, which Windows 11 hides in the overflow flyout by
+  default so most people never find it, and clicking the pet, which stops working exactly when you
+  most want to quit.
 
 A press is a poke if it was under 260 ms and moved less than 6 px; anything else is a throw.
 

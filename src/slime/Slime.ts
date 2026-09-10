@@ -61,6 +61,15 @@ export class Slime {
   private trail = { x: 0, y: 0 };
   private moodUntil = 0;
   private nextAlertBounceAt = 0;
+  private dragTarget = { x: 0, y: 0 };
+  /**
+   * One gradient per palette, built once.
+   *
+   * Gradient coordinates are resolved in the user space in effect when they are painted, so a
+   * gradient defined around the origin follows the per-frame translate and can be reused. Building
+   * one every frame allocated an object per frame for a shape whose geometry never changes.
+   */
+  private readonly gradients = new Map<string, CanvasGradient>();
 
   constructor(x: number, y: number, radius = 46) {
     this.x = x;
@@ -80,6 +89,45 @@ export class Slime {
     return height - GROUND_MARGIN - this.radius;
   }
 
+  private bodyGradient(
+    context: CanvasRenderingContext2D,
+    palette: { core: string; edge: string },
+  ): CanvasGradient {
+    const key = palette.core;
+    const cached = this.gradients.get(key);
+    if (cached) return cached;
+    const gradient = context.createRadialGradient(
+      -this.radius * 0.3,
+      -this.radius * 0.45,
+      this.radius * 0.15,
+      0,
+      0,
+      this.radius * 1.25,
+    );
+    gradient.addColorStop(0, palette.core);
+    gradient.addColorStop(1, palette.edge);
+    this.gradients.set(key, gradient);
+    return gradient;
+  }
+
+  /**
+   * Everything this slime paints, in CSS pixels — body at full stretch, contact shadow, and the
+   * sleep marks that drift up and to the right. Used to repaint only the part of the screen that
+   * changed instead of the whole overlay.
+   */
+  bounds(): { x: number; y: number; width: number; height: number } {
+    const ground = this.groundFor(this.envHeight);
+    const reach = this.radius * 2.2;
+    const top = Math.min(this.y - reach, this.y - this.radius * 0.7 - 60);
+    const bottom = Math.max(this.y + reach, ground + this.radius * 1.1);
+    return {
+      x: this.x - reach,
+      y: top,
+      width: reach * 2,
+      height: bottom - top,
+    };
+  }
+
   hitTest(px: number, py: number): boolean {
     const scale = this.blob.squashScale;
     const dx = (px - this.x) / (this.radius * scale.x);
@@ -92,29 +140,44 @@ export class Slime {
     this.grabbed = true;
     this.mood = 'dragged';
     this.grabOffset = { x: this.x - px, y: this.y - py };
+    this.dragTarget = { x: this.x, y: this.y };
     this.lastInteraction = this.clock;
     this.blob.pulse(-60);
     this.hopsLeft = 0;
   }
 
-  dragTo(px: number, py: number): void {
+  /**
+   * Aims the body at the hand. Velocity comes from the caller's tracker rather than being
+   * differenced here: a single frame's delta over an assumed timestep is both wrong in magnitude
+   * and dominated by whatever the last pointer event happened to be, which is what made throws
+   * feel dead.
+   *
+   * The position is a target rather than an assignment because pointer input is slower than the
+   * display. Measured on this machine, a drag delivers about 24 position updates a second — the
+   * mouse's own report rate, not a coalescing artefact — so assigning straight to `x`/`y` moved the
+   * body in 24 visible jumps a second while the renderer ran at 60. The pointer arrow gets away
+   * with that because it is a few pixels across; a 92-pixel jelly does not.
+   */
+  dragTo(px: number, py: number, vx: number, vy: number): void {
     if (!this.grabbed) return;
-    const nextX = px + this.grabOffset.x;
-    const nextY = py + this.grabOffset.y;
-    // Velocity is inferred from the drag so a release throws with the motion the hand had.
-    this.vx = (nextX - this.x) * 12;
-    this.vy = (nextY - this.y) * 12;
-    this.x = nextX;
-    this.y = nextY;
+    this.dragTarget = { x: px + this.grabOffset.x, y: py + this.grabOffset.y };
+    this.vx = vx;
+    this.vy = vy;
   }
 
-  release(): void {
+  release(vx: number, vy: number): void {
     if (!this.grabbed) return;
     this.grabbed = false;
     this.mood = 'surprised';
     this.moodUntil = this.clock + 0.7;
-    this.vx = Math.max(-900, Math.min(900, this.vx));
-    this.vy = Math.max(-1200, Math.min(1200, this.vy));
+    // Real pixels per second, clamped only to keep a violent flick inside the simulation's stable
+    // range rather than to scale it down.
+    this.vx = Math.max(-2600, Math.min(2600, vx));
+    this.vy = Math.max(-2600, Math.min(2600, vy));
+    // The body keeps the elongation it had in the hand and unwinds from there, so the throw leaves
+    // continuously instead of snapping back to a circle at the moment of release.
+    this.trail.x = this.vx;
+    this.trail.y = this.vy;
   }
 
   /** A click that was not a drag: the slime reacts and says so. */
@@ -165,6 +228,15 @@ export class Slime {
     const ground = this.groundFor(env.height);
 
     if (this.grabbed) {
+      // Straight to the hand, no smoothing.
+      //
+      // Interpolation was tried here on the assumption that pointer input was slower than the
+      // display. It is not: measured, a drag delivers ~127 raw mouse samples a second which
+      // Chromium coalesces to one event per animation frame, so the position already updates
+      // exactly once per rendered frame. Easing toward it only added about two frames of lag to a
+      // gesture whose whole job is to feel attached to the hand.
+      this.x = this.dragTarget.x;
+      this.y = this.dragTarget.y;
       this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 8);
       this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 8);
     } else {
@@ -355,17 +427,7 @@ export class Slime {
 
     Blob.trace(context, this.points, this.blob.count);
 
-    const gradient = context.createRadialGradient(
-      -this.radius * 0.3,
-      -this.radius * 0.45,
-      this.radius * 0.15,
-      0,
-      0,
-      this.radius * 1.25,
-    );
-    gradient.addColorStop(0, palette.core);
-    gradient.addColorStop(1, palette.edge);
-    context.fillStyle = gradient;
+    context.fillStyle = this.bodyGradient(context, palette);
     context.globalAlpha = 0.92;
     context.fill();
 

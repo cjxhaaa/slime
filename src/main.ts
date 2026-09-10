@@ -4,6 +4,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime } from './slime/Slime';
 import { Bubble } from './ui/Bubble';
+import { HandCursor } from './ui/HandCursor';
+import { VelocityTracker } from './ui/VelocityTracker';
 
 interface Meeting {
   id: string;
@@ -27,10 +29,26 @@ function petWindow(): ReturnType<typeof getCurrentWindow> {
 
 const slime = new Slime(0, 0);
 const bubble = new Bubble();
+const hand = new HandCursor();
+const dragVelocity = new VelocityTracker();
 
 /** Screen-space to canvas-space conversion state, refreshed whenever the window moves or rescales. */
 let origin = { x: 0, y: 0 };
-let scaleFactor = 1;
+/**
+ * Physical screen pixels per CSS pixel in this webview, measured from the window's own two sizes.
+ *
+ * The cursor stream from Rust is in physical screen pixels; everything drawn here is in CSS pixels
+ * relative to the window. Something has to convert between them, and `devicePixelRatio` is in fact
+ * the right number — on this 150% display it reports 1.5, the window is 3840 physical pixels wide,
+ * and the CSS viewport is 2560, so they agree exactly.
+ *
+ * It is measured rather than read anyway, because the window's own physical width over its own CSS
+ * width cannot disagree with itself, and this removes the need to trust that any single API means
+ * what we assume. Beware of checking it against Win32 tools: a process that is not per-monitor DPI
+ * aware sees virtualised (logical) window rects, and comparing a logical 2560 against the CSS 2560
+ * makes the ratio look like 1 when it is really 1.5.
+ */
+let pixelsPerCssPx = 1;
 let cursor: { x: number; y: number } | null = null;
 
 let grabbed = false;
@@ -40,11 +58,19 @@ let pressedPoint = { x: 0, y: 0 };
 let alertMeeting: Meeting | null = null;
 let nextMeeting: Meeting | null = null;
 
+/**
+ * Sizes the backing store to the window's real device pixels, so the slime rasterises at native
+ * resolution rather than being scaled up from a smaller buffer.
+ *
+ * On this display that is 3840x2088 — eight megapixels. Which is correct, and is also precisely why
+ * the renderer must not clear and repaint the whole thing every frame; see the dirty-rect note.
+ */
 function resize(): void {
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.floor(window.innerWidth * dpr);
-  canvas.height = Math.floor(window.innerHeight * dpr);
-  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const ratio = pixelsPerCssPx;
+  canvas.width = Math.max(1, Math.floor(window.innerWidth * ratio));
+  canvas.height = Math.max(1, Math.floor(window.innerHeight * ratio));
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  fullRepaint = true;
 }
 
 async function refreshGeometry(): Promise<void> {
@@ -57,23 +83,29 @@ async function refreshGeometry(): Promise<void> {
   // fails to draw at all because a geometry read was denied is a far worse outcome than one whose
   // gaze is slightly off.
   try {
-    const [position, factor] = await Promise.all([
+    const [position, size] = await Promise.all([
       petWindow().outerPosition(),
-      petWindow().scaleFactor(),
+      petWindow().innerSize(),
     ]);
+    // No decorations, so the outer origin is also the client origin.
     origin = { x: position.x, y: position.y };
-    scaleFactor = factor || 1;
+    const measured = window.innerWidth > 0 ? size.width / window.innerWidth : 1;
+    if (measured !== pixelsPerCssPx) {
+      pixelsPerCssPx = measured;
+      // The first resize() ran before this measurement existed, so redo it now that it does.
+      resize();
+    }
   } catch (error) {
     console.warn('could not read window geometry; assuming the monitor origin', error);
     origin = { x: 0, y: 0 };
-    scaleFactor = window.devicePixelRatio || 1;
+    pixelsPerCssPx = 1;
   }
 }
 
 function toLocal(screenX: number, screenY: number): { x: number; y: number } {
   return {
-    x: (screenX - origin.x) / scaleFactor,
-    y: (screenY - origin.y) / scaleFactor,
+    x: (screenX - origin.x) / pixelsPerCssPx,
+    y: (screenY - origin.y) / pixelsPerCssPx,
   };
 }
 
@@ -135,7 +167,50 @@ function hoverText(): string | null {
 }
 
 let lastFrame = performance.now();
-let bubbleRect: { x: number; y: number; width: number; height: number } | null = null;
+let bubbleRect: Rect | null = null;
+
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Only the part of the overlay that changed gets repainted.
+ *
+ * The window spans the whole work area but the slime occupies a couple of hundred pixels of it.
+ * Clearing and recompositing the full transparent surface every frame — which a layered
+ * always-on-top window makes DWM do as well — costs orders of magnitude more than the drawing
+ * itself. The union of this frame's bounds and last frame's is what has to be cleared: this
+ * frame's to draw into, last frame's to erase what is no longer there.
+ */
+let previousDirty: Rect | null = null;
+let fullRepaint = true;
+let pointerDown = false;
+let showingHand = false;
+
+function unionRect(a: Rect | null, b: Rect | null): Rect | null {
+  if (!a) return b;
+  if (!b) return a;
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return {
+    x,
+    y,
+    width: Math.max(a.x + a.width, b.x + b.width) - x,
+    height: Math.max(a.y + a.height, b.y + b.height) - y,
+  };
+}
+
+function padRect(rect: Rect, pad: number): Rect {
+  return {
+    x: rect.x - pad,
+    y: rect.y - pad,
+    width: rect.width + pad * 2,
+    height: rect.height + pad * 2,
+  };
+}
 
 /**
  * Physics runs on a fixed timestep, decoupled from the frame rate.
@@ -195,31 +270,68 @@ function frame(now: number): void {
     bubble.show(countdownText(alertMeeting));
   } else {
     const overBody = cursor ? slime.hitTest(cursor.x, cursor.y) : false;
-    const text = overBody ? hoverText() : null;
+    const text = overBody || grabbed ? hoverText() : null;
     if (text) bubble.show(text);
     else bubble.hide();
   }
   bubble.update(elapsed);
-
-  context.clearRect(0, 0, width, height);
-  slime.draw(context);
-
-  const anchorY = slime.y - slime.blob.restRadius * slime.blob.squashScale.y - 4;
-  bubbleRect = bubble.layout(context, slime.x, anchorY, width);
-  if (bubbleRect) bubble.draw(context, bubbleRect, slime.x, anchorY);
+  hand.update(elapsed);
 
   // Clicks are only taken while the pointer is actually over something interactive, so the rest of
   // the desktop keeps working normally underneath a window that covers all of it.
+  const anchorY = slime.y - slime.blob.restRadius * slime.blob.squashScale.y - 4;
+  // Laid out before anything is cleared: measuring the text needs no clip, and the resulting rect
+  // is part of what decides which region to clear.
+  bubbleRect = bubble.layout(context, slime.x, anchorY, width);
+  const overBubble =
+    cursor !== null &&
+    bubbleRect !== null &&
+    bubble.opacity > 0.5 &&
+    cursor.x >= bubbleRect.x &&
+    cursor.x <= bubbleRect.x + bubbleRect.width &&
+    cursor.y >= bubbleRect.y &&
+    cursor.y <= bubbleRect.y + bubbleRect.height;
   const wantsClicks =
-    grabbed ||
-    (cursor !== null &&
-      (slime.hitTest(cursor.x, cursor.y) ||
-        (bubbleRect !== null &&
-          bubble.opacity > 0.5 &&
-          cursor.x >= bubbleRect.x &&
-          cursor.x <= bubbleRect.x + bubbleRect.width &&
-          cursor.y >= bubbleRect.y &&
-          cursor.y <= bubbleRect.y + bubbleRect.height)));
+    grabbed || (cursor !== null && (slime.hitTest(cursor.x, cursor.y) || overBubble));
+
+  // The drawn hand replaces the OS cursor exactly while the overlay is taking clicks, so the two
+  // can never both be visible and the real pointer can never be hidden by a window that is
+  // ignoring the mouse anyway.
+  const showHand = wantsClicks && cursor !== null;
+  if (showHand !== showingHand) {
+    showingHand = showHand;
+    canvas.classList.toggle('hide-cursor', showHand);
+  }
+  hand.visible = showHand;
+  hand.pose = grabbed ? 'grab' : 'point';
+  hand.setPressed(pointerDown);
+  if (cursor) hand.moveTo(cursor.x, cursor.y);
+
+  // Repaint just what moved.
+  const painted = unionRect(
+    slime.bounds(),
+    unionRect(
+      bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
+      showHand || hand.hasRipples() ? hand.bounds() : null,
+    ),
+  );
+  const dirty = fullRepaint ? { x: 0, y: 0, width, height } : unionRect(previousDirty, painted);
+  previousDirty = painted;
+  fullRepaint = false;
+
+  if (dirty) {
+    context.save();
+    context.beginPath();
+    context.rect(dirty.x, dirty.y, dirty.width, dirty.height);
+    context.clip();
+    context.clearRect(dirty.x, dirty.y, dirty.width, dirty.height);
+
+    slime.draw(context);
+    if (bubbleRect) bubble.draw(context, bubbleRect, slime.x, anchorY);
+    hand.draw(context);
+
+    context.restore();
+  }
   requestClicks(wantsClicks, now);
 
   requestAnimationFrame(frame);
@@ -229,34 +341,73 @@ function wirePointer(): void {
   canvas.addEventListener('pointerdown', (event) => {
     pressedAt = performance.now();
     pressedPoint = { x: event.clientX, y: event.clientY };
+    pointerDown = true;
+    hand.setPressed(true);
+    cursor = { x: event.clientX, y: event.clientY };
     if (slime.hitTest(event.clientX, event.clientY)) {
       grabbed = true;
       slime.grab(event.clientX, event.clientY);
+      dragVelocity.reset();
+      dragVelocity.add(event.clientX, event.clientY, event.timeStamp);
+      // Capture keeps the move and up events coming to this element for the whole gesture, so a
+      // fast flick cannot hand the stream to something else mid-throw and strand `grabbed`.
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch {
+        // Not fatal: without capture the overlay still covers everything while it holds clicks.
+      }
     }
   });
 
   canvas.addEventListener('pointermove', (event) => {
-    // While dragging, trust the DOM stream over the polled one: it is not rate-limited.
+    // The DOM stream is the only drag input. The polled cursor from Rust arrives at 30Hz, and
+    // feeding both meant the drag moved in visible 33ms steps while everything else ran at 60.
     cursor = { x: event.clientX, y: event.clientY };
-    if (grabbed) slime.dragTo(event.clientX, event.clientY);
+    if (!grabbed) return;
+
+    // Chromium coalesces pointermove down to one event per animation frame, so this handler sees
+    // roughly 20-60 positions a second no matter how fast the mouse actually reports. The samples
+    // it merged are still available, and they are what a velocity fit needs: measured on a real
+    // drag, the throttled stream gave the 90ms window barely two samples, which is the bare
+    // minimum for a fit and makes the resulting throw speed noisy.
+    const merged = event.getCoalescedEvents?.() ?? [];
+    if (merged.length > 1) {
+      for (const sample of merged) {
+        dragVelocity.add(sample.clientX, sample.clientY, sample.timeStamp);
+      }
+    } else {
+      dragVelocity.add(event.clientX, event.clientY, event.timeStamp);
+    }
+
+    const velocity = dragVelocity.current(event.timeStamp);
+    slime.dragTo(event.clientX, event.clientY, velocity.vx, velocity.vy);
   });
 
   const finish = (event: PointerEvent) => {
     const heldFor = performance.now() - pressedAt;
     const moved = Math.hypot(event.clientX - pressedPoint.x, event.clientY - pressedPoint.y);
+    pointerDown = false;
+    hand.setPressed(false);
     if (grabbed) {
       grabbed = false;
-      slime.release();
+      const thrown = dragVelocity.release(event.timeStamp);
+      slime.release(thrown.vx, thrown.vy);
+      dragVelocity.reset();
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
     }
     // A short press that barely moved is a poke, not a throw.
     if (heldFor < 260 && moved < 6) {
       if (alertMeeting) {
         // The bubble is part of the alert's target, so a click anywhere on it joins.
         joinAlertMeeting();
+        hand.ping(event.clientX, event.clientY);
       } else if (slime.hitTest(event.clientX, event.clientY)) {
         // Only the body gets poked. Clicks land here from the hover bubble too, and denting the
         // slime from an inch away because the pointer was over its speech bubble looks like a bug.
         slime.poke(event.clientX, event.clientY);
+        hand.ping(event.clientX, event.clientY);
       }
     }
   };
@@ -285,6 +436,7 @@ async function main(): Promise<void> {
   wirePointer();
   requestAnimationFrame(frame);
 
+
   const debugHooks = window as unknown as Record<string, unknown>;
   // Handle for inspecting the simulation from a devtools console.
   debugHooks.__slime = slime;
@@ -304,6 +456,10 @@ async function main(): Promise<void> {
   await refreshGeometry();
 
   await listen<{ x: number; y: number }>('cursor', (event) => {
+    // Never while dragging: the DOM stream owns the gesture. Feeding both meant this 30Hz poll
+    // overwrote the per-frame DOM position with a staler, coarser one, which is what actually made
+    // dragging look like it was running at a low frame rate.
+    if (grabbed) return;
     const local = toLocal(event.payload.x, event.payload.y);
     // Off this monitor: drop it, so the eyes settle instead of pointing at a clamped edge.
     const outside =
@@ -312,28 +468,6 @@ async function main(): Promise<void> {
       local.x > window.innerWidth + 40 ||
       local.y > window.innerHeight + 40;
     cursor = outside ? null : local;
-    if (grabbed && cursor) slime.dragTo(cursor.x, cursor.y);
-  });
-
-  await listen<Meeting>('meeting-soon', (event) => {
-    const meeting = event.payload;
-    if (!meeting.meet_url) return;
-    alertMeeting = meeting;
-    slime.raiseAlert(countdownText(meeting), joinAlertMeeting);
-  });
-
-  await listen<Meeting[]>('meetings', (event) => {
-    nextMeeting = event.payload.find((meeting) => meeting.minutes_until >= 0) ?? null;
-    // An alert whose meeting has drifted well past its start has done its job or been ignored;
-    // either way the slime should stop bouncing about it.
-    if (alertMeeting) {
-      const started = (Date.now() - new Date(alertMeeting.start).getTime()) / 60000;
-      if (started > 3) {
-        alertMeeting = null;
-        bubble.hide();
-        slime.clearAlert();
-      }
-    }
   });
 
 }

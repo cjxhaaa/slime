@@ -9,6 +9,20 @@ use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+/// An emergency exit that does not depend on the overlay behaving.
+///
+/// Every other way out goes through something this app can break: the tray icon, which Windows 11
+/// hides in the overflow flyout by default so most people never find it, and clicking the pet,
+/// which stops working the moment anything is wrong with click handling — which is exactly when
+/// you most want to quit. A global shortcut is handled by the OS and works regardless.
+fn quit_shortcut() -> Shortcut {
+    Shortcut::new(
+        Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
+        Code::KeyQ,
+    )
+}
 
 /// Screen-space cursor position, pushed to the overlay so the slime can look at the pointer even
 /// while the window is click-through and therefore receives no mouse events of its own.
@@ -137,6 +151,15 @@ fn place_overlay(window: &tauri::WebviewWindow) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state() == ShortcutState::Pressed && shortcut == &quit_shortcut() {
+                        app.exit(0);
+                    }
+                })
+                .build(),
+        )
         .manage(ClickState::new())
         .manage(oauth::AuthState::default())
         .invoke_handler(tauri::generate_handler![
@@ -161,8 +184,15 @@ pub fn run() {
                 let _ = window.set_always_on_top(true);
             }
 
+            // Registration can fail if another app already owns the combination; that is not worth
+            // refusing to start over, so it is logged and skipped.
+            if let Err(error) = app.global_shortcut().register(quit_shortcut()) {
+                println!("[slime] could not register the quit shortcut: {error}");
+            }
+
             let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit Slime", true, None::<&str>)?;
+            let quit_item =
+                MenuItem::with_id(app, "quit", "Quit Slime  (Ctrl+Alt+Shift+Q)", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
             TrayIconBuilder::with_id("tray")
                 .icon(app.default_window_icon().unwrap().clone())
