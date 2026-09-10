@@ -33,7 +33,6 @@ let origin = { x: 0, y: 0 };
 let scaleFactor = 1;
 let cursor: { x: number; y: number } | null = null;
 
-let clickThrough = true;
 let grabbed = false;
 let pressedAt = 0;
 let pressedPoint = { x: 0, y: 0 };
@@ -78,10 +77,36 @@ function toLocal(screenX: number, screenY: number): { x: number; y: number } {
   };
 }
 
-async function setClickThrough(next: boolean): Promise<void> {
-  if (next === clickThrough) return;
-  clickThrough = next;
-  await invoke('set_click_through', { through: next });
+/**
+ * Asks the Rust side to let clicks through to this window, or stops asking.
+ *
+ * Deliberately not a cached two-state setter. This side must not believe it knows the current mode:
+ * a webview reload resets any flag kept here while the process on the other side keeps its actual
+ * state, and a setter that skips the call when it thinks the mode already matches then goes silent
+ * forever — leaving a full-screen window eating every click on the desktop. So the request is
+ * renewed on a timer and expires on its own if this loop ever stops running.
+ */
+let holdingClicks = false;
+let lastHoldAt = 0;
+const RENEW_EVERY_MS = 150;
+
+function requestClicks(wantsClicks: boolean, now: number): void {
+  if (wantsClicks) {
+    // The lease is 400ms, so renewing at 150ms keeps it alive with wide margin while keeping the
+    // IPC off the per-frame path.
+    if (holdingClicks && now - lastHoldAt < RENEW_EVERY_MS) return;
+    holdingClicks = true;
+    lastHoldAt = now;
+    void invoke('hold_clicks').catch(() => {
+      // Drop the flag so the next frame asks again rather than assuming the hold took effect.
+      holdingClicks = false;
+    });
+    return;
+  }
+  if (!holdingClicks) return;
+  holdingClicks = false;
+  // Best-effort: if this never lands, the lease lapses by itself.
+  void invoke('release_clicks').catch(() => {});
 }
 
 function countdownText(meeting: Meeting): string {
@@ -195,7 +220,7 @@ function frame(now: number): void {
           cursor.x <= bubbleRect.x + bubbleRect.width &&
           cursor.y >= bubbleRect.y &&
           cursor.y <= bubbleRect.y + bubbleRect.height)));
-  void setClickThrough(!wantsClicks);
+  requestClicks(wantsClicks, now);
 
   requestAnimationFrame(frame);
 }

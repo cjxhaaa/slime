@@ -36,16 +36,42 @@ The window covers the entire primary monitor. That is what lets the slime roam a
 part of the screen, and be thrown across it — rather than living in a small window that would have
 to be repositioned over IPC on every frame.
 
-Covering the whole screen means the window must not eat input, so:
+It is sized to the monitor's **work area**, not the full monitor, so it never covers the taskbar.
+That is a deliberate floor on how bad a click-handling bug can get: whatever else breaks, the tray
+icon stays clickable and Quit is always reachable.
+
+Covering the screen means the window must not eat input, so:
 
 - It is `ignore_cursor_events(true)` by default. Every click passes straight through to whatever is
   underneath.
 - The frontend knows where the slime actually is, so each frame it decides whether the pointer is
-  over the body or the bubble and asks Rust for clicks back only then (`set_click_through`). The call
-  is deduped on both sides so it is not made at cursor-poll frequency.
+  over the body or the bubble, and **asks** for clicks while it is.
 - While click-through is on, the window receives no mouse events at all — which is why Rust polls
   the global cursor position at 30 Hz and pushes it to the frontend. That stream is what lets the
   slime's eyes follow your pointer even when it cannot be clicked.
+
+### Clicks are a lease, not a latch
+
+"Accepting clicks" is a dangerous state: while it is on, every click in the work area lands on a
+transparent window instead of on what the user aimed at. So it is held as an expiring lease.
+`hold_clicks` extends it by 400 ms and the frontend renews every 150 ms; a watchdog on the Rust side
+checks at 10 Hz and reverts to click-through the moment the lease lapses. `release_clicks` exists
+only to make letting go feel immediate — if it never arrives, nothing is lost.
+
+This is not defensive decoration. The first version had the frontend cache the current mode and skip
+the IPC call when it believed the mode already matched, which desynchronises **permanently** on a
+webview reload: the page's cached flag resets to "click-through" while the Rust process is still set
+to accept clicks, so the frontend concludes there is nothing to send and goes silent forever. The
+result is an unclickable desktop with no way back — and in the first version the overlay also covered
+the taskbar, so the tray could not be reached to quit it either. A vite HMR reload during development
+triggers it every time the pointer happens to be over the slime.
+
+Under a lease, every one of those failure modes — reload, crash, thrown exception, frozen render
+loop, rejected IPC call — costs at most one lease period of swallowed clicks and then heals itself.
+
+`ignore_cursor_events` maps to `WS_EX_TRANSPARENT` on Windows, so the real state can be read from
+outside the process with `GetWindowLongW(hwnd, GWL_EXSTYLE) & 0x20`. That is how the behaviour above
+was verified rather than assumed, and it is the way to check it if this ever regresses.
 
 The coordinate conversion between the two is easy to get subtly wrong: the cursor arrives in
 physical screen pixels, and the canvas draws in CSS pixels relative to the window. Both the window

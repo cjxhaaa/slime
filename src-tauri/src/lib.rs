@@ -2,8 +2,8 @@ mod calendar;
 mod oauth;
 mod store;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
@@ -18,24 +18,70 @@ struct CursorPos {
     y: f64,
 }
 
-/// Whether the overlay currently swallows clicks.
+/// How long a single "I want clicks" request stays valid. The frontend renews well inside this.
+const CLICK_LEASE: Duration = Duration::from_millis(400);
+const WATCHDOG_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Whether the overlay swallows clicks — held as an expiring lease, never as a latch.
 ///
-/// The overlay covers the whole screen, so it must be click-through by default or it would eat
-/// every click on the desktop. The frontend knows where the slime actually is and asks for clicks
-/// back only while the pointer is over it. Tracked here as well so we never issue a redundant
-/// platform call at cursor-poll frequency.
+/// The overlay covers the screen, so "accepting clicks" is a dangerous state: while it is on, every
+/// click on the desktop lands on a transparent window instead of on what the user aimed at. It must
+/// therefore be impossible for that state to outlive the frontend's intent to hold it.
+///
+/// An earlier version had the frontend cache the current mode and skip the IPC call when it thought
+/// the mode already matched. That desynchronises permanently the moment the webview reloads: the
+/// page's cached flag resets to "click-through" while this process is still set to accept clicks, so
+/// the frontend then believes there is nothing to do and stops calling. The desktop is left
+/// unclickable with no way back — including the tray, which the overlay was also covering.
+///
+/// So the frontend does not get to hold anything. It asks, repeatedly, and this side lets the
+/// request lapse. A reload, a crash, a thrown exception or a frozen render loop all resolve
+/// themselves within one lease.
 struct ClickState {
-    through: AtomicBool,
+    epoch: Instant,
+    /// Milliseconds since `epoch` at which the current lease expires.
+    lease_until_ms: AtomicU64,
+    /// Mirrors what was last handed to the platform, so we do not call it every renewal.
+    accepting: AtomicBool,
 }
 
-#[tauri::command]
-fn set_click_through(app: AppHandle, through: bool, state: tauri::State<Arc<ClickState>>) {
-    if state.through.swap(through, Ordering::Relaxed) == through {
+impl ClickState {
+    fn new() -> Self {
+        Self {
+            epoch: Instant::now(),
+            lease_until_ms: AtomicU64::new(0),
+            accepting: AtomicBool::new(false),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.epoch.elapsed().as_millis() as u64
+    }
+}
+
+fn apply_accepting(app: &AppHandle, state: &ClickState, accepting: bool) {
+    if state.accepting.swap(accepting, Ordering::SeqCst) == accepting {
         return;
     }
     if let Some(window) = app.get_webview_window("pet") {
-        let _ = window.set_ignore_cursor_events(through);
+        let _ = window.set_ignore_cursor_events(!accepting);
     }
+}
+
+/// Asks for clicks for the next lease period. Called repeatedly while the pointer is over the slime.
+#[tauri::command]
+fn hold_clicks(app: AppHandle, state: tauri::State<ClickState>) {
+    let deadline = state.now_ms() + CLICK_LEASE.as_millis() as u64;
+    state.lease_until_ms.store(deadline, Ordering::SeqCst);
+    apply_accepting(&app, &state, true);
+}
+
+/// Gives clicks back immediately rather than waiting for the lease to lapse. Best-effort: if this
+/// never arrives, the watchdog does the same thing a moment later.
+#[tauri::command]
+fn release_clicks(app: AppHandle, state: tauri::State<ClickState>) {
+    state.lease_until_ms.store(0, Ordering::SeqCst);
+    apply_accepting(&app, &state, false);
 }
 
 #[tauri::command]
@@ -66,27 +112,36 @@ fn show_settings(app: &AppHandle) {
         let _ = existing.set_focus();
         return;
     }
-    let _ = WebviewWindowBuilder::new(
-        app,
-        "settings",
-        WebviewUrl::App("settings.html".into()),
-    )
-    .title("Slime settings")
-    .inner_size(480.0, 620.0)
-    .resizable(false)
-    .build();
+    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+        .title("Slime settings")
+        .inner_size(480.0, 620.0)
+        .resizable(false)
+        .build();
+}
+
+/// Puts the overlay over the monitor's work area rather than the whole monitor.
+///
+/// The work area excludes the taskbar, which keeps the notification area — and therefore this app's
+/// own tray menu — permanently clickable. That matters as a floor on how bad a click-handling bug
+/// can get: whatever else goes wrong, the user can always reach Quit.
+fn place_overlay(window: &tauri::WebviewWindow) {
+    let Ok(Some(monitor)) = window.primary_monitor() else {
+        return;
+    };
+    let area = monitor.work_area();
+    let _ = window.set_position(tauri::PhysicalPosition::new(area.position.x, area.position.y));
+    let _ = window.set_size(tauri::PhysicalSize::new(area.size.width, area.size.height));
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(Arc::new(ClickState {
-            through: AtomicBool::new(true),
-        }))
+        .manage(ClickState::new())
         .manage(oauth::AuthState::default())
         .invoke_handler(tauri::generate_handler![
-            set_click_through,
+            hold_clicks,
+            release_clicks,
             open_external,
             open_settings,
             quit_app,
@@ -99,15 +154,9 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // The overlay spans the whole primary monitor so the slime can roam anywhere, rather
-            // than living in a small window we would have to move over IPC every frame.
             if let Some(window) = app.get_webview_window("pet") {
-                if let Ok(Some(monitor)) = window.primary_monitor() {
-                    let size = *monitor.size();
-                    let position = *monitor.position();
-                    let _ = window.set_position(tauri::PhysicalPosition::new(position.x, position.y));
-                    let _ = window.set_size(tauri::PhysicalSize::new(size.width, size.height));
-                }
+                place_overlay(&window);
+                // Starts click-through and stays that way until something asks otherwise.
                 let _ = window.set_ignore_cursor_events(true);
                 let _ = window.set_always_on_top(true);
             }
@@ -125,6 +174,22 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // The lease watchdog. This is the thing that makes an unclickable desktop unreachable
+            // as a persistent state rather than merely unlikely.
+            let click_handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(WATCHDOG_INTERVAL).await;
+                    let state = click_handle.state::<ClickState>();
+                    if !state.accepting.load(Ordering::SeqCst) {
+                        continue;
+                    }
+                    if state.now_ms() > state.lease_until_ms.load(Ordering::SeqCst) {
+                        apply_accepting(&click_handle, &state, false);
+                    }
+                }
+            });
 
             // Cursor polling. 30Hz is smooth enough for eye tracking and for deciding when the
             // pointer is over the slime, and it keeps this off the frame budget of the renderer.
@@ -144,7 +209,7 @@ pub fn run() {
                             );
                         }
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(33)).await;
+                    tokio::time::sleep(Duration::from_millis(33)).await;
                 }
             });
 
