@@ -145,7 +145,9 @@ export class Slime {
     this.mood = 'alert';
     this.moodUntil = Infinity;
     this.hopsLeft = 0;
-    this.blob.pulse(-140);
+    // Positive pulse drives every ring point outward, so the body swells before the first hop.
+    // A negative one would shrink it first, which reads as flinching rather than as alarm.
+    this.blob.pulse(150);
     this.vy = -HOP_SPEED * 0.8;
     this.nextAlertBounceAt = this.clock + 0.9;
   }

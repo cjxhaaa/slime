@@ -15,7 +15,15 @@ interface Meeting {
 
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const context = canvas.getContext('2d')!;
-const appWindow = getCurrentWindow();
+
+// Resolved lazily. Calling into the Tauri API at module scope means a failure there stops the whole
+// module from evaluating — no frame loop, no error handler, and a transparent window that looks
+// exactly like one that never opened.
+let cachedWindow: ReturnType<typeof getCurrentWindow> | null = null;
+function petWindow(): ReturnType<typeof getCurrentWindow> {
+  cachedWindow ??= getCurrentWindow();
+  return cachedWindow;
+}
 
 const slime = new Slime(0, 0);
 const bubble = new Bubble();
@@ -45,12 +53,22 @@ async function refreshGeometry(): Promise<void> {
   // relative to the window. Without both the origin and the scale factor the slime's eyes track a
   // point that drifts further off the further the pointer is from the top-left of the monitor —
   // and on a scaled display it is wrong even at the origin.
-  const [position, factor] = await Promise.all([
-    appWindow.outerPosition(),
-    appWindow.scaleFactor(),
-  ]);
-  origin = { x: position.x, y: position.y };
-  scaleFactor = factor || 1;
+  //
+  // Never allowed to be fatal. This is a nicety about where the slime looks, and an overlay that
+  // fails to draw at all because a geometry read was denied is a far worse outcome than one whose
+  // gaze is slightly off.
+  try {
+    const [position, factor] = await Promise.all([
+      petWindow().outerPosition(),
+      petWindow().scaleFactor(),
+    ]);
+    origin = { x: position.x, y: position.y };
+    scaleFactor = factor || 1;
+  } catch (error) {
+    console.warn('could not read window geometry; assuming the monitor origin', error);
+    origin = { x: 0, y: 0 };
+    scaleFactor = window.devicePixelRatio || 1;
+  }
 }
 
 function toLocal(screenX: number, screenY: number): { x: number; y: number } {
@@ -94,14 +112,57 @@ function hoverText(): string | null {
 let lastFrame = performance.now();
 let bubbleRect: { x: number; y: number; width: number; height: number } | null = null;
 
+/**
+ * Physics runs on a fixed timestep, decoupled from the frame rate.
+ *
+ * Explicit Euler gains energy when the step grows, and a bounce is where that shows: a long frame
+ * gap turns a landing into a launch, and the slime ends up pinned to the top of the screen. A desk
+ * pet gets long frame gaps constantly — it is a background window that the compositor throttles
+ * whenever something else wants the GPU — so this is a normal operating condition, not an edge case.
+ */
+const STEP = 1 / 120;
+const MAX_CATCHUP_STEPS = 8;
+let accumulator = 0;
+
+/**
+ * The slime cannot be placed until the webview reports a real viewport.
+ *
+ * At startup `innerWidth`/`innerHeight` can still be 0 — the window is created before its content
+ * has been laid out. Placing it from those numbers puts it at negative coordinates, permanently off
+ * screen, and a zero width also inverts the wall clamps (`minX` ends up greater than `maxX`). So
+ * homing waits for the first frame with real dimensions, and a degenerate viewport skips the frame
+ * outright rather than simulating against nonsense.
+ */
+let homed = false;
+
+function homeSlime(width: number, height: number): void {
+  // Bottom-right, out of the way of most window content.
+  slime.x = width - 140;
+  slime.y = height - 80;
+  homed = true;
+}
+
 function frame(now: number): void {
-  const dt = Math.min(0.05, (now - lastFrame) / 1000);
+  const elapsed = Math.min(0.25, (now - lastFrame) / 1000);
   lastFrame = now;
 
   const width = window.innerWidth;
   const height = window.innerHeight;
 
-  slime.update(dt, { width, height, cursor });
+  if (width < 2 * slime.blob.restRadius || height < 2 * slime.blob.restRadius) {
+    requestAnimationFrame(frame);
+    return;
+  }
+  if (!homed) homeSlime(width, height);
+
+  accumulator += elapsed;
+  // Capped so a long stall (the machine asleep, the window occluded for a minute) is dropped rather
+  // than simulated in one enormous burst on the frame it wakes up.
+  const steps = Math.min(MAX_CATCHUP_STEPS, Math.floor(accumulator / STEP));
+  accumulator -= steps * STEP;
+  for (let i = 0; i < steps; i++) {
+    slime.update(STEP, { width, height, cursor });
+  }
 
   // What the bubble says, in priority order. An alert outranks everything: it is the reason this
   // app exists, and it must not be displaced by an idle greeting.
@@ -113,7 +174,7 @@ function frame(now: number): void {
     if (text) bubble.show(text);
     else bubble.hide();
   }
-  bubble.update(dt);
+  bubble.update(elapsed);
 
   context.clearRect(0, 0, width, height);
   slime.draw(context);
@@ -164,8 +225,14 @@ function wirePointer(): void {
     }
     // A short press that barely moved is a poke, not a throw.
     if (heldFor < 260 && moved < 6) {
-      if (alertMeeting) joinAlertMeeting();
-      else slime.poke(event.clientX, event.clientY);
+      if (alertMeeting) {
+        // The bubble is part of the alert's target, so a click anywhere on it joins.
+        joinAlertMeeting();
+      } else if (slime.hitTest(event.clientX, event.clientY)) {
+        // Only the body gets poked. Clicks land here from the hover bubble too, and denting the
+        // slime from an inch away because the pointer was over its speech bubble looks like a bug.
+        slime.poke(event.clientX, event.clientY);
+      }
     }
   };
   canvas.addEventListener('pointerup', finish);
@@ -179,16 +246,37 @@ function wirePointer(): void {
 
 async function main(): Promise<void> {
   resize();
-  await refreshGeometry();
-
-  // Start it resting near the bottom-right, out of the way of most window content.
-  slime.x = window.innerWidth - 140;
-  slime.y = window.innerHeight - 80;
 
   window.addEventListener('resize', () => {
     resize();
+    const maxX = window.innerWidth - slime.blob.restRadius;
+    if (homed && slime.x > maxX) slime.x = Math.max(slime.blob.restRadius, maxX);
     void refreshGeometry();
   });
+
+  // The frame loop and the pointer wiring come up first and depend on nothing asynchronous. The
+  // whole point of this window is that something is visible on it; if a later await rejects, the
+  // slime should still be there, just less aware of its surroundings.
+  wirePointer();
+  requestAnimationFrame(frame);
+
+  const debugHooks = window as unknown as Record<string, unknown>;
+  // Handle for inspecting the simulation from a devtools console.
+  debugHooks.__slime = slime;
+  // Fires the full reminder performance without waiting for a real meeting. Tuning the alert
+  // animation is otherwise gated on the calendar, which makes it untunable.
+  debugHooks.__simulateMeeting = (minutes = 3, title = 'Standup') => {
+    alertMeeting = {
+      id: 'debug',
+      title,
+      start: new Date(Date.now() + minutes * 60_000).toISOString(),
+      minutes_until: minutes,
+      meet_url: 'https://meet.google.com/debug',
+    };
+    slime.raiseAlert(countdownText(alertMeeting), joinAlertMeeting);
+  };
+
+  await refreshGeometry();
 
   await listen<{ x: number; y: number }>('cursor', (event) => {
     const local = toLocal(event.payload.x, event.payload.y);
@@ -223,8 +311,19 @@ async function main(): Promise<void> {
     }
   });
 
-  wirePointer();
-  requestAnimationFrame(frame);
 }
 
-void main();
+// A transparent always-on-top window that draws nothing is indistinguishable from a window that
+// never opened, which makes a startup failure here invisible and maddening to diagnose. Paint it.
+main().catch((error) => {
+  const message = String(error?.message ?? error);
+  context.save();
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.fillStyle = 'rgba(180, 30, 20, 0.92)';
+  context.fillRect(12, 12, 640, 56);
+  context.fillStyle = '#fff';
+  context.font = '600 14px system-ui, sans-serif';
+  context.fillText('Slime failed to start:', 24, 36);
+  context.fillText(message.slice(0, 90), 24, 56);
+  context.restore();
+});
