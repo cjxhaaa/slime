@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Slime settings</title>
+    <link rel="stylesheet" href="/src/settings.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Slime</h1>
+
+      <section>
+        <h2>Google Calendar</h2>
+        <p id="status" class="status">Checking…</p>
+
+        <details id="howto">
+          <summary>How to get a client ID</summary>
+          <ol>
+            <li>Open the Google Cloud console and create or pick a project.</li>
+            <li>Enable the <strong>Google Calendar API</strong> for it.</li>
+            <li>
+              On the OAuth consent screen, add your own Google account as a test user. The calendar
+              scope is a sensitive one, so an app in testing mode only works for listed users.
+            </li>
+            <li>
+              Under Credentials, create an <strong>OAuth client ID</strong> with application type
+              <strong>Desktop app</strong>. There is no redirect URI to fill in — a desktop client is
+              allowed to use a loopback address, which is what Slime listens on.
+            </li>
+            <li>Paste the client ID and secret below.</li>
+          </ol>
+          <p class="muted">
+            Slime asks for read-only access to calendar events and nothing else. It cannot change
+            your calendar.
+          </p>
+        </details>
+
+        <label for="client-id">Client ID</label>
+        <input id="client-id" type="text" spellcheck="false" autocomplete="off" placeholder="…apps.googleusercontent.com" />
+
+        <label for="client-secret">Client secret</label>
+        <input id="client-secret" type="password" spellcheck="false" autocomplete="off" />
+
+        <div class="row">
+          <button id="save" class="secondary">Save client</button>
+          <button id="connect">Connect Google</button>
+        </div>
+        <p id="message" class="message"></p>
+        <button id="disconnect" class="link" hidden>Disconnect</button>
+      </section>
+
+      <section>
+        <h2>Next up</h2>
+        <ul id="meetings" class="meetings">
+          <li class="muted">Nothing loaded yet.</li>
+        </ul>
+        <button id="refresh" class="secondary">Refresh</button>
+      </section>
+
+      <section>
+        <h2>Behaviour</h2>
+        <p class="muted">
+          Drag the slime to move it. Click it to poke it, or to join the meeting while it is
+          bouncing. Right-click it to open this window. It falls asleep when left alone.
+        </p>
+      </section>
+
+      <footer>
+        <button id="quit" class="link danger">Quit Slime</button>
+      </footer>
+    </main>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>

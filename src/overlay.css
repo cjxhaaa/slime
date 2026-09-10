@@ -1,0 +1,24 @@
+/*
+ * The overlay covers the whole monitor, so every pixel of it must be genuinely transparent and
+ * genuinely non-interactive. A stray background colour here shows up as a grey sheet over the
+ * desktop, and a default margin shows up as a 8px band the canvas cannot reach.
+ */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  /* Nothing here should ever show a text caret or a selection highlight. */
+  user-select: none;
+  cursor: default;
+}
+
+#stage {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
