@@ -247,8 +247,7 @@ let homed = false;
 
 function homeSlime(width: number, height: number): void {
   // Bottom-right, out of the way of most window content.
-  slime.x = width - 140;
-  slime.y = height - 80;
+  slime.teleportTo(width - 140, height - 80);
   homed = true;
 }
 
@@ -273,6 +272,10 @@ function frame(now: number): void {
   for (let i = 0; i < steps; i++) {
     slime.update(STEP, { width, height, cursor });
   }
+  // Whatever time is left in the accumulator has not been simulated, so the body is drawn that far
+  // between its last two simulated states. Without this the rendered position snaps to 1/120s
+  // increments and a throw judders even though the frame loop is steady.
+  slime.beginFrame(accumulator / STEP);
 
   // What the bubble says, in priority order. An alert outranks everything: it is the reason this
   // app exists, and it must not be displaced by an idle greeting.
@@ -289,10 +292,10 @@ function frame(now: number): void {
 
   // Clicks are only taken while the pointer is actually over something interactive, so the rest of
   // the desktop keeps working normally underneath a window that covers all of it.
-  const anchorY = slime.y - slime.blob.restRadius * slime.blob.squashScale.y - 4;
+  const anchorY = slime.drawY - slime.blob.restRadius * slime.blob.squashScale.y - 4;
   // Laid out before anything is cleared: measuring the text needs no clip, and the resulting rect
   // is part of what decides which region to clear.
-  bubbleRect = bubble.layout(context, slime.x, anchorY, width);
+  bubbleRect = bubble.layout(context, slime.drawX, anchorY, width);
   const overBubble =
     cursor !== null &&
     bubbleRect !== null &&
@@ -347,7 +350,7 @@ function frame(now: number): void {
     context.clip(clip);
 
     slime.draw(context);
-    if (bubbleRect) bubble.draw(context, bubbleRect, slime.x, anchorY);
+    if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     paw.draw(context);
 
     context.restore();
@@ -450,7 +453,9 @@ async function main(): Promise<void> {
   window.addEventListener('resize', () => {
     resize();
     const maxX = window.innerWidth - slime.blob.restRadius;
-    if (homed && slime.x > maxX) slime.x = Math.max(slime.blob.restRadius, maxX);
+    if (homed && slime.x > maxX) {
+      slime.teleportTo(Math.max(slime.blob.restRadius, maxX), slime.y);
+    }
     void refreshGeometry();
   });
 

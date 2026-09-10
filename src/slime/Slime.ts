@@ -29,8 +29,14 @@ const RESTITUTION = 0.34;
  */
 const ThrowTransfer = 0.45;
 const MaxThrowSpeed = 1400;
-/** Time constant of the air drag, in seconds. Long enough to read as coasting, not as syrup. */
-const AirDragTau = 0.9;
+/**
+ * Time constant of the air drag, in seconds — applied to horizontal travel only.
+ *
+ * Damping the vertical axis too was physically tidier and felt wrong: it fights gravity, so a fall
+ * turns slow and floaty, which reads as *less* weight rather than more. Weight comes from a fall
+ * that commits. Drag's job here is only to stop a throw from crossing the whole screen.
+ */
+const AirDragTau = 1.6;
 const HOP_SPEED = 780;
 const WALK_SPEED = 130;
 const SLEEPY_AFTER = 75;
@@ -74,6 +80,23 @@ export class Slime {
   private moodUntil = 0;
   private nextAlertBounceAt = 0;
   private dragTarget = { x: 0, y: 0 };
+  /**
+   * The position one simulation step ago, and the position the renderer should actually draw at.
+   *
+   * Physics runs on a fixed 1/120s step while frames arrive every ~16.7ms, so a frame advances the
+   * simulation by a whole number of steps — usually two, periodically three as the leftover
+   * accumulates. Drawing the raw simulated position therefore moves the body in uneven jumps even
+   * though the frame loop is perfectly steady, and fast continuous motion is where that shows:
+   * a throw is nothing but the simulation, and it juddered.
+   *
+   * So the renderer draws between the last two simulated states, at the fraction of a step the
+   * accumulator is still holding. This is the standard fixed-timestep interpolation and it decouples
+   * how smooth the motion looks from how the step count happens to land in each frame.
+   */
+  private prevX = 0;
+  private prevY = 0;
+  private renderX = 0;
+  private renderY = 0;
   /**
    * One gradient per palette, built once.
    *
@@ -123,6 +146,33 @@ export class Slime {
   }
 
   /**
+   * Chooses the position to draw at, `alpha` being the fraction of a simulation step the frame's
+   * accumulator still holds. Must be called before `bounds()` or `draw()` each frame, or both will
+   * describe different frames and the dirty rect will not cover what gets painted.
+   */
+  beginFrame(alpha: number): void {
+    if (this.grabbed) {
+      // A dragged position is assigned, not integrated. Interpolating toward it would draw the
+      // body behind the hand — the very lag that made smoothing the wrong answer for the drag.
+      this.renderX = this.x;
+      this.renderY = this.y;
+      return;
+    }
+    const t = Math.max(0, Math.min(1, alpha));
+    this.renderX = this.prevX + (this.x - this.prevX) * t;
+    this.renderY = this.prevY + (this.y - this.prevY) * t;
+  }
+
+  /** Where the body is being drawn this frame, which is what the bubble anchors to. */
+  get drawX(): number {
+    return this.renderX;
+  }
+
+  get drawY(): number {
+    return this.renderY;
+  }
+
+  /**
    * Everything this slime paints, in CSS pixels — body at full stretch, contact shadow, and the
    * sleep marks that drift up and to the right. Used to repaint only the part of the screen that
    * changed instead of the whole overlay.
@@ -130,10 +180,10 @@ export class Slime {
   bounds(): { x: number; y: number; width: number; height: number } {
     const ground = this.groundFor(this.envHeight);
     const reach = this.radius * 2.2;
-    const top = Math.min(this.y - reach, this.y - this.radius * 0.7 - 60);
-    const bottom = Math.max(this.y + reach, ground + this.radius * 1.1);
+    const top = Math.min(this.renderY - reach, this.renderY - this.radius * 0.7 - 60);
+    const bottom = Math.max(this.renderY + reach, ground + this.radius * 1.1);
     return {
-      x: this.x - reach,
+      x: this.renderX - reach,
       y: top,
       width: reach * 2,
       height: bottom - top,
@@ -142,15 +192,34 @@ export class Slime {
 
   hitTest(px: number, py: number): boolean {
     const scale = this.blob.squashScale;
-    const dx = (px - this.x) / (this.radius * scale.x);
-    const dy = (py - this.y) / (this.radius * scale.y);
+    // Against the drawn position, not the simulated one: the pointer is aimed at what is on screen.
+    const dx = (px - this.renderX) / (this.radius * scale.x);
+    const dy = (py - this.renderY) / (this.radius * scale.y);
     // Slightly generous, so grabbing it does not require pixel precision on a wobbling target.
     return dx * dx + dy * dy < 1.35;
+  }
+
+  /**
+   * Places the body with no motion history, so the renderer has nothing stale to interpolate from.
+   * Used for the initial placement and for keeping it on screen after a resize — anywhere the
+   * position changes without the simulation having moved it there.
+   */
+  teleportTo(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    this.prevX = x;
+    this.prevY = y;
+    this.renderX = x;
+    this.renderY = y;
   }
 
   grab(px: number, py: number): void {
     this.grabbed = true;
     this.mood = 'dragged';
+    // Anchored to the drawn position rather than the simulated one, so a pet caught mid-flight does
+    // not jump by the fraction of a step it was being interpolated across.
+    this.x = this.renderX;
+    this.y = this.renderY;
     this.grabOffset = { x: this.x - px, y: this.y - py };
     this.dragTarget = { x: this.x, y: this.y };
     this.lastInteraction = this.clock;
@@ -236,6 +305,8 @@ export class Slime {
   }
 
   update(dt: number, env: Env): void {
+    this.prevX = this.x;
+    this.prevY = this.y;
     this.clock += dt;
     this.envHeight = env.height;
     const ground = this.groundFor(env.height);
@@ -254,11 +325,9 @@ export class Slime {
       this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 8);
     } else {
       this.vy += GRAVITY * dt;
-      // Air drag. Without it a throw kept every pixel per second it was given until it hit
-      // something, which is what made the slime feel weightless however hard it was thrown.
-      const drag = Math.exp(-dt / AirDragTau);
-      this.vx *= drag;
-      this.vy *= drag;
+      // Air drag, horizontal only. Without any, a throw kept every pixel per second it was given
+      // until it hit something; with it on both axes, the fall floated.
+      this.vx *= Math.exp(-dt / AirDragTau);
       this.x += this.vx * dt;
       this.y += this.vy * dt;
       this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 6);
@@ -408,7 +477,7 @@ export class Slime {
 
   draw(context: CanvasRenderingContext2D): void {
     const ground = this.groundFor(this.envHeight);
-    const airborne = Math.max(0, ground - this.y);
+    const airborne = Math.max(0, ground - this.renderY);
     const palette =
       this.mood === 'alert'
         ? PALETTE.alert
@@ -423,7 +492,7 @@ export class Slime {
     context.fillStyle = '#0b2a24';
     context.beginPath();
     context.ellipse(
-      this.x,
+      this.renderX,
       ground + this.radius * 0.72,
       this.radius * 0.95 * shadowScale,
       this.radius * 0.24 * shadowScale,
@@ -441,7 +510,7 @@ export class Slime {
     this.blob.outline(this.points, stretchAngle, this.grabbed ? stretch * 1.6 : stretch);
 
     context.save();
-    context.translate(this.x, this.y);
+    context.translate(this.renderX, this.renderY);
 
     Blob.trace(context, this.points, this.blob.count);
 
@@ -594,8 +663,8 @@ export class Slime {
       context.font = `600 ${size}px system-ui, sans-serif`;
       context.fillText(
         'z',
-        this.x + this.radius * 0.5 + phase * 22,
-        this.y - this.radius * 0.7 - phase * 46,
+        this.renderX + this.radius * 0.5 + phase * 22,
+        this.renderY - this.radius * 0.7 - phase * 46,
       );
     }
     context.restore();
