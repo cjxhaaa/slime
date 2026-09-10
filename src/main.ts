@@ -119,17 +119,20 @@ function toLocal(screenX: number, screenY: number): { x: number; y: number } {
  * renewed on a timer and expires on its own if this loop ever stops running.
  */
 let holdingClicks = false;
+let holdingDrag = false;
 let lastHoldAt = 0;
 const RENEW_EVERY_MS = 150;
 
-function requestClicks(wantsClicks: boolean, now: number): void {
+function requestClicks(wantsClicks: boolean, dragging: boolean, now: number): void {
   if (wantsClicks) {
     // The lease is 400ms, so renewing at 150ms keeps it alive with wide margin while keeping the
-    // IPC off the per-frame path.
-    if (holdingClicks && now - lastHoldAt < RENEW_EVERY_MS) return;
+    // IPC off the per-frame path. `dragging` rides along on the renewal rather than being latched
+    // separately, so it expires with the lease instead of being able to strand the cursor poll.
+    if (holdingClicks && dragging === holdingDrag && now - lastHoldAt < RENEW_EVERY_MS) return;
     holdingClicks = true;
+    holdingDrag = dragging;
     lastHoldAt = now;
-    void invoke('hold_clicks').catch(() => {
+    void invoke('hold_clicks', { dragging }).catch(() => {
       // Drop the flag so the next frame asks again rather than assuming the hold took effect.
       holdingClicks = false;
     });
@@ -355,7 +358,7 @@ function frame(now: number): void {
 
     context.restore();
   }
-  requestClicks(wantsClicks, now);
+  requestClicks(wantsClicks, grabbed, now);
 
   requestAnimationFrame(frame);
 }
@@ -374,9 +377,6 @@ function wirePointer(): void {
       dragVelocity.add(event.clientX, event.clientY, event.timeStamp);
       // Capture keeps the move and up events coming to this element for the whole gesture, so a
       // fast flick cannot hand the stream to something else mid-throw and strand `grabbed`.
-      // Silence the 30Hz cursor poll: this gesture is fed by DOM events at frame rate, so every
-      // polled emission for its duration is IPC traffic competing with the render of the drag.
-      void invoke('set_pointer_owned', { owned: true }).catch(() => {});
       try {
         canvas.setPointerCapture(event.pointerId);
       } catch {
@@ -419,7 +419,6 @@ function wirePointer(): void {
       const thrown = dragVelocity.release(event.timeStamp);
       slime.release(thrown.vx, thrown.vy);
       dragVelocity.reset();
-      void invoke('set_pointer_owned', { owned: false }).catch(() => {});
       if (canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
       }
@@ -483,6 +482,9 @@ async function main(): Promise<void> {
   };
 
   await refreshGeometry();
+
+  // TEMP: exercise the exact path that produced the blank window — the command, not the tray.
+  setTimeout(() => void invoke('open_settings'), 4000);
 
   await listen<{ x: number; y: number }>('cursor', (event) => {
     // Never while dragging: the DOM stream owns the gesture. Feeding both meant this 30Hz poll

@@ -63,6 +63,12 @@ struct ClickState {
     /// from. During a drag it *is* receiving events, at frame rate, so every poll emission is pure
     /// noise — thirty IPC deliveries a second, each deserialised and dispatched on the same webview
     /// thread that is trying to render the drag.
+    ///
+    /// Deliberately tied to the same lease as `accepting`, and never settable on its own. It was
+    /// briefly its own latch, set on pointerdown and cleared on pointerup, which is the exact shape
+    /// of bug this file already exists to avoid: a pointerup that never arrived left the poll muted
+    /// forever, so the frontend's cursor went permanently null, so nothing was ever over the slime,
+    /// so every click passed through it. Anything that can strand the frontend must expire.
     pointer_owned: AtomicBool,
 }
 
@@ -82,6 +88,10 @@ impl ClickState {
 }
 
 fn apply_accepting(app: &AppHandle, state: &ClickState, accepting: bool) {
+    if !accepting {
+        // The gesture cannot outlive the lease that carries it.
+        state.pointer_owned.store(false, Ordering::SeqCst);
+    }
     if state.accepting.swap(accepting, Ordering::SeqCst) == accepting {
         return;
     }
@@ -91,21 +101,16 @@ fn apply_accepting(app: &AppHandle, state: &ClickState, accepting: bool) {
 }
 
 /// Asks for clicks for the next lease period. Called repeatedly while the pointer is over the slime.
+///
+/// `dragging` rides along on the same renewal so it inherits the same expiry: the frontend renews
+/// well inside the lease while a gesture is live, and the moment it stops renewing for any reason
+/// both the clicks and the poll suppression lapse together.
 #[tauri::command]
-fn hold_clicks(app: AppHandle, state: tauri::State<ClickState>) {
+fn hold_clicks(app: AppHandle, dragging: bool, state: tauri::State<ClickState>) {
     let deadline = state.now_ms() + CLICK_LEASE.as_millis() as u64;
     state.lease_until_ms.store(deadline, Ordering::SeqCst);
+    state.pointer_owned.store(dragging, Ordering::SeqCst);
     apply_accepting(&app, &state, true);
-}
-
-/// Silences the cursor poll for the duration of a gesture the frontend is receiving directly.
-///
-/// Best-effort in the safe direction: if the "released" call is lost the poll simply stays quiet,
-/// which costs the slime its idle gaze tracking until the next gesture — never clicks, and never
-/// the pointer.
-#[tauri::command]
-fn set_pointer_owned(owned: bool, state: tauri::State<ClickState>) {
-    state.pointer_owned.store(owned, Ordering::SeqCst);
 }
 
 /// Gives clicks back immediately rather than waiting for the lease to lapse. Best-effort: if this
@@ -130,7 +135,7 @@ fn open_external(app: AppHandle, url: String) -> Result<(), String> {
 
 #[tauri::command]
 fn open_settings(app: AppHandle) {
-    show_settings(&app);
+    toggle_settings(&app);
 }
 
 #[tauri::command]
@@ -138,17 +143,37 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
-fn show_settings(app: &AppHandle) {
-    if let Some(existing) = app.get_webview_window("settings") {
-        let _ = existing.show();
-        let _ = existing.set_focus();
-        return;
-    }
-    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("Slime settings")
-        .inner_size(480.0, 620.0)
-        .resizable(false)
-        .build();
+/// Shows or hides the settings window.
+///
+/// The window is **declared in `tauri.conf.json` and created hidden at startup**, not built on
+/// demand. Building it at runtime produced a window whose WebView2 never fetched the document at
+/// all: Tauri reported the correct URL and `build()` returned no error, the URL served fine over
+/// curl, nothing was logged, and no vite client ever loaded the module — the page simply never
+/// arrived, leaving a blank window that also would not close because there was nothing behind it to
+/// tear down. Moving it to the same startup path the pet window already uses sidesteps the whole
+/// failure rather than guessing at its cause.
+///
+/// Toggling, rather than re-focusing, means there is always a way to dismiss it that does not
+/// depend on its own title bar.
+fn toggle_settings(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(window) = handle.get_webview_window("settings") else {
+            println!("[slime] the settings window is missing from the app config");
+            return;
+        };
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+            return;
+        }
+        let _ = window.center();
+        let _ = window.show();
+        let _ = window.unminimize();
+        // The overlay is deliberately never focused, so this app has no active window for another
+        // to be raised above; without this the settings window can appear behind whatever the user
+        // was actually looking at.
+        let _ = window.set_focus();
+    });
 }
 
 /// Puts the overlay over the monitor's work area rather than the whole monitor.
@@ -183,7 +208,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             hold_clicks,
             release_clicks,
-            set_pointer_owned,
             open_external,
             open_settings,
             quit_app,
@@ -218,7 +242,7 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "settings" => show_settings(app),
+                    "settings" => toggle_settings(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -268,6 +292,17 @@ pub fn run() {
 
             calendar::spawn_poller(handle);
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // The settings window is created once at startup, so its close button must hide it
+            // rather than destroy it — a destroyed one could not be reopened without going back to
+            // runtime creation, which is exactly what did not work.
+            if window.label() == "settings" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

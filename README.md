@@ -164,6 +164,29 @@ only while the overlay is accepting clicks, and it only accepts clicks while the
 actively renewing the lease. Stop the loop by any means and the lease lapses, the window goes
 click-through, and the OS cursor is back. The pointer cannot be lost by a bug in the drawing code.
 
+## The settings window
+
+It is **declared in `tauri.conf.json` and created hidden at startup**, then shown and hidden. It is
+not built on demand, and that is not a style preference.
+
+Building it at runtime with `WebviewWindowBuilder` produced a window whose WebView2 never fetched
+the document at all. Everything that could be checked said it should have worked: Tauri logged the
+correct URL, `build()` returned no error, that URL served a complete page over curl, the window
+appeared at the right size and position, its message loop acknowledged a delivered `WM_CLOSE`, and
+there were no orphaned WebView2 processes holding the user-data folder. What gave it away was that
+no vite client ever loaded the settings module — the page simply never arrived. The result was a
+blank window that also could not be closed, because a close request had nothing behind it to tear
+down.
+
+Moving it onto the same startup path the pet window already uses fixed it on the first try. Closing
+it therefore hides rather than destroys (`CloseRequested` is prevented), because a destroyed one
+could only be recreated the way that does not work. Right-clicking the pet toggles it, so there is
+always a way to dismiss it that does not depend on its own title bar.
+
+The page also paints anything it throws into itself and echoes it to the console. A settings page
+that fails silently is indistinguishable from one that never loaded, which is most of what made
+this expensive to find.
+
 ## The soft body
 
 `src/slime/Blob.ts` is a ring of 40 points, each free to move radially, each pulled back to the rest
