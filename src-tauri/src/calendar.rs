@@ -120,10 +120,19 @@ async fn fetch(app: &AppHandle) -> Result<Vec<Meeting>, String> {
         .map_err(|error| format!("calendar request failed: {error}"))?;
 
     if !response.status().is_success() {
-        return Err(format!(
-            "calendar request failed with status {}",
-            response.status()
-        ));
+        let status = response.status();
+        // Google puts the actionable part in the body — "API has not been used in project N",
+        // "insufficient authentication scopes", and a quota rejection are all 403 and are three
+        // completely different fixes. A bare status code cannot be acted on.
+        let body = response.text().await.unwrap_or_default();
+        let detail = body
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(400)
+            .collect::<String>();
+        return Err(format!("calendar request failed with status {status}: {detail}"));
     }
 
     let payload: EventsResponse = response
@@ -168,11 +177,47 @@ pub fn spawn_poller(app: AppHandle) {
         seen: Mutex::new(HashSet::new()),
     };
 
+    // Last summary logged, so a poll that changed nothing stays quiet. Without this the log is a
+    // line every 45 seconds forever and the one line that matters is impossible to find.
+    let mut last_summary = String::new();
+
     tauri::async_runtime::spawn(async move {
         loop {
-            // Nothing is connected yet on a fresh install, and that is the normal state rather than
-            // an error worth surfacing — the poller just idles until Settings has a token.
-            if let Ok(meetings) = fetch(&app).await {
+            let result = fetch(&app).await;
+            match &result {
+                Ok(meetings) => {
+                    // Enough to tell "the calendar is empty" apart from "the fetch is broken" and
+                    // from "the event is there but has no video link", which look identical from
+                    // the outside and are the three things that actually go wrong here.
+                    let summary = meetings
+                        .iter()
+                        .take(3)
+                        .map(|m| {
+                            format!(
+                                "{}min{}",
+                                m.minutes_until,
+                                if m.meet_url.is_some() { "+link" } else { "-nolink" }
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let summary = format!("{} event(s): {}", meetings.len(), summary);
+                    if summary != last_summary {
+                        println!("[slime] calendar {summary}");
+                        last_summary = summary;
+                    }
+                }
+                Err(error) => {
+                    // Previously swallowed entirely, so a broken poller was indistinguishable from
+                    // an empty calendar. "Not connected" is the normal pre-setup state and is not
+                    // worth repeating, but everything else is a real failure.
+                    if !error.contains("not connected") && *error != last_summary {
+                        println!("[slime] calendar poll failed: {error}");
+                        last_summary = error.clone();
+                    }
+                }
+            }
+            if let Ok(meetings) = result {
                 for meeting in meetings.iter() {
                     if meeting.minutes_until > LEAD_MINUTES || meeting.minutes_until < -1 {
                         continue;

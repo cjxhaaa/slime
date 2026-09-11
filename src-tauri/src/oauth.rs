@@ -23,6 +23,9 @@ const SCOPES: &str = "openid email https://www.googleapis.com/auth/calendar.even
 /// Refresh this far before actual expiry, so a request never starts with a token that dies mid-flight.
 const REFRESH_MARGIN_SECS: i64 = 120;
 
+/// The one scope without which this app can do nothing at all.
+const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events.readonly";
+
 /// What this process knows about the stored tokens.
 ///
 /// The credential store is consulted once, and the answer — including "nothing there" — is kept.
@@ -116,6 +119,9 @@ struct TokenResponse {
     refresh_token: Option<String>,
     #[serde(default)]
     expires_in: i64,
+    /// What Google actually granted, which is not necessarily what was asked for.
+    #[serde(default)]
+    scope: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -209,6 +215,18 @@ pub async fn begin_google_auth(
         .json()
         .await
         .map_err(|error| format!("could not read the token response: {error}"))?;
+
+    // Google grants scopes individually: its consent screen puts a *checkbox* next to each
+    // sensitive permission, and pressing Continue without ticking the calendar box yields a
+    // perfectly valid token that simply cannot read a calendar. Unchecked, that surfaces minutes
+    // later as a background 403 with nobody watching — so it is caught here, at the one moment the
+    // person is looking at the screen and able to fix it. Nothing is stored: a token that cannot
+    // do the job is not a connection.
+    let granted = token.scope.clone().unwrap_or_default();
+    if !granted.split(' ').any(|scope| scope == CALENDAR_SCOPE) {
+        return Err("Calendar access was not granted. Press Connect again and tick the calendar              permission on Google's consent screen — sensitive permissions have their own              checkbox and are off until ticked. If no checkbox appeared at all, add the scope              calendar.events.readonly under Data Access in the Google Cloud console first."
+            .into());
+    }
 
     let refresh_token = token.refresh_token.ok_or(
         "Google did not return a refresh token. Remove the app's access in your Google account \
