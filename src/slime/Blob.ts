@@ -148,25 +148,6 @@ export class Blob {
     return worst;
   }
 
-  /**
-   * How far the outline currently reaches from the centre, deformation included.
-   *
-   * The caller's dirty rect is built from this. It has to be measured rather than assumed from
-   * `restRadius` because a morphed body is arbitrarily larger than its resting size, and it has to
-   * be measured from the *current* shape rather than from whatever the caller thinks it asked for:
-   * a morph back to a circle takes time, so the body outlives the state that made it big.
-   */
-  get maxReach(): number {
-    const scale = this.squashScale;
-    const widest = Math.max(scale.x, scale.y);
-    let worst = 0;
-    for (let i = 0; i < this.count; i++) {
-      const reach = this.rest[i] + Math.abs(this.offset[i]);
-      if (reach > worst) worst = reach;
-    }
-    return worst * widest;
-  }
-
   update(dt: number): void {
     if (this.conformProgress < 1) {
       this.conformProgress = Math.min(1, this.conformProgress + dt / this.conformSeconds);
@@ -217,6 +198,13 @@ export class Blob {
    * The outline in local space, before the caller's own transform. Returned as a flat array to
    * avoid allocating forty objects every frame.
    */
+  /// Produces the shape that gets both drawn and measured for the dirty rect.
+  ///
+  /// There used to be a `maxReach` getter alongside this that estimated the same extent from the
+  /// rest radii, for the caller to build its dirty rect from. It could not see the stretch applied
+  /// below, so the two disagreed by up to half a body-length whenever the body was moving, and the
+  /// caller painted outside the region it had cleared. An estimate of what this returns cannot be
+  /// kept honest; callers measure the array itself.
   outline(into: Float32Array, stretchAngle = 0, stretch = 0): Float32Array {
     const scale = this.squashScale;
     for (let i = 0; i < this.count; i++) {

@@ -79,6 +79,26 @@ origin and the display scale factor are needed. Miss the origin and the gaze is 
 secondary monitor; miss the scale factor and the gaze drifts further off the further the pointer is
 from the top-left corner.
 
+### The dirty rect is measured off the outline, not estimated from it
+
+`bounds()` used to estimate the body's reach from the ring's rest radii and pad the result. The
+outline is not built from those radii alone: `draw` applied a directional stretch on top, up to half
+a body-length along the direction of travel, and nothing outside `draw` knew about it.
+
+A resting slime hid that completely. The rect has a floor of about two body-widths to cover the
+sleep marks, and that floor swallowed a stretch measured in tens of pixels. A body still wrapped
+around a window does not have that slack — the measured term is then the larger one — so dragging
+the slime off a window mid-engulf painted **95 px of outline outside the region that had been
+cleared**, every frame of the drag, which is exactly the smear it left behind.
+
+So the outline is now traced once per frame in `beginFrame`, which already existed as the step whose
+contract is that `bounds()` and `draw()` must describe the same frame, and `bounds()` measures the
+array that is about to be drawn. `Blob.maxReach` is gone rather than fixed: any estimate of what
+`outline()` returns has to be kept in step with it by hand, and this one silently was not.
+
+Measuring per axis rather than as a radius also stopped the rect being a square built from a
+window's half-diagonal, which cut the area cleared during an engulf by about a fifth.
+
 ## Rendering cost
 
 The backing store is sized to the window's real device pixels — 3840x2088 on this display, eight

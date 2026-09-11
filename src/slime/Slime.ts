@@ -230,11 +230,27 @@ export class Slime {
       // body behind the hand — the very lag that made smoothing the wrong answer for the drag.
       this.renderX = this.x;
       this.renderY = this.y;
-      return;
+    } else {
+      const t = Math.max(0, Math.min(1, alpha));
+      this.renderX = this.prevX + (this.x - this.prevX) * t;
+      this.renderY = this.prevY + (this.y - this.prevY) * t;
     }
-    const t = Math.max(0, Math.min(1, alpha));
-    this.renderX = this.prevX + (this.x - this.prevX) * t;
-    this.renderY = this.prevY + (this.y - this.prevY) * t;
+
+    // Directional stretch: the body elongates along the travel direction, which is what turns a
+    // dragged blob into a droplet rather than an oval.
+    //
+    // Traced here rather than in `draw()` so that `bounds()` can measure the shape that is actually
+    // about to be painted. It used to be a draw-time step, with the dirty rect estimating the reach
+    // from the ring's rest radii instead — an estimate that omitted this stretch, because nothing
+    // outside `draw()` knew it was applied. A resting body hid that: the rect has a floor of a
+    // couple of body-widths for the sleep marks, which swallowed a stretch measured in tens of
+    // pixels. A body still wrapped around a window does not, and dragging one off mid-engulf left
+    // a smear of unerased outline along the direction of travel, because the half of the stretch
+    // pointing that way reached past a rect built as though there were no stretch at all.
+    const speed = Math.hypot(this.trail.x, this.trail.y);
+    const stretch = Math.min(0.32, speed / 3600);
+    const stretchAngle = Math.atan2(this.trail.y, this.trail.x);
+    this.blob.outline(this.points, stretchAngle, this.grabbed ? stretch * 1.6 : stretch);
   }
 
   /**
@@ -304,21 +320,37 @@ export class Slime {
    */
   bounds(): { x: number; y: number; width: number; height: number } {
     const ground = this.groundFor(this.envHeight);
-    // The resting term covers the sleep marks and the elongation of a throw. The blob term covers
-    // a body that has morphed larger than it ever gets on its own, and it is read from the ring's
-    // present shape rather than from the devour state, because the two do not end together: letting
-    // go of a window clears that state immediately while the body takes almost half a second to
-    // shrink back. Keying this off the state left the unwinding body drawing outside its own dirty
-    // rect, which the clip silently cut a notch out of.
-    //
-    // In every ordinary case the resting term is the larger of the two, so this costs nothing.
-    const reach = Math.max(this.radius * 2.2, this.blob.maxReach * 1.2);
-    const top = Math.min(this.renderY - reach, this.renderY - this.radius * 0.7 - 60);
-    const bottom = Math.max(this.renderY + reach, ground + this.radius * 1.1);
+
+    // Measured off the outline `beginFrame` just traced, so this covers exactly what `draw` is
+    // about to paint — squash, wobble, morph and stretch included — rather than a padded guess at
+    // it. Separate spans per axis rather than one radius: a body wrapped around a wide window is a
+    // wide rectangle, and treating its half-diagonal as a radius asks the compositor to recombine
+    // several times the area actually touched.
+    let spanX = 0;
+    let spanY = 0;
+    for (let i = 0; i < this.blob.count; i++) {
+      const px = Math.abs(this.points[i * 2]);
+      const py = Math.abs(this.points[i * 2 + 1]);
+      if (px > spanX) spanX = px;
+      if (py > spanY) spanY = py;
+    }
+    // The rim is stroked 2px centred on the path, so half of it falls outside, and the edge is
+    // antialiased past that.
+    spanX += 3;
+    spanY += 3;
+
+    // A floor for what is drawn near the body but not out of the ring: the contact shadow, and the
+    // sleep marks that drift up and to the right.
+    const decoration = this.radius * 2.2;
+    spanX = Math.max(spanX, decoration);
+    spanY = Math.max(spanY, decoration);
+
+    const top = Math.min(this.renderY - spanY, this.renderY - this.radius * 0.7 - 60);
+    const bottom = Math.max(this.renderY + spanY, ground + this.radius * 1.1);
     return {
-      x: this.renderX - reach,
+      x: this.renderX - spanX,
       y: top,
-      width: reach * 2,
+      width: spanX * 2,
       height: bottom - top,
     };
   }
@@ -812,12 +844,8 @@ export class Slime {
       context.restore();
     }
 
-    // Directional stretch while flying or being dragged.
-    const speed = Math.hypot(this.trail.x, this.trail.y);
-    const stretch = Math.min(0.32, speed / 3600);
-    const stretchAngle = Math.atan2(this.trail.y, this.trail.x);
-    this.blob.outline(this.points, stretchAngle, this.grabbed ? stretch * 1.6 : stretch);
-
+    // `this.points` was traced by `beginFrame`. Retracing it here would let the two describe
+    // different shapes, which is the whole reason the dirty rect could be wrong.
     context.save();
     context.translate(this.renderX, this.renderY);
 
