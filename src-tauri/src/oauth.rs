@@ -23,6 +23,9 @@ const SCOPES: &str = "openid email https://www.googleapis.com/auth/calendar.even
 /// Refresh this far before actual expiry, so a request never starts with a token that dies mid-flight.
 const REFRESH_MARGIN_SECS: i64 = 120;
 
+/// How long to hold the loopback socket open for the browser round trip.
+const AUTH_WAIT: std::time::Duration = std::time::Duration::from_secs(180);
+
 /// The one scope without which this app can do nothing at all.
 const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events.readonly";
 
@@ -47,6 +50,13 @@ pub struct AuthState {
     /// both away each time, so no connection was ever reused and the TLS setup was redone on every
     /// poll.
     http: reqwest::Client,
+    /// Wakes a sign-in that is still waiting on the browser so a new attempt can replace it.
+    ///
+    /// The loopback wait runs for minutes, and nothing about closing the browser tab tells it to
+    /// stop — so an abandoned attempt held the flow open with the Connect button dead and no
+    /// explanation of why. Pressing Connect again now cancels the stale wait instead of being
+    /// silently refused.
+    cancel: tokio::sync::Notify,
 }
 
 impl AuthState {
@@ -139,6 +149,10 @@ pub async fn begin_google_auth(
     app: AppHandle,
     state: tauri::State<'_, AuthState>,
 ) -> Result<String, String> {
+    // Any earlier attempt still sitting on its loopback socket is abandoned now, so pressing
+    // Connect again is always a way forward and never a no-op.
+    state.cancel.notify_waiters();
+
     let client = store::load_client().ok_or("Add your Google OAuth client ID first.")?;
 
     // Port 0 lets the OS pick a free port; the redirect URI is built from whatever it gave us, so
@@ -170,12 +184,19 @@ pub async fn begin_google_auth(
         .open_url(auth_url, None::<&str>)
         .map_err(|error| format!("could not open the browser: {error}"))?;
 
-    let callback = tokio::time::timeout(
-        std::time::Duration::from_secs(300),
-        await_callback(listener),
-    )
-    .await
-    .map_err(|_| "Timed out waiting for the Google sign-in to finish.".to_string())??;
+    let callback = tokio::select! {
+        // A second Connect press means the person gave up on the first one; take over rather than
+        // making them wait out a timeout they cannot see.
+        _ = state.cancel.notified() => {
+            return Err("That sign-in was replaced by a new one.".into());
+        }
+        result = tokio::time::timeout(AUTH_WAIT, await_callback(listener)) => {
+            result.map_err(|_| {
+                "Timed out waiting for Google. Press Connect again when you are ready to                  finish in the browser."
+                    .to_string()
+            })??
+        }
+    };
 
     if callback.state != expected_state {
         // A mismatch means this response did not come from the request we just made.

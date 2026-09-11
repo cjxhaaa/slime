@@ -211,9 +211,13 @@ pub fn spawn_poller(app: AppHandle) {
                     // Previously swallowed entirely, so a broken poller was indistinguishable from
                     // an empty calendar. "Not connected" is the normal pre-setup state and is not
                     // worth repeating, but everything else is a real failure.
-                    if !error.contains("not connected") && *error != last_summary {
+                    // Deduped on the leading part only: Google's JSON body reorders its keys
+                    // between identical responses, so comparing whole strings never matched and
+                    // the same failure printed every 45 seconds forever.
+                    let key: String = error.chars().take(60).collect();
+                    if !error.contains("not connected") && key != last_summary {
                         println!("[slime] calendar poll failed: {error}");
-                        last_summary = error.clone();
+                        last_summary = key;
                     }
                 }
             }

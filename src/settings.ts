@@ -146,8 +146,12 @@ saveButton.addEventListener('click', async () => {
 });
 
 connectButton.addEventListener('click', async () => {
-  connectButton.disabled = true;
-  say('A browser window is opening — approve access there.');
+  // Deliberately left enabled. The wait can run for minutes and nothing about abandoning the
+  // browser tab ends it, so disabling this was a dead button with no explanation; pressing it
+  // again now cancels the stale attempt and starts over.
+  const previousLabel = connectButton.textContent;
+  connectButton.textContent = 'Waiting for browser…';
+  say('Finish signing in in the browser. Press Connect again to start over.');
   try {
     const account = await invoke<string>('begin_google_auth');
     say(account ? `Connected as ${account}.` : 'Connected.');
@@ -156,7 +160,7 @@ connectButton.addEventListener('click', async () => {
   } catch (error) {
     say(String(error), 'error');
   } finally {
-    connectButton.disabled = false;
+    connectButton.textContent = previousLabel;
   }
 });
 
