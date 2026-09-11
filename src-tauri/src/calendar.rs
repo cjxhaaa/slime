@@ -184,6 +184,23 @@ async fn fetch(app: &AppHandle) -> Result<Vec<Meeting>, String> {
     Ok(meetings)
 }
 
+/// Turns a fetch failure into something worth putting in a speech bubble.
+///
+/// The raw text is a status line with Google's JSON body attached, which is the right thing for a
+/// log and useless on a pet's head. These three are the cases a person can actually act on.
+fn short_reason(error: &str) -> Option<String> {
+    let reason = if error.contains("expired") || error.contains("ACCESS_TOKEN") {
+        "Calendar sign-in expired"
+    } else if error.contains("SCOPE_INSUFFICIENT") || error.contains("insufficient") {
+        "Calendar permission missing"
+    } else if error.contains("request failed:") {
+        "Can't reach Google Calendar"
+    } else {
+        "Calendar unavailable"
+    };
+    Some(reason.to_string())
+}
+
 /// Fires the reminder performance immediately, with a stand-in meeting three minutes out.
 ///
 /// Goes through the same `meeting-soon` event the poller uses, so it exercises the real path rather
@@ -252,6 +269,12 @@ pub fn spawn_poller(app: AppHandle) {
                         println!("[slime] calendar poll failed: {error}");
                         last_summary = key;
                     }
+                    // Tell the overlay, so the pet can show that it has stopped watching.
+                    // Without this a broken connection is completely silent: the reminders
+                    // simply never come, and the first sign of trouble is a missed meeting.
+                    if !error.contains("not connected") {
+                        let _ = app.emit("calendar-problem", short_reason(error));
+                    }
                 }
             }
             if let Ok(meetings) = result {
@@ -281,6 +304,7 @@ pub fn spawn_poller(app: AppHandle) {
                     .unwrap()
                     .retain(|key| live.contains(key));
 
+                let _ = app.emit("calendar-problem", Option::<String>::None);
                 let _ = app.emit("meetings", meetings);
             }
             tokio::time::sleep(std::time::Duration::from_secs(POLL_SECONDS)).await;

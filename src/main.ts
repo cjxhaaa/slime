@@ -56,6 +56,14 @@ let pressedAt = 0;
 let pressedPoint = { x: 0, y: 0 };
 
 let alertMeeting: Meeting | null = null;
+/**
+ * Why the calendar is not being read, if it is not.
+ *
+ * A broken connection used to be completely silent — the reminders just never came, and the
+ * first sign of trouble was a missed meeting. Shown on hover rather than announced, because
+ * this is a state to discover when you look, not an interruption.
+ */
+let calendarProblem: string | null = null;
 let nextMeeting: Meeting | null = null;
 
 /**
@@ -168,6 +176,10 @@ function joinAlertMeeting(): void {
 }
 
 function hoverText(): string | null {
+  // Outranks the next meeting: if the calendar cannot be read, whatever was last known about
+  // it is stale, and saying so is more use than quoting it.
+  if (calendarProblem) return `${calendarProblem}
+Right-click to open settings`;
   if (!nextMeeting) return null;
   const start = new Date(nextMeeting.start).getTime();
   const minutes = Math.round((start - Date.now()) / 60000);
@@ -560,6 +572,10 @@ async function main(): Promise<void> {
   await listen<Meeting>('meeting-soon', (event) => {
     alertMeeting = event.payload;
     slime.raiseAlert(countdownText(event.payload), joinAlertMeeting);
+  });
+
+  await listen<string | null>('calendar-problem', (event) => {
+    calendarProblem = event.payload;
   });
 
   await listen<Meeting[]>('meetings', (event) => {
