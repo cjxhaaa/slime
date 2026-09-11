@@ -310,6 +310,25 @@ Hops are spaced 1.5s apart. A hop is airborne for about 0.54s, so the original 0
 three tenths of a second on the ground — not a pulse but continuous bouncing, which reads as panic
 rather than as a reminder. Landing and visibly resting between hops is what makes it a beat.
 
+### Hovering acknowledges; it does not dismiss
+
+Hopping stops as soon as the pointer is over the pet. Reaching for it is already the gesture
+that says "I have seen this", so requiring a click to stop the flailing asked for a second
+acknowledgement of something already acknowledged - and it meant the slime was still bouncing
+around at the exact moment you were trying to aim at it.
+
+Acknowledging is not dismissing, because the meeting has not happened yet. The reminder drops to
+a `nudge` state: the same hue drained of urgency, eyes back to normal, no hopping, and one soft
+pulse every 3.2s - enough to stay in peripheral vision without asking for anything. Clicking
+still joins (or dismisses, for a meeting with no link), and it still clears itself three minutes
+after the start.
+
+This is also why a visible bubble no longer counts as "something is animating". A nudge can
+stand for minutes showing the same words, and treating the bubble's presence as motion pinned
+the render loop at full frame rate for all of it. The bubble now reports when it is *fading* and
+when its text *changes* - a countdown ticking over once a minute - and only those force a
+repaint.
+
 **Tray → Test reminder** fires the whole performance immediately through the same `meeting-soon`
 event the poller uses. Tuning the rhythm otherwise means creating a real calendar event and waiting
 out the lead time for each adjustment, and going through the real path is what would have caught the
