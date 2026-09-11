@@ -29,6 +29,13 @@
               Internal needs a Workspace organisation.
             </li>
             <li>
+              Under <strong>Data Access</strong>, press <strong>Add or remove scopes</strong> and
+              add <code>calendar.events.readonly</code> — paste it into the “manually add scopes”
+              box if the filter does not find it. An app that has not declared a scope may not be
+              offered it on the consent screen at all, which is the difference between a sign-in
+              that works and one that silently cannot read anything.
+            </li>
+            <li>
               <strong>Press “Publish app” so the status is “In production”.</strong> Publishing by
               itself asks for nothing — no website, no privacy policy, no domain ownership. Those
               belong to <em>verification</em>, which is a separate step you do not need. Do not leave

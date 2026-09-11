@@ -336,6 +336,9 @@ distributed binary would be a credential anyone could extract.
 
 1. In the Google Cloud console, create or pick a project.
 2. Enable the **Google Calendar API**.
+2b. Under **Data Access**, add the scope `calendar.events.readonly`. A scope the app has not
+   declared may not be offered on the consent screen, and the resulting sign-in succeeds while
+   being unable to read anything.
 3. On the OAuth consent screen, add your own account as a **test user**. The calendar scope is a
    sensitive one, so an app in testing mode only works for listed users.
 4. Under Credentials, create an **OAuth client ID** of type **Desktop app**. There is no redirect
