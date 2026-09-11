@@ -442,6 +442,79 @@ Two smaller deliberate choices: `open_external` refuses anything that is not `ht
 settings list renders event titles with `textContent`. Both are because a calendar invite is data
 controlled by whoever can put an event on your calendar.
 
+## Eating a window
+
+Hold the slime still over a window and it engulfs and swallows it. That is another way to close
+things, and the only one that still works once an app has stopped responding.
+
+Closing escalates in three stages, and the escalation is the animation rather than something hidden
+behind it:
+
+1. `PostMessageW(WM_CLOSE)` — the polite knock, exactly what the X button sends.
+2. Wait, polling `IsWindow` at 10 Hz for 2.5 seconds.
+3. `TerminateProcess`, and only if `IsHungAppWindow` says the app is not pumping messages.
+
+**That last gate is the whole safety argument.** The obvious implementation escalates on "the window
+is still there after n seconds", which kills an editor that is showing a *save changes?* prompt — a
+window is still there precisely because the app answered the knock and is waiting for you. So a
+responsive window that stays is `Resisting`, which is a stop, not a stage. Only a hung one is
+eligible to be killed.
+
+The force stage is also not reached on its own: `swallow` returns `Hung` and hands the decision back,
+and `force` is a separate call. `WM_CLOSE` is refusable, promptable and undoable; `TerminateProcess`
+is none of those, so it does not ride along on the gesture that began a polite close.
+
+An elevated process cannot be opened by this one, which is not worth fixing — a desk pet that can
+kill anything on the machine is a worse trade than one that visibly cannot chew through an admin
+window. That comes back as `TooTough`.
+
+### Finding the window under the slime
+
+`WindowFromPoint` is unusable here. It skips `WS_EX_TRANSPARENT` windows, which sounds like exactly
+what is wanted — except the overlay holds a click lease for the whole duration of a drag, so at the
+moment this runs it is *not* transparent and matches itself at every point on the screen.
+
+So `EnumWindows` walks top-level windows front to back and takes the first whose rect contains the
+point, skipping the invisible, the minimized, the untitled, the shell's own furniture, and anything
+DWM reports as **cloaked** — Windows 11 keeps windows on other virtual desktops alive and hidden, and
+`IsWindowVisible` says true for every one of them.
+
+**The self-exclusion is load-bearing, not defensive.** A probe of the whole screen with it removed
+returns exactly one window: the overlay, at 0,0, covering the entire work area. It is an ordinary
+visible, titled, uncloaked window and nothing else in the filter list excludes it. If the pid check
+ever stops matching, the only window the slime can reach is itself.
+
+### Two coordinate traps, both silent
+
+`GetWindowRect` includes the invisible DWM resize border — about eight pixels past the visible frame
+on three sides, so a maximized window reports as starting at x = -9. Hit-testing against that makes
+a strip of empty space either side of a window count as being over it, and the body would wrap
+around a box visibly larger than the thing it is swallowing. `DWMWA_EXTENDED_FRAME_BOUNDS` is the
+rect the window actually looks like it occupies.
+
+`GetWindowRect` also does not answer in physical pixels unconditionally: it answers in whatever
+space the calling process is DPI-virtualized into. DWM always answers in physical pixels, as does
+Tauri's `cursor_position` and the overlay's own placement, so the app is consistent — but a
+DPI-unaware process reading the same window gets it back divided by the display scale. On the 150%
+display this was developed against that is a 1.5x error with no failure anywhere: the test harness
+has no manifest, so it reported a 3840x2160 screen as 2560x1440 and a probe grid sized to the
+numbers it believed covered a quarter of the screen. Both the harness and the rect source are now
+pinned to physical pixels.
+
+### Trying it
+
+**Tray → Test devour (3s, at cursor)** waits three seconds, then targets whatever is under the
+pointer and runs the polite close, printing the target and the outcome. The delay exists because by
+the time a menu event arrives the menu has closed and the pointer is still down by the tray, so
+sampling immediately would only ever test whatever sits in the bottom corner of the screen.
+
+The force kill is deliberately not reachable from the tray. It is the irreversible half, and it
+belongs to a gesture the user is still holding, not to a menu item that can be clicked by accident.
+
+`cargo test -- --nocapture list_eatable_windows` prints every window the hunt is willing to eat.
+There is nothing to assert against a live desktop — what it is read for is the taskbar, the desktop
+or another virtual desktop's windows turning up, each of which is a filter above having failed.
+
 ## Developing it
 
 Two handles are attached to `window` for use from a devtools console:
@@ -474,6 +547,9 @@ Not built yet:
 - Drag, throw and poke are wired and typecheck, but have only been exercised through synthetic
   events — they want a few minutes of actual mouse-in-hand testing.
 - Reminder lead time is hardcoded at 5 minutes, and there is no settings control for it.
+- Eating a window has its backend and its gesture-free test path, but no gesture and no animation
+  yet: no hold-still trigger, no engulf, no burp. `IsHungAppWindow` and the force kill have not been
+  exercised against an actually hung app.
 - Multi-monitor: the overlay is pinned to the primary monitor only.
 - No autostart-on-login registration.
 - No sound.

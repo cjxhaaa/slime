@@ -1,4 +1,5 @@
 mod calendar;
+mod devour;
 mod oauth;
 mod store;
 
@@ -176,6 +177,39 @@ fn toggle_settings(app: &AppHandle) {
     });
 }
 
+/// Exercises window identification and the polite close without any of the animation.
+///
+/// The escalation to a force kill is deliberately *not* reachable from here. It is the irreversible
+/// half of the feature and it belongs to a gesture the user is still holding, not to a menu item
+/// that could be clicked by accident.
+fn test_devour(app: &AppHandle) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        println!("[slime] devour test: point at a window…");
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let Ok(at) = handle.cursor_position() else {
+            println!("[slime] devour test: no cursor position");
+            return;
+        };
+        let Some(prey) = devour::window_at(at.x as i32, at.y as i32) else {
+            println!("[slime] devour test: nothing eatable at {}, {}", at.x, at.y);
+            return;
+        };
+        println!(
+            "[slime] devour test: {} — {:?} at {},{} {}x{}{}",
+            prey.process,
+            prey.title,
+            prey.x,
+            prey.y,
+            prey.width,
+            prey.height,
+            if prey.hung { " (already hung)" } else { "" }
+        );
+        let outcome = devour::swallow(prey.hwnd).await;
+        println!("[slime] devour test: {}", devour::describe(outcome));
+    });
+}
+
 /// Puts the overlay over the monitor's work area rather than the whole monitor.
 ///
 /// The work area excludes the taskbar, which keeps the notification area — and therefore this app's
@@ -216,6 +250,9 @@ pub fn run() {
             oauth::begin_google_auth,
             oauth::disconnect_google,
             calendar::next_meetings,
+            devour::window_at,
+            devour::swallow,
+            devour::force,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -239,9 +276,22 @@ pub fn run() {
             // it doubles as the way to confirm the whole chain works after an install.
             let test_item =
                 MenuItem::with_id(app, "test-reminder", "Test reminder", true, None::<&str>)?;
+            // Aims at the cursor after a delay rather than at click time: by the time a menu event
+            // arrives the menu has closed and the pointer is still down by the tray, so sampling
+            // immediately would only ever test whatever sits in the bottom corner of the screen.
+            let devour_item = MenuItem::with_id(
+                app,
+                "test-devour",
+                "Test devour  (3s, at cursor)",
+                true,
+                None::<&str>,
+            )?;
             let quit_item =
                 MenuItem::with_id(app, "quit", "Quit Slime  (Ctrl+Alt+Shift+Q)", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&settings_item, &test_item, &quit_item])?;
+            let menu = Menu::with_items(
+                app,
+                &[&settings_item, &test_item, &devour_item, &quit_item],
+            )?;
             TrayIconBuilder::with_id("tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
@@ -249,6 +299,7 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => toggle_settings(app),
                     "test-reminder" => calendar::emit_test_reminder(app),
+                    "test-devour" => test_devour(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
