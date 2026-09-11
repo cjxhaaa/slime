@@ -7,6 +7,7 @@ export type Mood =
   | 'asleep'
   | 'surprised'
   | 'alert'
+  | 'nudge'
   | 'dragged';
 
 export interface Env {
@@ -54,10 +55,16 @@ const ASLEEP_AFTER = 95;
  */
 const AlertBounceInterval = 1.5;
 
+/** Seconds between the soft pulses of an acknowledged reminder. Slow enough to be peripheral. */
+const NudgeBreathInterval = 3.2;
+
 /** Body palette per mood. Colour is reserved for state — it is the one thing that must read instantly. */
 const PALETTE: Record<string, { core: string; edge: string; rim: string }> = {
   calm: { core: '#8ff0d4', edge: '#33c6a6', rim: '#1d9c85' },
   alert: { core: '#ffd48a', edge: '#f59b2c', rim: '#c9761a' },
+  // Acknowledged but still pending: the same hue, drained of urgency. Still clearly not "calm",
+  // because the meeting has not gone away.
+  nudge: { core: '#ffe9c4', edge: '#e8b978', rim: '#b58a4e' },
   sleep: { core: '#b9d8ee', edge: '#6fa8cd', rim: '#4d86ab' },
 };
 
@@ -93,6 +100,15 @@ export class Slime {
   private trail = { x: 0, y: 0 };
   private moodUntil = 0;
   private nextAlertBounceAt = 0;
+  /**
+   * Set once the person has visibly noticed the alert, which ends the hopping.
+   *
+   * Hovering is the acknowledgement rather than clicking: reaching for the pet is already the
+   * gesture that says "I have seen this", and it has the side benefit that the slime stops
+   * flailing exactly when you are trying to aim at it. The reminder does not go away though — it
+   * drops to something quiet, because the meeting has not happened yet.
+   */
+  private alertAcknowledged = false;
   private dragTarget = { x: 0, y: 0 };
   /**
    * The position one simulation step ago, and the position the renderer should actually draw at.
@@ -216,6 +232,11 @@ export class Slime {
    */
   get hasSlowAnimation(): boolean {
     return this.mood === 'asleep';
+  }
+
+  /** True while a reminder is still standing, acknowledged or not. */
+  get hasLiveAlert(): boolean {
+    return this.alertText !== null;
   }
 
   /** Where the body is being drawn this frame, which is what the bubble anchors to. */
@@ -342,6 +363,7 @@ export class Slime {
   raiseAlert(text: string, action: () => void): void {
     this.alertText = text;
     this.alertAction = action;
+    this.alertAcknowledged = false;
     this.mood = 'alert';
     this.moodUntil = Infinity;
     this.hopsLeft = 0;
@@ -350,6 +372,19 @@ export class Slime {
     this.blob.pulse(150);
     this.vy = -HOP_SPEED * 0.8;
     this.nextAlertBounceAt = this.clock + AlertBounceInterval;
+  }
+
+  /** Stops the hopping without dismissing the reminder. Idempotent: hovering repeatedly is normal. */
+  acknowledgeAlert(): void {
+    if (!this.alertText || this.alertAcknowledged) return;
+    this.alertAcknowledged = true;
+    // One settling squash so the transition out of bouncing is a landing, not a cut.
+    this.blob.squash(0.16);
+    this.nextAlertBounceAt = this.clock + NudgeBreathInterval;
+  }
+
+  get isAlertAcknowledged(): boolean {
+    return this.alertAcknowledged;
   }
 
   clearAlert(): void {
@@ -438,7 +473,16 @@ export class Slime {
     // interrupts the performance instead of cancelling it. The mood does change while it is held
     // and for the startle right after, and without this the reminder would never come back.
     if (this.alertText) {
-      this.mood = 'alert';
+      this.mood = this.alertAcknowledged ? 'nudge' : 'alert';
+      if (this.alertAcknowledged) {
+        // A slow breath in place. No hop, no travel — just enough motion that the pet still reads
+        // as holding something for you rather than as having forgotten it.
+        if (this.clock >= this.nextAlertBounceAt) {
+          this.blob.pulse(26);
+          this.nextAlertBounceAt = this.clock + NudgeBreathInterval;
+        }
+        return;
+      }
       // Bounce on a beat rather than continuously: a steady pulse reads as insistent, whereas
       // constant motion just reads as noise you learn to ignore.
       if (this.clock >= this.nextAlertBounceAt && this.y >= ground - 1) {
@@ -543,7 +587,9 @@ export class Slime {
     const ground = this.groundFor(this.envHeight);
     const airborne = Math.max(0, ground - this.renderY);
     const palette =
-      this.mood === 'alert'
+      this.mood === 'nudge'
+        ? PALETTE.nudge
+        : this.mood === 'alert'
         ? PALETTE.alert
         : this.mood === 'asleep' || this.mood === 'sleepy'
           ? PALETTE.sleep

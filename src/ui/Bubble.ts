@@ -29,6 +29,15 @@ export class Bubble {
    */
   private textWidth: number | null = null;
   private appear = 0;
+  /**
+   * Set when the wording changes, cleared once the caller has repainted for it.
+   *
+   * A reminder can stand for minutes showing the same words. Treating "the bubble is visible"
+   * as "something is animating" held the render loop at full frame rate for that whole time;
+   * it only actually needs repainting while it fades and on the one frame its text changes —
+   * a countdown ticking over once a minute.
+   */
+  private textDirty = false;
   visible = false;
 
   show(text: string): void {
@@ -37,6 +46,19 @@ export class Bubble {
     this.text = text;
     this.lines = text.split('\n').slice(0, 3);
     this.textWidth = null;
+    this.textDirty = true;
+  }
+
+  /** True while the fade in or out is still in progress. */
+  get isSettling(): boolean {
+    return Math.abs((this.visible ? 1 : 0) - this.appear) > 0.002;
+  }
+
+  /** Reports whether the wording changed since the last call, and clears the flag. */
+  takeTextDirty(): boolean {
+    const dirty = this.textDirty;
+    this.textDirty = false;
+    return dirty;
   }
 
   hide(): void {

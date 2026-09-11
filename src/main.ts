@@ -308,8 +308,8 @@ function frame(now: number): void {
     grabbed ||
     showingPaw ||
     paw.hasRipples() ||
-    bubble.opacity > 0.01 ||
-    alertMeeting !== null ||
+    bubble.isSettling ||
+    (alertMeeting !== null && !slime.isAlertAcknowledged) ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
   if (!engaged && !slime.isAnimating && now - lastTick < IDLE_INTERVAL_MS) {
     requestAnimationFrame(frame);
@@ -338,6 +338,10 @@ function frame(now: number): void {
   // What the bubble says, in priority order. An alert outranks everything: it is the reason this
   // app exists, and it must not be displaced by an idle greeting.
   if (alertMeeting) {
+    // Reaching for the pet is already the gesture that says "seen it", so hovering ends the
+    // hopping without dismissing the reminder — and it stops the slime flailing at the exact
+    // moment you are trying to aim at it.
+    if (cursor !== null && slime.hitTest(cursor.x, cursor.y)) slime.acknowledgeAlert();
     bubble.show(countdownText(alertMeeting));
   } else {
     const text = overBody || grabbed ? hoverText() : null;
@@ -400,7 +404,12 @@ function frame(now: number): void {
   // whatever was drawn mid-movement, because the frame that would have settled it is the first one
   // to report nothing moving.
   const animating =
-    slime.isAnimating || showPaw || paw.hasRipples() || bubble.opacity > 0.01 || alertMeeting !== null;
+    slime.isAnimating ||
+    showPaw ||
+    paw.hasRipples() ||
+    bubble.isSettling ||
+    bubble.takeTextDirty() ||
+    (alertMeeting !== null && !slime.isAlertAcknowledged);
   const shouldPaint = animating || slime.hasSlowAnimation || wasAnimating || fullRepaint;
   wasAnimating = animating;
 
