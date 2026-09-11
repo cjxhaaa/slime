@@ -53,6 +53,9 @@ It is worth having over the X button in three situations:
 - **You do not want to aim.** The X is a small target in a corner that moves with every window. The
   pet is wherever you last put it.
 
+This is the one feature that is Windows-only — reaching into another application's windows is the
+least portable thing here. See [Platforms](#platforms).
+
 ### And the rest of the time it stays out of the way
 
 Clicks pass straight through it to whatever is underneath, so it can sit anywhere on the screen
