@@ -31,6 +31,8 @@ export interface DevourRect {
  * is invisible, which is what makes a gesture this destructive safe to trigger by holding still.
  */
 const EngulfSeconds = 3;
+/** How long the slime spends hauling a buried window to the front before it starts eating. */
+const HeaveSeconds = 1;
 /** How long the body takes to peel back off, whether it ate or gave up. */
 const ReleaseSeconds = 0.45;
 
@@ -158,13 +160,18 @@ export class Slime {
   private devour: {
     hwnd: number;
     rect: DevourRect;
-    phase: 'engulfing' | 'straining';
+    phase: 'heaving' | 'engulfing' | 'straining';
+    /** Set when the heave finishes, cleared once the caller has picked it up. */
+    raisePending: boolean;
+    /** Cleared once the engulf has been started, so it is only started once. */
+    engulfPending: boolean;
     /** Set when the engulf completes, cleared once the caller has picked it up. */
     swallowPending: boolean;
     outcome: Bite | null;
     until: number;
   } | null = null;
   private readonly devourShape: Float32Array;
+  private heaveTremble = 0;
 
   private prevX = 0;
   private prevY = 0;
@@ -326,31 +333,38 @@ export class Slime {
     // it. Separate spans per axis rather than one radius: a body wrapped around a wide window is a
     // wide rectangle, and treating its half-diagonal as a radius asks the compositor to recombine
     // several times the area actually touched.
-    let spanX = 0;
-    let spanY = 0;
+    // Per side rather than per axis. The body now wraps a window from wherever it landed on it, so
+    // reaching a hundred pixels one way and two thousand the other is the normal case, and a rect
+    // sized to the larger reach in both directions asks the compositor to recombine most of the
+    // screen to redraw a body that is nowhere near it.
+    let leftSpan = 0;
+    let rightSpan = 0;
+    let topSpan = 0;
+    let bottomSpan = 0;
     for (let i = 0; i < this.blob.count; i++) {
-      const px = Math.abs(this.points[i * 2]);
-      const py = Math.abs(this.points[i * 2 + 1]);
-      if (px > spanX) spanX = px;
-      if (py > spanY) spanY = py;
+      const px = this.points[i * 2];
+      const py = this.points[i * 2 + 1];
+      if (-px > leftSpan) leftSpan = -px;
+      if (px > rightSpan) rightSpan = px;
+      if (-py > topSpan) topSpan = -py;
+      if (py > bottomSpan) bottomSpan = py;
     }
     // The rim is stroked 2px centred on the path, so half of it falls outside, and the edge is
     // antialiased past that.
-    spanX += 3;
-    spanY += 3;
-
     // A floor for what is drawn near the body but not out of the ring: the contact shadow, and the
     // sleep marks that drift up and to the right.
     const decoration = this.radius * 2.2;
-    spanX = Math.max(spanX, decoration);
-    spanY = Math.max(spanY, decoration);
+    leftSpan = Math.max(leftSpan + 3, decoration);
+    rightSpan = Math.max(rightSpan + 3, decoration);
+    topSpan = Math.max(topSpan + 3, decoration);
+    bottomSpan = Math.max(bottomSpan + 3, decoration);
 
-    const top = Math.min(this.renderY - spanY, this.renderY - this.radius * 0.7 - 60);
-    const bottom = Math.max(this.renderY + spanY, ground + this.radius * 1.1);
+    const top = Math.min(this.renderY - topSpan, this.renderY - this.radius * 0.7 - 60);
+    const bottom = Math.max(this.renderY + bottomSpan, ground + this.radius * 1.1);
     return {
-      x: this.renderX - spanX,
+      x: this.renderX - leftSpan,
       y: top,
-      width: spanX * 2,
+      width: leftSpan + rightSpan,
       height: bottom - top,
     };
   }
@@ -379,7 +393,7 @@ export class Slime {
   }
 
   /** Null unless a window is being eaten. */
-  get devourPhase(): 'engulfing' | 'straining' | null {
+  get devourPhase(): 'heaving' | 'engulfing' | 'straining' | null {
     return this.devour?.phase ?? null;
   }
 
@@ -400,13 +414,17 @@ export class Slime {
   }
 
   /**
-   * Latches onto a window and starts engulfing it.
+   * Latches onto a window.
    *
-   * The rect is in canvas CSS pixels. The body's centre moves to the middle of it while the ring
-   * morphs onto its outline, both starting now - the centre arrives well before the shape does, so
-   * the ring is still near circular through the part of the move where being off-register shows.
+   * The body stays exactly where it landed and grows outward from there. It used to slide to the
+   * middle of the window first, which put the face somewhere the user had not pointed at and made
+   * every meal look the same regardless of where it started — and on a maximized window the slide
+   * was most of the animation. Eating something starts where you put the pet.
+   *
+   * `buried` sends it through a heave first: a window that is behind other windows has to be pulled
+   * to the front before there is anything to see being eaten.
    */
-  beginDevour(hwnd: number, rect: DevourRect): void {
+  beginDevour(hwnd: number, rect: DevourRect, buried: boolean): void {
     this.grabbed = false;
     this.mood = 'devouring';
     this.vx = 0;
@@ -417,13 +435,53 @@ export class Slime {
     this.devour = {
       hwnd,
       rect,
-      phase: 'engulfing',
+      phase: buried ? 'heaving' : 'engulfing',
+      raisePending: false,
+      engulfPending: buried,
       swallowPending: false,
       outcome: null,
-      until: this.clock + EngulfSeconds,
+      until: this.clock + (buried ? HeaveSeconds : EngulfSeconds),
     };
-    Blob.rectRadii(this.devourShape, this.blob.count, rect.width / 2, rect.height / 2);
+    if (buried) {
+      // Bracing to take the weight.
+      this.blob.squash(0.3);
+    } else {
+      this.startEngulf();
+    }
+  }
+
+  /**
+   * Grows the ring out to the window's edges from wherever the body is sitting on it.
+   *
+   * The four distances are measured from the body rather than passed as half-extents, because the
+   * body is not in the middle: from a corner of a maximized window the far edge is twenty times
+   * further away than the near one, and that asymmetry is most of what makes the wrap read as this
+   * particular window rather than as a rectangle.
+   */
+  private startEngulf(): void {
+    if (!this.devour) return;
+    const rect = this.devour.rect;
+    Blob.rectRadii(
+      this.devourShape,
+      this.blob.count,
+      Math.max(1, this.x - rect.x),
+      Math.max(1, this.y - rect.y),
+      Math.max(1, rect.x + rect.width - this.x),
+      Math.max(1, rect.y + rect.height - this.y),
+    );
     this.blob.morphTo(this.devourShape, EngulfSeconds);
+  }
+
+  /**
+   * The window to pull to the front, handed over exactly once when the heave finishes.
+   *
+   * Polled for the same reason as `takeSwallowRequest`: this is reached from inside the fixed-step
+   * simulation, which runs more than once per frame, and raising a window is an async round trip.
+   */
+  takeRaiseRequest(): number | null {
+    if (!this.devour?.raisePending) return null;
+    this.devour.raisePending = false;
+    return this.devour.hwnd;
   }
 
   /**
@@ -609,19 +667,43 @@ export class Slime {
     if (this.devour) {
       // Latched on. Neither gravity nor the walls apply: the body is held against a window, and a
       // maximized one extends past every edge of the work area the overlay is sized to.
-      const centreX = this.devour.rect.x + this.devour.rect.width / 2;
-      const centreY = this.devour.rect.y + this.devour.rect.height / 2;
-      const k = Math.min(1, dt * 9);
-      this.x += (centreX - this.x) * k;
-      this.y += (centreY - this.y) * k;
+      //
+      // It also does not move. The position it was launched from is the position it eats from —
+      // see `beginDevour`.
       this.vx = 0;
       this.vy = 0;
       this.trail.x *= Math.max(0, 1 - dt * 6);
       this.trail.y *= Math.max(0, 1 - dt * 6);
-      if (this.devour.phase === 'engulfing' && this.clock >= this.devour.until) {
+
+      if (this.devour.phase === 'heaving') {
+        // Hauling the window out from under the ones on top of it. The strain is a squash that
+        // deepens and a tremble that quickens, so the second reads as effort building rather than
+        // as a pause with a wobble in it.
+        const left = Math.max(0, this.devour.until - this.clock);
+        const effort = 1 - left / HeaveSeconds;
+        this.heaveTremble -= dt;
+        if (this.heaveTremble <= 0) {
+          this.heaveTremble = 0.09 - effort * 0.05;
+          const angle = Math.random() * Math.PI * 2;
+          this.blob.poke(angle, 26 + effort * 46, 1.5);
+        }
+        if (this.clock >= this.devour.until) {
+          // It comes free. The recoil is the body letting go of the weight it was pulling against.
+          this.devour.phase = 'engulfing';
+          this.devour.until = this.clock + EngulfSeconds;
+          this.devour.raisePending = true;
+          this.blob.squash(-0.36);
+          this.blob.pulse(90);
+          if (this.devour.engulfPending) {
+            this.devour.engulfPending = false;
+            this.startEngulf();
+          }
+        }
+      } else if (this.devour.phase === 'engulfing' && this.clock >= this.devour.until) {
         this.devour.phase = 'straining';
         this.devour.swallowPending = true;
       }
+
       this.updateFace(dt, env);
       this.blob.update(dt);
       return;

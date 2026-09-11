@@ -17,6 +17,8 @@ interface Prey {
   width: number;
   height: number;
   hung: boolean;
+  /** Fraction of the window hidden behind other windows, 0 to 1. */
+  occlusion: number;
 }
 
 interface Meeting {
@@ -161,6 +163,15 @@ const DEVOUR_HOLD_MS = 2000;
 const STILL_RADIUS = 10;
 /** How far a press has to travel before it counts as pulling the slime off a meal. */
 const DEVOUR_PULL_PX = 8;
+/**
+ * How much of a window has to be buried before the slime hauls it to the front first.
+ *
+ * Not zero: a window overlapped by a couple of percent is one you can plainly see being eaten, and
+ * heaving for it would put a second of animation in front of every meal on a busy desktop. Not high
+ * either — the slime only needs one visible sliver to land on, so a window can be almost entirely
+ * hidden and still be a legal target.
+ */
+const BURIED_ENOUGH = 0.06;
 
 let stillSince = 0;
 let stillPoint = { x: 0, y: 0 };
@@ -199,7 +210,7 @@ async function tryBeginDevour(): Promise<void> {
     };
     devourTarget = prey;
     devourNote = null;
-    slime.beginDevour(prey.hwnd, rect);
+    slime.beginDevour(prey.hwnd, rect, prey.occlusion > BURIED_ENOUGH);
   } catch (error) {
     console.warn('could not look for a window to eat', error);
   } finally {
@@ -226,6 +237,27 @@ function reportBite(outcome: Bite): void {
     case 'hung':
     case 'gone':
       break;
+  }
+}
+
+/**
+ * Hauls a buried window to the front, at the moment the heave animation finishes.
+ *
+ * The result is the occlusion that is left, because the raise can fail — Windows can refuse the
+ * z-order change, and a window sitting under a topmost one stays partly buried even when it does
+ * not. Saying so is better than letting the slime eat something the user still cannot see and
+ * appear to have swallowed nothing.
+ */
+async function runRaise(hwnd: number): Promise<void> {
+  let left = 1;
+  try {
+    left = await invoke<number>('raise', { hwnd });
+  } catch (error) {
+    console.warn('could not raise the window', error);
+  }
+  if (left > BURIED_ENOUGH) {
+    const name = devourTarget?.process || 'it';
+    noteDevour(`Can't get ${name} out from under`, 3);
   }
 }
 
@@ -259,6 +291,9 @@ async function forceSwallow(): Promise<void> {
 }
 
 function devourText(now: number): string | null {
+  if (slime.devourPhase === 'heaving') {
+    return `Digging ${devourTarget?.process || 'it'} out`;
+  }
   if (slime.isChewing) {
     const name = devourTarget?.process || 'it';
     return `${name} is not responding\nClick to force it, or pull me off`;
@@ -515,7 +550,10 @@ function frame(now: number): void {
   ) {
     void tryBeginDevour();
   }
-  // Handed over exactly once, when the body finishes wrapping.
+  // Both handed over exactly once: the raise when the heave finishes, the close when the body
+  // finishes wrapping.
+  const readyToRaise = slime.takeRaiseRequest();
+  if (readyToRaise !== null) void runRaise(readyToRaise);
   const readyToSwallow = slime.takeSwallowRequest();
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
 
@@ -787,7 +825,7 @@ async function main(): Promise<void> {
   // Win32 calls that only exist inside Tauri, so in a plain browser - which is the only way to see
   // this overlay at all, since a transparent WebView2 window cannot be screenshotted - the morph
   // is otherwise untunable. `swallow` then fails and is handled, which exercises the unwind too.
-  debugHooks.__simulateDevour = (x = 240, y = 160, width = 1000, height = 640) => {
+  debugHooks.__simulateDevour = (x = 240, y = 160, width = 1000, height = 640, buried = false) => {
     devourTarget = {
       hwnd: 0,
       title: 'Simulated',
@@ -797,8 +835,9 @@ async function main(): Promise<void> {
       width,
       height,
       hung: false,
+      occlusion: buried ? 1 : 0,
     };
-    slime.beginDevour(0, { x, y, width, height });
+    slime.beginDevour(0, { x, y, width, height }, buried);
   };
 
   await refreshGeometry();

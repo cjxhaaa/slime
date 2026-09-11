@@ -196,13 +196,14 @@ fn test_devour(app: &AppHandle) {
             return;
         };
         println!(
-            "[slime] devour test: {} — {:?} at {},{} {}x{}{}",
+            "[slime] devour test: {} — {:?} at {},{} {}x{} {:.0}% buried{}",
             prey.process,
             prey.title,
             prey.x,
             prey.y,
             prey.width,
             prey.height,
+            prey.occlusion * 100.0,
             if prey.hung { " (already hung)" } else { "" }
         );
         let outcome = devour::swallow(prey.hwnd).await;
@@ -251,6 +252,7 @@ pub fn run() {
             oauth::disconnect_google,
             calendar::next_meetings,
             devour::window_at,
+            devour::raise,
             devour::swallow,
             devour::force,
         ])

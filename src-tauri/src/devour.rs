@@ -32,7 +32,7 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClassNameW, GetShellWindow, GetWindowRect, GetWindowTextW,
     GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, PostMessageW,
-    WM_CLOSE,
+    SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CLOSE,
 };
 
 /// How long a polite close is given before the window is judged to have not gone.
@@ -53,6 +53,12 @@ pub struct Prey {
     pub height: i32,
     /// Already not responding before we touched it.
     pub hung: bool,
+    /// Fraction of the window buried under other windows, 0.0 (fully exposed) to 1.0.
+    ///
+    /// The slime is only ever launched at a point it can see, so the window it lands on can still
+    /// be almost entirely behind something else. Swallowing a window that is not on screen looks
+    /// like the pet eating nothing.
+    pub occlusion: f32,
 }
 
 /// What a bite came to.
@@ -207,6 +213,120 @@ fn is_shell_furniture(class: &str) -> bool {
     )
 }
 
+const COVER_W: usize = 64;
+const COVER_H: usize = 40;
+
+/// Measures how much of a window is buried under the windows above it.
+///
+/// Walks the z-order front to back and stops at the target, so only the windows genuinely in front
+/// of it are counted, then rasterizes their intersections into a coarse grid. A grid rather than
+/// exact rectangle union area: the union of n overlapping rectangles is real work to compute
+/// exactly, and 2560 cells answers "is a meaningful part of this hidden" to well under a percent.
+struct Cover {
+    target: isize,
+    rect: RECT,
+    own_pid: u32,
+    grid: Vec<bool>,
+    found_target: bool,
+}
+
+unsafe extern "system" fn cover_proc(hwnd: HWND, param: LPARAM) -> BOOL {
+    let cover = &mut *(param.0 as *mut Cover);
+
+    if hwnd.0 as isize == cover.target {
+        // Everything after this in the walk is behind the target and cannot occlude it.
+        cover.found_target = true;
+        return false.into();
+    }
+    // No title filter here, unlike the hunt: a dropdown, a tooltip or a borderless popup covers
+    // pixels whether or not it is something the slime would ever be asked to eat.
+    if !on_screen(hwnd) || process_id(hwnd) == cover.own_pid || is_shell_furniture(&window_class(hwnd))
+    {
+        return true.into();
+    }
+    let Some(over) = visible_rect(hwnd) else {
+        return true.into();
+    };
+
+    let target = cover.rect;
+    let width = (target.right - target.left) as f64;
+    let height = (target.bottom - target.top) as f64;
+    for row in 0..COVER_H {
+        let y = target.top as f64 + (row as f64 + 0.5) * height / COVER_H as f64;
+        if y < over.top as f64 || y >= over.bottom as f64 {
+            continue;
+        }
+        for column in 0..COVER_W {
+            let x = target.left as f64 + (column as f64 + 0.5) * width / COVER_W as f64;
+            if x >= over.left as f64 && x < over.right as f64 {
+                cover.grid[row * COVER_W + column] = true;
+            }
+        }
+    }
+    true.into()
+}
+
+/// Fraction of the window hidden behind other windows, 0.0 to 1.0.
+///
+/// `skip_pid` carries the same weight here as it does in `hunt_at`, and for the same reason: the
+/// overlay is always-on-top and covers the whole work area, so it sits above every candidate and
+/// would report each one as entirely buried. A parameter rather than `std::process::id()` so that a
+/// test harness — which has its own pid, and would therefore measure the live app's overlay as an
+/// occluder of the entire desktop — can stand in for it.
+fn occlusion_of(hwnd: HWND, skip_pid: u32) -> f32 {
+    let Some(rect) = visible_rect(hwnd) else {
+        return 0.0;
+    };
+    if rect.right <= rect.left || rect.bottom <= rect.top {
+        return 0.0;
+    }
+    let mut cover = Cover {
+        target: hwnd.0 as isize,
+        rect,
+        own_pid: skip_pid,
+        grid: vec![false; COVER_W * COVER_H],
+        found_target: false,
+    };
+    let _ = unsafe { EnumWindows(Some(cover_proc), LPARAM(&mut cover as *mut Cover as isize)) };
+    if !cover.found_target {
+        // The target was never reached, so the walk says nothing about what is in front of it.
+        // Reported as buried, which is the answer that makes the caller raise it rather than eat
+        // something the user may not be able to see.
+        return 1.0;
+    }
+    let hidden = cover.grid.iter().filter(|cell| **cell).count();
+    hidden as f32 / (COVER_W * COVER_H) as f32
+}
+
+/// Pulls a window to the front of the z-order without taking focus from whatever has it.
+///
+/// `SetForegroundWindow` is the obvious call and the wrong one twice over: Windows refuses it to a
+/// process that does not already own the foreground, and stealing focus is not what is being asked
+/// for anyway — the window needs to be *visible* so the slime is seen to eat something, not active.
+/// A z-order change with `SWP_NOACTIVATE` is not subject to the foreground lock.
+///
+/// Returns the occlusion left afterwards, measured rather than assumed: the call can be refused,
+/// and a window pinned below a topmost one stays partly buried even when it succeeds.
+#[tauri::command]
+pub fn raise(hwnd: isize) -> f32 {
+    if !alive(hwnd) {
+        return 1.0;
+    }
+    let target = hwnd_from(hwnd);
+    let _ = unsafe {
+        SetWindowPos(
+            target,
+            Some(HWND_TOP),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
+    };
+    occlusion_of(target, std::process::id())
+}
+
 struct Hunt {
     x: i32,
     y: i32,
@@ -261,6 +381,7 @@ unsafe extern "system" fn hunt_proc(hwnd: HWND, param: LPARAM) -> BOOL {
         width: rect.right - rect.left,
         height: rect.bottom - rect.top,
         hung: IsHungAppWindow(hwnd).as_bool(),
+        occlusion: occlusion_of(hwnd, hunt.own_pid),
     });
     false.into() // stop at the first, topmost hit
 }
@@ -486,13 +607,14 @@ mod tests {
                 }
                 seen.push(prey.hwnd);
                 println!(
-                    "{:>16}  {:<28.28}  {:>5},{:<5} {:>5}x{:<5}{}",
+                    "{:>16}  {:<26.26}  {:>5},{:<5} {:>5}x{:<5}  {:>3.0}% buried{}",
                     prey.process,
                     prey.title,
                     prey.x,
                     prey.y,
                     prey.width,
                     prey.height,
+                    prey.occlusion * 100.0,
                     if prey.hung { "  HUNG" } else { "" }
                 );
             }

@@ -594,6 +594,70 @@ Both branches now answer as soon as the answer is known rather than at the deadl
 merely busy, and sitting out the rest of the grace period only delays telling the user something
 that is already true.
 
+### Hauling a buried window out first
+
+The slime only needs one visible sliver to land on, so the window it targets can be almost entirely
+behind other windows — measured on a real desktop, the four eatable windows were 0%, 33%, 65% and
+92% buried. Swallowing the last of those would look like the pet eating nothing.
+
+So the hunt reports occlusion along with the window: the z-order is walked front to back, stopping
+at the target, and the windows genuinely in front of it are rasterized into a 64x40 grid over its
+rect. A grid rather than an exact rectangle union, because the union area of n overlapping rectangles
+is real work and 2560 cells answers "is a meaningful part of this hidden" to well under a percent.
+
+Above 6% the slime spends a second visibly hauling before it starts eating, and the window comes to
+the front as the strain peaks. Not zero, because a window overlapped by a sliver is one you can
+plainly see being eaten and heaving for it would put a second of animation in front of every meal.
+
+`SetForegroundWindow` is the obvious call to raise it and the wrong one twice over: Windows refuses
+it to a process that does not already own the foreground, and stealing focus is not what is wanted
+anyway — the window needs to be *visible*, not active. `SetWindowPos(HWND_TOP, SWP_NOACTIVATE)` is a
+z-order change and is not subject to the foreground lock. The occlusion is then measured again
+rather than assumed, because the call can be refused and a window pinned under a topmost one stays
+buried even when it succeeds; if it is still buried the pet says so instead of pretending.
+
+The self-exclusion in that measurement is load-bearing for the same reason it is in the hunt, and it
+bites harder: the overlay is always-on-top and covers the whole work area, so counting it reports
+**every window on the desktop as 100% buried**. That is what the smoke test printed the moment a
+copy of the app was running alongside it.
+
+### Wrapping from where it landed, not from the middle
+
+The body used to slide to the centre of the window before wrapping it. That put the face somewhere
+the user had not pointed at, made every meal look the same regardless of where it started, and on a
+maximized window the slide was most of the animation. It now grows from wherever it was sitting, so
+the four distances to the window's edges are measured from the body rather than passed as
+half-extents — from near a corner the far edge can be twenty times further away than the near one,
+and that asymmetry is most of what makes a wrap read as *this* window.
+
+### Why the wrap wobbles
+
+Moving the ring's rest radii on a single eased clock is what made the engulf read as a rectangle
+being scaled. Three things fix it, and all three are physics rather than keyframes:
+
+- **Staggered arrival.** Points with less ground to cover finish early and the furthest corner lands
+  last, so the shape spreads from the near edge like something being poured. Everything still
+  completes on time, because that duration is a promise: it is the window in which pulling the slime
+  off still calls the meal off.
+- **Membrane lag.** The surface is dragged behind the shape it is being pulled onto by injecting
+  into the ring's own velocity, so the existing springs and neighbour coupling carry it around the
+  ring as a wave instead of it being a decorative wobble laid on top.
+- **A slap on arrival.** Without it the wrap ends dead still: a smoothstep ramp brings its own
+  velocity to zero, so a surface driven only by the lag is gently set down and rings not at all.
+  Each point is kicked outward the instant it reaches its edge.
+
+Both are bounded as a fraction of the local radius rather than in pixels, because one ring spans
+both ends of that scale at once — wrapped from near a corner, the near edge is sixty pixels away and
+the far one seventeen hundred. A pixel budget generous enough to show on the far side turns the near
+side inside out; one safe for the near side is invisible on the far.
+
+The ring's standing damping had to be relaxed while it settles, too. It is tuned for a small blob
+taking a poke, where a lingering wobble would read as instability, and at that setting the arrival
+wobble was gone inside a third of a second — under one full oscillation, so it landed as a single
+bounce. Held loose, the same slap rings three or four times over about a second. Measured on a
+1600x900 window: sag peaks at 10% of the local radius, and the wobble decays 92 → 76 → 56 → 37 → 22
+→ 8 → 0 px over 0.95s. The relief lapses on its own, so nothing else the slime does inherits it.
+
 ### Finding the window under the slime
 
 `WindowFromPoint` is unusable here. It skips `WS_EX_TRANSPARENT` windows, which sounds like exactly
