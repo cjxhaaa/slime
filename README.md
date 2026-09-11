@@ -396,8 +396,11 @@ Three ways out, in order of preference:
 1. **Make it Internal.** An Internal app is exempt from the 7-day expiry, the 100-user cap and
    verification, and needs none of those URLs. It requires the Cloud project to live in a
    Workspace organisation, so it is only available if you have one.
-2. **Host two static pages.** GitHub Pages is enough: a homepage and a privacy policy on the same
-   domain, with that domain added under Authorized domains. Publish then unblocks permanently.
+2. **Host the pages in `docs/`.** Google wants three URLs, not two: a homepage, a privacy
+   policy *and* terms of service, all on one domain that is listed under Authorized domains.
+   `docs/` contains all three, written to match what this app actually does. Serve that
+   directory with GitHub Pages (Settings > Pages > main branch, /docs) and fill the URLs in.
+   Publish then unblocks permanently.
 3. **Stay in Testing and reconnect weekly.** Nothing to set up. The app detects this case
    specifically and names it, rather than failing silently.
 

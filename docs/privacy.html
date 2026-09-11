@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slime — Privacy Policy</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="lede">
+        Slime is a desktop application that runs entirely on your own computer. It has no server,
+        and it sends your data nowhere.
+      </p>
+
+      <h2>What Slime accesses</h2>
+      <p>
+        With your permission, Slime reads your Google Calendar events through the Google Calendar
+        API, using the single scope
+        <code>https://www.googleapis.com/auth/calendar.events.readonly</code>.
+      </p>
+      <p>From each upcoming event it uses:</p>
+      <ul>
+        <li>the event title, to name the reminder;</li>
+        <li>the start time, to decide when to remind you and to count down;</li>
+        <li>
+          the video conferencing link, if the event has one, so that clicking the reminder can open
+          it.
+        </li>
+      </ul>
+      <p>
+        The scope is read-only. Slime cannot create, modify or delete calendar entries, and it
+        requests no access to email, contacts, files or any other Google service.
+      </p>
+
+      <h2>Where your data goes</h2>
+      <ul>
+        <li>
+          <strong>Nowhere.</strong> Calendar data is requested by the application on your computer
+          directly from Google, held in memory to draw the reminder, and discarded. It is not
+          written to disk, not logged, and not transmitted to the developer or to any third party.
+        </li>
+        <li>
+          There is no Slime account, no backend service, no analytics, no telemetry, no crash
+          reporting and no advertising.
+        </li>
+        <li>
+          The only network destinations the application contacts are Google's own endpoints
+          (<code>accounts.google.com</code>, <code>oauth2.googleapis.com</code>,
+          <code>openidconnect.googleapis.com</code> and <code>www.googleapis.com</code>), plus any
+          meeting link you click, which is handed to your default browser.
+        </li>
+      </ul>
+
+      <h2>What is stored, and where</h2>
+      <p>
+        Slime stores your Google sign-in tokens, and the OAuth client credentials it was built with,
+        in the <strong>Windows Credential Manager</strong> under the name
+        <code>com.slime.desk</code>. They stay on your machine, protected by your Windows user
+        account. No calendar content is stored.
+      </p>
+
+      <h2>Revoking access</h2>
+      <p>Two independent ways, either of which is sufficient:</p>
+      <ul>
+        <li>
+          In Slime, open Settings and press <strong>Disconnect</strong>. The stored tokens are
+          deleted immediately.
+        </li>
+        <li>
+          At
+          <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>,
+          remove Slime's access. That revokes the tokens at Google's end as well.
+        </li>
+      </ul>
+      <p>
+        Uninstalling the application leaves nothing behind but the credential entry above, which you
+        can delete from Windows Credential Manager.
+      </p>
+
+      <h2>Children</h2>
+      <p>Slime is a utility for calendar owners and is not directed at children.</p>
+
+      <h2>Changes</h2>
+      <p>If this policy changes, the updated version will be published at this address.</p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about this policy, or about what the application does:
+        <a href="mailto:cjxhaaa@gmail.com">cjxhaaa@gmail.com</a>.
+      </p>
+
+      <footer>
+        <a href="./">Home</a><a href="./privacy.html">Privacy</a><a href="./terms.html">Terms</a>
+        <div style="margin-top: 10px">
+          Contact: <a href="mailto:cjxhaaa@gmail.com">cjxhaaa@gmail.com</a>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>

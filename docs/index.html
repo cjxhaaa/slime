@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slime — a desk pet that reminds you about meetings</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <radialGradient id="g" cx="35%" cy="30%" r="75%">
+            <stop offset="0" stop-color="#8ff0d4" />
+            <stop offset="1" stop-color="#33c6a6" />
+          </radialGradient>
+        </defs>
+        <path
+          d="M32 6c14 0 24 11 24 24 0 16-11 26-24 26S8 46 8 30C8 17 18 6 32 6z"
+          fill="url(#g)"
+          stroke="#1d9c85"
+          stroke-width="2"
+        />
+        <ellipse cx="24" cy="30" rx="3" ry="4" fill="#12332e" />
+        <ellipse cx="40" cy="30" rx="3" ry="4" fill="#12332e" />
+        <path d="M27 41a6 6 0 0 0 10 0" fill="none" stroke="#12332e" stroke-width="2.4" stroke-linecap="round" />
+      </svg>
+
+      <h1>Slime</h1>
+      <p class="lede">
+        A small desk pet for Windows that sits on top of your screen and gets agitated a few
+        minutes before a meeting starts.
+      </p>
+
+      <h2>What it does</h2>
+      <ul>
+        <li>
+          Lives as a transparent always-on-top overlay, so it shares the desktop rather than
+          occupying a window. Clicks pass straight through it except where the pet actually is.
+        </li>
+        <li>
+          Watches your Google Calendar for upcoming events. About five minutes before one starts it
+          swells, turns amber and bounces on a slow beat, with a speech bubble showing the meeting
+          name and a live countdown.
+        </li>
+        <li>
+          Clicking it opens the meeting's video link. Hovering it is enough to acknowledge the
+          reminder — the bouncing stops, and a quiet version stays up until the meeting is under way.
+        </li>
+        <li>
+          You can drag it around and throw it. The body is a soft-body physics simulation rather than
+          a sprite sheet, so it squashes on landing and stretches when flung.
+        </li>
+        <li>It falls asleep when left alone, and the render loop stands down with it.</li>
+      </ul>
+
+      <h2>Google Calendar access</h2>
+      <p>
+        Slime asks for one permission:
+        <code>https://www.googleapis.com/auth/calendar.events.readonly</code> — read-only access to
+        calendar events. It cannot create, edit or delete anything on your calendar, and it asks for
+        nothing else.
+      </p>
+      <p>
+        It reads three things from each upcoming event: the title, the start time, and the video
+        conferencing link if there is one. That is what a reminder is made of.
+      </p>
+
+      <div class="note">
+        Everything runs on your own machine. There is no Slime server, no account to create, and no
+        copy of your calendar anywhere but in the memory of the running app. The
+        <a href="./privacy.html">privacy policy</a> has the specifics.
+      </div>
+
+      <h2>Requirements</h2>
+      <ul>
+        <li>Windows 10 or 11 — it uses the WebView2 runtime that Windows already ships</li>
+        <li>A Google account with a calendar</li>
+      </ul>
+
+      <footer>
+        <a href="./">Home</a><a href="./privacy.html">Privacy</a><a href="./terms.html">Terms</a>
+        <div style="margin-top: 10px">
+          Contact: <a href="mailto:cjxhaaa@gmail.com">cjxhaaa@gmail.com</a>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>

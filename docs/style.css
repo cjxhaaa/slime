@@ -1,0 +1,101 @@
+/* Shared by the three pages Google requires for an external production OAuth app. */
+:root {
+  color-scheme: light dark;
+  --bg: #faf9f7;
+  --panel: #ffffff;
+  --ink: #14201d;
+  --muted: #5d6b66;
+  --line: #e6e4e0;
+  --accent: #1d9c85;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161a;
+    --panel: #1a1f24;
+    --ink: #e8ecea;
+    --muted: #98a5a0;
+    --line: #2a3138;
+    --accent: #4fd6b8;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+main {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 48px 24px 72px;
+}
+
+.mark {
+  width: 56px;
+  height: 56px;
+}
+
+h1 {
+  font-size: 30px;
+  margin: 18px 0 6px;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: 18px;
+  margin: 34px 0 10px;
+}
+
+.lede {
+  color: var(--muted);
+  font-size: 18px;
+  margin: 0 0 28px;
+}
+
+a {
+  color: var(--accent);
+}
+
+ul {
+  padding-left: 22px;
+}
+
+li {
+  margin: 7px 0;
+}
+
+.note {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 24px 0;
+}
+
+code {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+  word-break: break-all;
+}
+
+footer {
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+footer a {
+  margin-right: 16px;
+}
