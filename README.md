@@ -24,11 +24,22 @@ npm install
 npm run tauri dev
 ```
 
-To build an installer:
+To build an installer to actually give someone:
 
 ```bash
-npm run tauri build
+powershell -ExecutionPolicy Bypass -File scripts/build-with-google.ps1
 ```
+
+That is the one to use, not a bare `npm run tauri build`. A plain build compiles without the Google
+credentials, and `option_env!` resolves a missing variable to `None` *silently* — so it succeeds, it
+runs, and the first thing the person who installs it sees is a form asking for a client ID and
+secret they have no way to obtain. The script bakes the client in and the app just shows Connect.
+See [making it a one-click Connect](#making-it-a-one-click-connect) for what it is doing and why it
+touches a source file first.
+
+The installer lands in `src-tauri/target/release/bundle/nsis/`. It is unsigned, so Windows
+SmartScreen shows "unknown publisher" on first run — More info -> Run anyway. Signing that away
+needs a code-signing certificate, which is a yearly cost and has not been worth it for two users.
 
 ## How the overlay works
 
