@@ -130,13 +130,13 @@ async function loadMeetings(): Promise<void> {
 saveButton.addEventListener('click', async () => {
   saveButton.disabled = true;
   try {
-    await invoke('save_google_client', {
+    const outcome = await invoke<string>('save_google_client', {
       clientId: clientId.value,
       clientSecret: clientSecret.value,
     });
-    // Never echoed back into the field afterwards — the value now lives in the OS credential store.
+    // Never echoed back into the field afterwards: the value now lives in the OS credential store.
     clientSecret.value = '';
-    say('Client saved. Now press Connect Google.');
+    say(outcome);
     await refreshStatus();
   } catch (error) {
     say(String(error), 'error');

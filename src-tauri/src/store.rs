@@ -86,8 +86,20 @@ pub fn load_client() -> Option<GoogleClient> {
     load(CLIENT_ACCOUNT).or_else(built_in_client)
 }
 
-pub fn save_client(client: &GoogleClient) -> Result<(), String> {
-    save(CLIENT_ACCOUNT, client)
+/// Stores the OAuth client, dropping any tokens that belonged to a different one.
+///
+/// Tokens are issued against a specific client id, so keeping them across a client change leaves
+/// the app looking connected while every refresh fails. Returns whether the tokens were discarded,
+/// so the caller can say so rather than letting the person discover it later.
+pub fn save_client(client: &GoogleClient) -> Result<bool, String> {
+    let replaced = load_client()
+        .map(|existing| existing.client_id != client.client_id)
+        .unwrap_or(false);
+    save(CLIENT_ACCOUNT, client)?;
+    if replaced {
+        clear_tokens();
+    }
+    Ok(replaced)
 }
 
 pub fn load_tokens() -> Option<Tokens> {

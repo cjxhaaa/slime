@@ -105,15 +105,26 @@ pub fn google_config_status() -> ConfigStatus {
 }
 
 #[tauri::command]
-pub fn save_google_client(client_id: String, client_secret: String) -> Result<(), String> {
+pub fn save_google_client(
+    client_id: String,
+    client_secret: String,
+    state: tauri::State<'_, AuthState>,
+) -> Result<String, String> {
     let client_id = client_id.trim().to_string();
     if client_id.is_empty() {
         return Err("Client ID is required.".into());
     }
-    store::save_client(&GoogleClient {
+    let replaced = store::save_client(&GoogleClient {
         client_id,
         client_secret: client_secret.trim().to_string(),
-    })
+    })?;
+    if replaced {
+        // The in-memory copy has to go too, or the old token keeps being served until restart.
+        state.set_tokens(None);
+        return Ok("Client saved. The previous sign-in was for a different client, so it was              cleared - press Connect to sign in again."
+            .into());
+    }
+    Ok("Client saved. Now press Connect Google.".into())
 }
 
 #[tauri::command]
