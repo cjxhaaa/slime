@@ -1,0 +1,4 @@
+# Shell scripts must keep LF, or they fail on the very platforms they exist for: with autocrlf on,
+# the shebang checks out as "#!/usr/bin/env bash<CR>" and the kernel looks for an interpreter with
+# a carriage return in its name. The error it gives ("bad interpreter") names the wrong problem.
+*.sh text eol=lf

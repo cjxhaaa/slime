@@ -25,6 +25,11 @@ sha2 = "0.10"
 base64 = "0.22"
 rand = "0.8"
 urlencoding = "2"
+
+# The credential store is the one dependency with no portable backend: each platform has its own
+# and `keyring` makes you name it. Picking none compiles to a store that fails at runtime, so these
+# are split by target rather than left to a default.
+[target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 # Pinned to the version tauri already pulls in, so this adds features rather than a second copy.
 windows = { version = "0.61", features = [
@@ -34,6 +39,15 @@ windows = { version = "0.61", features = [
     "Win32_UI_HiDpi",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+# Secret Service over D-Bus, which is what gnome-keyring and kwallet both implement. `linux-native`
+# would be the kernel keyring instead — it needs no daemon, but it does not survive a reboot, and a
+# refresh token that evaporates on restart is worse than one that needs a keyring unlocked.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
 [profile.release]
 codegen-units = 1

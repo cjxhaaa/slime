@@ -177,6 +177,14 @@ let stillSince = 0;
 let stillPoint = { x: 0, y: 0 };
 /** True while a `window_at` call is in flight, so the frame loop does not stack them up. */
 let askingForPrey = false;
+/**
+ * Whether the backend can see other applications' windows at all — false on macOS and Linux.
+ *
+ * Optimistic until told otherwise, so that a failed query leaves the feature on rather than
+ * silently killing it on the one platform where it works. Being wrong in this direction costs a
+ * round trip that answers `null`, which is a case the meal already handles.
+ */
+let devourSupported = true;
 /** What is being eaten, for the bubble. Kept here rather than in the slime, which does not read. */
 let devourTarget: Prey | null = null;
 let devourNote: { text: string; until: number } | null = null;
@@ -543,6 +551,7 @@ function frame(now: number): void {
   // Holding the slime still over a window starts a meal. Measured from the last time the hand
   // moved appreciably, so this fires on stillness rather than on elapsed grab time.
   if (
+    devourSupported &&
     grabbed &&
     !askingForPrey &&
     slime.devourPhase === null &&
@@ -803,6 +812,14 @@ async function main(): Promise<void> {
   // slime should still be there, just less aware of its surroundings.
   wirePointer();
   requestAnimationFrame(frame);
+
+  // Asked once, and not awaited before the loop starts: holding the slime still for two seconds is
+  // the earliest this can matter, which is far longer than a local IPC call.
+  void invoke<boolean>('devour_supported')
+    .then((supported) => {
+      devourSupported = supported;
+    })
+    .catch(() => {});
 
 
   const debugHooks = window as unknown as Record<string, unknown>;

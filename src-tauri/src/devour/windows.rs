@@ -1,7 +1,4 @@
-//! Eating a window.
-//!
-//! Holding the slime still over a window makes it engulf and swallow that window — an alternative
-//! way to close things, and the only one that still works when an app has stopped responding.
+//! Eating a window on Windows.
 //!
 //! Closing is escalated in three stages, and the stages are visible in the animation rather than
 //! hidden behind it: `WM_CLOSE` is a polite knock, and a responsive app that puts up a "save
@@ -19,7 +16,6 @@
 use std::ffi::c_void;
 use std::time::Duration;
 
-use serde::Serialize;
 use windows::core::{BOOL, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
@@ -35,62 +31,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CLOSE,
 };
 
+use super::{Bite, Prey};
+
+pub const SUPPORTED: bool = true;
+
 /// How long a polite close is given before the window is judged to have not gone.
 const CLOSE_GRACE: Duration = Duration::from_millis(2500);
 const CLOSE_POLL: Duration = Duration::from_millis(100);
-
-/// A window the slime could eat. `hwnd` crosses the IPC boundary as an integer because a raw
-/// handle is neither `Send` nor meaningful to the frontend; it is only ever handed straight back.
-#[derive(Clone, Serialize)]
-pub struct Prey {
-    pub hwnd: isize,
-    pub title: String,
-    pub process: String,
-    /// Screen rect in physical pixels — what the body has to deform around.
-    pub x: i32,
-    pub y: i32,
-    pub width: i32,
-    pub height: i32,
-    /// Already not responding before we touched it.
-    pub hung: bool,
-    /// Fraction of the window buried under other windows, 0.0 (fully exposed) to 1.0.
-    ///
-    /// The slime is only ever launched at a point it can see, so the window it lands on can still
-    /// be almost entirely behind something else. Swallowing a window that is not on screen looks
-    /// like the pet eating nothing.
-    pub occlusion: f32,
-}
-
-/// What a bite came to.
-#[derive(Clone, Copy, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Bite {
-    /// It went. A clean meal.
-    Closed,
-    /// Still there and still pumping messages — it is asking the user something, so it is theirs
-    /// to answer, not ours to kill.
-    Resisting,
-    /// Still there and not responding. Eligible for `force`, and nothing else is.
-    Hung,
-    /// Terminated.
-    Killed,
-    /// The process refused to open — almost always because it runs elevated and this does not.
-    TooTough,
-    /// The window disappeared on its own between being targeted and being bitten.
-    Gone,
-}
-
-/// One line per outcome, for the console during development and for the pet's bubble later.
-pub fn describe(bite: Bite) -> &'static str {
-    match bite {
-        Bite::Closed => "closed cleanly",
-        Bite::Resisting => "still up and responding — it is asking you something",
-        Bite::Hung => "not responding; force is available",
-        Bite::Killed => "force killed",
-        Bite::TooTough => "could not be killed (elevated?)",
-        Bite::Gone => "already gone",
-    }
-}
 
 fn hwnd_from(raw: isize) -> HWND {
     HWND(raw as *mut c_void)
@@ -307,7 +254,6 @@ fn occlusion_of(hwnd: HWND, skip_pid: u32) -> f32 {
 ///
 /// Returns the occlusion left afterwards, measured rather than assumed: the call can be refused,
 /// and a window pinned below a topmost one stays partly buried even when it succeeds.
-#[tauri::command]
 pub fn raise(hwnd: isize) -> f32 {
     if !alive(hwnd) {
         return 1.0;
@@ -387,7 +333,6 @@ unsafe extern "system" fn hunt_proc(hwnd: HWND, param: LPARAM) -> BOOL {
 }
 
 /// The topmost eatable window at a screen point, in physical pixels.
-#[tauri::command]
 pub fn window_at(x: i32, y: i32) -> Option<Prey> {
     hunt_at(x, y, std::process::id())
 }
@@ -455,7 +400,6 @@ fn post_close(raw: isize) -> bool {
 }
 
 /// The polite knock, then a wait. Never escalates on its own.
-#[tauri::command]
 pub async fn swallow(hwnd: isize) -> Bite {
     if !visibly_there(hwnd) {
         return Bite::Gone;
@@ -507,7 +451,6 @@ pub async fn swallow(hwnd: isize) -> Bite {
 /// The check is repeated here rather than trusted from the caller: this is the irreversible half of
 /// the feature, and the frontend making the call has just spent two seconds animating, which is
 /// long enough for an app to have recovered and put a dialog up.
-#[tauri::command]
 pub fn force(hwnd: isize) -> Bite {
     if !alive(hwnd) {
         return Bite::Gone;

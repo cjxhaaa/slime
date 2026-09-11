@@ -69,6 +69,11 @@ already ships, so it idles at roughly a third of what an Electron build of the s
 Everything a desk pet needs — a transparent always-on-top window, click-through, a tray icon — is
 native to it, and the Rust side is where the OAuth loopback listener belongs anyway.
 
+Using the system webview means the renderer is not the same engine everywhere: WebView2 on Windows,
+WKWebView on macOS, WebKitGTK on Linux. That mostly does not matter for Canvas 2D, but the repaint
+tuning below was measured against DWM compositing a layered window, and nothing says those numbers
+carry.
+
 ## Running it
 
 ```bash
@@ -82,6 +87,12 @@ To build an installer to actually give someone:
 powershell -ExecutionPolicy Bypass -File scripts/build-with-google.ps1
 ```
 
+On macOS and Linux, the same script:
+
+```bash
+./scripts/build-with-google.sh
+```
+
 That is the one to use, not a bare `npm run tauri build`. A plain build compiles without the Google
 credentials, and `option_env!` resolves a missing variable to `None` *silently* — so it succeeds, it
 runs, and the first thing the person who installs it sees is a form asking for a client ID and
@@ -89,9 +100,68 @@ secret they have no way to obtain. The script bakes the client in and the app ju
 See [making it a one-click Connect](#making-it-a-one-click-connect) for what it is doing and why it
 touches a source file first.
 
-The installer lands in `src-tauri/target/release/bundle/nsis/`. It is unsigned, so Windows
-SmartScreen shows "unknown publisher" on first run — More info -> Run anyway. Signing that away
-needs a code-signing certificate, which is a yearly cost and has not been worth it for two users.
+The installer lands in `src-tauri/target/release/bundle/nsis/`; on macOS and Linux the `.dmg`,
+`.deb` and `.AppImage` land beside it and the shell script lists whichever it produced. Nothing is
+signed, so Windows SmartScreen shows "unknown publisher" on first run — More info -> Run anyway —
+and macOS Gatekeeper refuses an unsigned `.app` outright until it is opened once from the context
+menu, or cleared with `xattr -dr com.apple.quarantine`. Signing either away needs a paid certificate
+(and on macOS an Apple Developer membership), which has not been worth it for two users.
+
+## Platforms
+
+Windows is what this was built on and the only place it has been run. The macOS and Linux targets
+build-configure cleanly and the dependency graph resolves for both — `cargo tree` picks up Keychain
+on macOS and Secret Service on Linux — but neither has been **compiled or run**. Treat them as
+untested rather than supported.
+
+|                                   | Windows            | macOS      | Linux / X11    | Linux / Wayland |
+| --------------------------------- | ------------------ | ---------- | -------------- | --------------- |
+| Transparent always-on-top overlay  | yes                | yes        | yes            | **no**          |
+| Click-through                      | yes                | yes        | yes            | n/a             |
+| Cursor tracking                    | yes                | yes        | yes            | **no**          |
+| Tray icon                          | yes                | yes        | usually        | usually         |
+| Credential store                   | Credential Manager | Keychain   | Secret Service | Secret Service  |
+| Eating a window                    | yes                | **no**     | **no**         | never           |
+
+### Wayland is not a target
+
+Two of the three things the overlay is made of are unavailable to a Wayland client by design rather
+than by omission. A client cannot position its own window in screen coordinates or ask to stay on
+top — that needs `wlr-layer-shell`, which tao does not expose and GNOME does not implement — and it
+cannot read the global pointer position at all. Eyes that follow your cursor and "which window is
+under the slime" both hang off the second one.
+
+Run it in an X11 session. There is no partial Wayland mode worth shipping, and no amount of work
+inside this repo changes that.
+
+### Eating a window is Windows-only
+
+The feature is behind a platform backend (`src-tauri/src/devour/`). Windows is implemented; macOS
+and Linux get a stub that reports no prey, which makes the feature *absent* rather than broken —
+`window_at` returning nothing is a state the frontend already hits every time the slime is over bare
+desktop. The frontend asks `devour_supported` once at startup and stops probing.
+
+`devour/unsupported.rs` carries the map for implementing the real backends: X11 has a designed
+equivalent for nearly all of it via EWMH, including `_NET_WM_PING` for the hung check that gates the
+force kill. macOS does not — it has no public "is this app hung" call, and reading window titles
+needs Screen Recording consent while closing a window needs Accessibility consent. **Do not ship the
+force stage on macOS until that gate is rebuilt**; it is the only thing standing between this
+feature and killing an editor with an unsaved-work dialog open.
+
+### Linux build prerequisites
+
+On top of the usual Tauri set (`libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`,
+`libgtk-3-dev`, `librsvg2-dev`), two more earn their place here:
+
+- `libdbus-1-dev` — the credential store talks to Secret Service over D-Bus. The kernel keyring
+  (`linux-native`) would need no daemon, but it does not survive a reboot, and a refresh token that
+  evaporates on restart is worse than one that needs a keyring unlocked.
+- `libayatana-appindicator3-dev` — the tray. A stock GNOME session does not show one without an
+  extension, so tray creation is treated as best-effort: it is logged and skipped rather than
+  aborting startup, and `Ctrl+Alt+Shift+Q` is the exit that does not depend on it.
+
+At runtime the credential store needs a Secret Service provider actually running — gnome-keyring or
+kwallet. Without one, connecting a Google account fails at the point of saving the tokens.
 
 ## How the overlay works
 
@@ -785,8 +855,8 @@ calls fail there and are handled, and everything visual behaves the same.
 
 ## Status
 
-Verified: the Rust side compiles clean, TypeScript typechecks, the production bundle builds, and the
-app runs at about 69 MB resident. The slime renders and simulates, tracks the cursor, and the full
+Verified **on Windows**: the Rust side compiles clean, TypeScript typechecks, the production bundle
+builds, and the app runs at about 69 MB resident. The slime renders and simulates, tracks the cursor, and the full
 reminder performance was confirmed visually — amber body, wide eyes, airborne with the contact
 shadow shrinking away, speech bubble anchored to it.
 
@@ -800,9 +870,17 @@ Not built yet:
 - Drag, throw and poke are wired and typecheck, but have only been exercised through synthetic
   events — they want a few minutes of actual mouse-in-hand testing.
 - Reminder lead time is hardcoded at 5 minutes, and there is no settings control for it.
-- Eating a window is complete and typechecks, and the engulf, the abort and the unwind were
-  confirmed visually. Not yet exercised with a mouse in hand, and `IsHungAppWindow`, the force kill
-  and the `Resisting` path have never been run against a real hung app or a real save prompt.
+- Eating a window is complete and typechecks **on Windows**, and the engulf, the abort and the
+  unwind were confirmed visually. Not yet exercised with a mouse in hand, and `IsHungAppWindow`, the
+  force kill and the `Resisting` path have never been run against a real hung app or a real save
+  prompt. macOS and Linux have no backend for it at all — see [Platforms](#platforms).
+- macOS and Linux are configured but unbuilt. The platform-specific dependencies resolve for both
+  targets and nothing Windows-only is reachable from their build, but neither has been compiled,
+  bundled or run, so every runtime claim about them is inference. The first things to distrust are
+  the ones with no cross-platform equivalent to fall back on: whether `work_area()` excludes the
+  macOS menu bar and Dock and the Linux panels, whether the always-on-top overlay actually floats
+  above other applications' windows on each, and whether the repaint tuning still holds under
+  WKWebView and WebKitGTK instead of DWM.
 - Multi-monitor: the overlay is pinned to the primary monitor only.
 - No autostart-on-login registration.
 - No sound.

@@ -183,6 +183,10 @@ fn toggle_settings(app: &AppHandle) {
 /// half of the feature and it belongs to a gesture the user is still holding, not to a menu item
 /// that could be clicked by accident.
 fn test_devour(app: &AppHandle) {
+    if !devour::devour_supported() {
+        println!("[slime] devour test: no window backend on this platform");
+        return;
+    }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         println!("[slime] devour test: point at a window…");
@@ -251,6 +255,7 @@ pub fn run() {
             oauth::begin_google_auth,
             oauth::disconnect_google,
             calendar::next_meetings,
+            devour::devour_supported,
             devour::window_at,
             devour::raise,
             devour::swallow,
@@ -258,6 +263,13 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // The macOS half of `skipTaskbar`, which does nothing there. Without this the pet gets
+            // a Dock icon and a menu bar of its own, and activating it pulls focus off whatever the
+            // user was working in — for a window that is meant to sit on top and be ignored, that
+            // is the wrong kind of presence. Accessory is the same policy menu-bar-only apps use.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             if let Some(window) = app.get_webview_window("pet") {
                 place_overlay(&window);
@@ -285,7 +297,7 @@ pub fn run() {
                 app,
                 "test-devour",
                 "Test devour  (3s, at cursor)",
-                true,
+                devour::devour_supported(),
                 None::<&str>,
             )?;
             let quit_item =
@@ -294,8 +306,12 @@ pub fn run() {
                 app,
                 &[&settings_item, &test_item, &devour_item, &quit_item],
             )?;
-            TrayIconBuilder::with_id("tray")
-                .icon(app.default_window_icon().unwrap().clone())
+            // Losing the tray must not cost the pet. On Linux the tray is StatusNotifierItem,
+            // which a stock GNOME session does not implement without an extension, so a failure
+            // here is routine rather than exceptional — and `?` would turn a missing menu into no
+            // app at all. The quit shortcut registered above is the exit that does not depend on
+            // any of this, which is what makes downgrading this to a log safe.
+            let mut tray = TrayIconBuilder::with_id("tray")
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -304,8 +320,13 @@ pub fn run() {
                     "test-devour" => test_devour(app),
                     "quit" => app.exit(0),
                     _ => {}
-                })
-                .build(app)?;
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            if let Err(error) = tray.build(app) {
+                println!("[slime] no tray icon ({error}); quit with Ctrl+Alt+Shift+Q");
+            }
 
             // The lease watchdog. This is the thing that makes an unclickable desktop unreachable
             // as a persistent state rather than merely unlikely.
