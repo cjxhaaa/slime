@@ -41,10 +41,18 @@ Write-Host ""
 Write-Host "Building with client $($config.client_id.Substring(0, [Math]::Min(24, $config.client_id.Length)))…" -ForegroundColor Cyan
 Push-Location $root
 try {
-  # Rust caches by source hash, not by env var, so a previous build with different credentials
-  # would otherwise be reused and silently ship the wrong client.
-  cargo clean --manifest-path src-tauri/Cargo.toml -p slime 2>$null | Out-Null
+  # `option_env!` is resolved at compile time but does not register an env-var dependency with
+  # cargo, so changing the credentials alone will not trigger a rebuild and the previous client
+  # would be silently reused. Touching the file that reads them forces just that crate to
+  # recompile — `cargo clean` also works but throws away gigabytes of unrelated cache.
+  (Get-Item 'src-tauri\src\store.rs').LastWriteTime = Get-Date
+
+  # Native stderr is deliberately not redirected. Under $ErrorActionPreference = 'Stop', piping a
+  # native command's stderr wraps each line in an ErrorRecord and aborts the script — which is how
+  # an earlier version of this script died on `cargo clean` printing "Removed N files" to stderr,
+  # having already deleted the cache but before ever starting the build.
   npm run tauri build
+  if ($LASTEXITCODE -ne 0) { Write-Error "tauri build failed with exit code $LASTEXITCODE" }
 } finally {
   Pop-Location
 }
