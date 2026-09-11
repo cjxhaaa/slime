@@ -522,7 +522,7 @@ Closing escalates in three stages, and the escalation is the animation rather th
 behind it:
 
 1. `PostMessageW(WM_CLOSE)` — the polite knock, exactly what the X button sends.
-2. Wait, polling `IsWindow` at 10 Hz for 2.5 seconds.
+2. Wait, polling at 10 Hz for up to 2.5 seconds.
 3. `TerminateProcess`, and only if `IsHungAppWindow` says the app is not pumping messages.
 
 **That last gate is the whole safety argument.** The obvious implementation escalates on "the window
@@ -538,6 +538,30 @@ is none of those, so it does not ride along on the gesture that began a polite c
 An elevated process cannot be opened by this one, which is not worth fixing — a desk pet that can
 kill anything on the machine is a worse trade than one that visibly cannot chew through an admin
 window. That comes back as `TooTough`.
+
+### "Gone" is a question about pixels, not about handles
+
+The wait polls whether the user can still *see* the window, not whether the handle exists.
+`IsWindow` is the obvious test and it is wrong in the direction that shows: a Chromium or Electron
+app hides its window the instant it accepts `WM_CLOSE`, then spends seconds tearing down renderer
+processes with the handle still perfectly valid. Waiting on the handle left the slime swollen
+around a window that had visibly gone, shrinking back only once the process finally exited — and an
+app that closes to a tray icon never releases the handle at all, so that one ran out the full grace
+period and then reported `Resisting`, meaning the pet pulled the wrong face at the end of it too.
+
+So the loop asks `IsWindowVisible && !IsIconic && !cloaked`, which is the same "can the user see
+this" predicate that decides what is eatable in the first place.
+
+One ordering constraint comes with that, and it is not optional: **`IsHungAppWindow` is checked
+before the visibility test.** The shell hides a window it has decided is hung and puts a
+"(Not Responding)" ghost in its place. Read in the other order, the single case this whole feature
+exists for looks like a clean meal, and the force kill — the only thing that could deal with it —
+is never offered. For the same reason `force` itself tests `IsWindow`, not visibility.
+
+Both branches now answer as soon as the answer is known rather than at the deadline.
+`IsHungAppWindow` is already debounced by about five seconds, so it will not trip on an app that is
+merely busy, and sitting out the rest of the grace period only delays telling the user something
+that is already true.
 
 ### Finding the window under the slime
 

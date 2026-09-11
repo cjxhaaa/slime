@@ -224,7 +224,7 @@ struct Hunt {
 unsafe extern "system" fn hunt_proc(hwnd: HWND, param: LPARAM) -> BOOL {
     let hunt = &mut *(param.0 as *mut Hunt);
 
-    if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
+    if !on_screen(hwnd) {
         return true.into();
     }
     // Never eat ourselves: the overlay covers the entire work area, and the settings window is the
@@ -232,7 +232,7 @@ unsafe extern "system" fn hunt_proc(hwnd: HWND, param: LPARAM) -> BOOL {
     if process_id(hwnd) == hunt.own_pid || hwnd.0 as isize == hunt.shell {
         return true.into();
     }
-    if is_cloaked(hwnd) || is_shell_furniture(&window_class(hwnd)) {
+    if is_shell_furniture(&window_class(hwnd)) {
         return true.into();
     }
     // An untitled top-level window is nearly always an invisible helper, and a nameless thing is
@@ -293,14 +293,36 @@ fn hunt_at(x: i32, y: i32, skip_pid: u32) -> Option<Prey> {
     hunt.found
 }
 
-/// The three probes the escalation is built out of.
+/// The probes the escalation is built out of.
 ///
 /// Each takes the handle as an integer and rebuilds it inside, rather than taking an `HWND`. That
 /// is not ceremony: `HWND` is a raw pointer and therefore not `Send`, so holding one across the
 /// `.await` in `swallow` below would make that future non-`Send` and refuse to spawn on the async
 /// runtime at all.
-fn still_there(raw: isize) -> bool {
+/// Whether the handle still refers to a window at all. This is the question `force` needs, and it
+/// is **not** the question the animation needs — see `visibly_there`.
+fn alive(raw: isize) -> bool {
     unsafe { IsWindow(Some(hwnd_from(raw))) }.as_bool()
+}
+
+/// Whether the user can still see this window: on screen, not minimized, not cloaked onto another
+/// virtual desktop. The same predicate that decides what is eatable in the first place.
+fn on_screen(hwnd: HWND) -> bool {
+    unsafe { IsWindowVisible(hwnd) }.as_bool()
+        && !unsafe { IsIconic(hwnd) }.as_bool()
+        && !is_cloaked(hwnd)
+}
+
+/// What "the window is gone" has to mean for a body wrapped around it.
+///
+/// `IsWindow` alone is the wrong test and it is wrong in the direction that shows: a Chromium or
+/// Electron app hides its window the instant it accepts `WM_CLOSE` and then spends seconds tearing
+/// down renderer processes with the handle still perfectly valid. Waiting on the handle kept the
+/// slime swollen around a window that was visibly no longer there, and an app that closes to a tray
+/// icon never releases the handle at all — that one ran out the full grace period and then reported
+/// `Resisting`, so the pet also pulled the wrong face at the end of it.
+fn visibly_there(raw: isize) -> bool {
+    alive(raw) && on_screen(hwnd_from(raw))
 }
 
 fn is_hung(raw: isize) -> bool {
@@ -314,13 +336,13 @@ fn post_close(raw: isize) -> bool {
 /// The polite knock, then a wait. Never escalates on its own.
 #[tauri::command]
 pub async fn swallow(hwnd: isize) -> Bite {
-    if !still_there(hwnd) {
+    if !visibly_there(hwnd) {
         return Bite::Gone;
     }
     if !post_close(hwnd) {
         // A hung window still accepts a post into its queue, so a failure here means the handle
         // died underneath us rather than that the app declined.
-        return if still_there(hwnd) {
+        return if alive(hwnd) {
             Bite::Resisting
         } else {
             Bite::Gone
@@ -330,7 +352,22 @@ pub async fn swallow(hwnd: isize) -> Bite {
     let deadline = std::time::Instant::now() + CLOSE_GRACE;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(CLOSE_POLL).await;
-        if !still_there(hwnd) {
+        if !alive(hwnd) {
+            return Bite::Closed;
+        }
+        // Deliberately ahead of the visibility test, because the shell hides a window it has
+        // decided is hung and puts a "(Not Responding)" ghost in its place. Read in the other
+        // order, the one case this whole feature exists for would look like a clean meal — and the
+        // force kill, the only thing that could actually deal with it, would never be offered.
+        //
+        // Answering as soon as it is known rather than at the deadline is the same fix as the one
+        // below: `IsHungAppWindow` is already debounced by about five seconds, so it is not going
+        // to trip on an app that is merely busy, and waiting out the remaining grace only delays
+        // telling the user what is already true.
+        if is_hung(hwnd) {
+            return Bite::Hung;
+        }
+        if !visibly_there(hwnd) {
             return Bite::Closed;
         }
     }
@@ -338,8 +375,8 @@ pub async fn swallow(hwnd: isize) -> Bite {
     if is_hung(hwnd) {
         Bite::Hung
     } else {
-        // Alive, pumping messages, and choosing to stay. That is a dialog waiting for an answer,
-        // and the answer is the user's to give.
+        // Alive, on screen, pumping messages, and choosing to stay. That is a dialog waiting for an
+        // answer, and the answer is the user's to give.
         Bite::Resisting
     }
 }
@@ -351,7 +388,7 @@ pub async fn swallow(hwnd: isize) -> Bite {
 /// long enough for an app to have recovered and put a dialog up.
 #[tauri::command]
 pub fn force(hwnd: isize) -> Bite {
-    if !still_there(hwnd) {
+    if !alive(hwnd) {
         return Bite::Gone;
     }
     if !is_hung(hwnd) {
