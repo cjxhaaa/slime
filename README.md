@@ -301,6 +301,20 @@ learn to tune out. Clicking it opens the link.
 Announcements are deduped by event id plus start time, so a rescheduled meeting is announced again
 but a 45-second poll does not re-trigger the same one.
 
+The lead time is nominally 5 minutes and in practice lands somewhere in the 5:00-6:00 window:
+`num_minutes()` truncates, so 5m59s reads as 5 and already qualifies, and the poll cadence decides
+which second inside that it actually fires. The window closes one minute after the start, so opening
+the app just after a meeting begins still gets a reminder while opening it well into one does not.
+
+Hops are spaced 1.5s apart. A hop is airborne for about 0.54s, so the original 0.85s spacing left
+three tenths of a second on the ground — not a pulse but continuous bouncing, which reads as panic
+rather than as a reminder. Landing and visibly resting between hops is what makes it a beat.
+
+**Tray → Test reminder** fires the whole performance immediately through the same `meeting-soon`
+event the poller uses. Tuning the rhythm otherwise means creating a real calendar event and waiting
+out the lead time for each adjustment, and going through the real path is what would have caught the
+frontend listener going missing.
+
 ### Making it a one-click Connect
 
 Google has no anonymous OAuth: every program that touches a Google API has to present a registered

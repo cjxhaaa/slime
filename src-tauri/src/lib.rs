@@ -234,15 +234,21 @@ pub fn run() {
             }
 
             let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+            // Tuning the reminder performance otherwise means creating a real calendar event and
+            // waiting out the lead time for every single adjustment. This makes it one click, and
+            // it doubles as the way to confirm the whole chain works after an install.
+            let test_item =
+                MenuItem::with_id(app, "test-reminder", "Test reminder", true, None::<&str>)?;
             let quit_item =
                 MenuItem::with_id(app, "quit", "Quit Slime  (Ctrl+Alt+Shift+Q)", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&settings_item, &test_item, &quit_item])?;
             TrayIconBuilder::with_id("tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => toggle_settings(app),
+                    "test-reminder" => calendar::emit_test_reminder(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })

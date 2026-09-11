@@ -184,6 +184,25 @@ async fn fetch(app: &AppHandle) -> Result<Vec<Meeting>, String> {
     Ok(meetings)
 }
 
+/// Fires the reminder performance immediately, with a stand-in meeting three minutes out.
+///
+/// Goes through the same `meeting-soon` event the poller uses, so it exercises the real path rather
+/// than a parallel one — this is what would have caught the frontend listener going missing.
+pub fn emit_test_reminder(app: &AppHandle) {
+    let start = Utc::now() + Duration::minutes(3);
+    let _ = app.emit(
+        "meeting-soon",
+        Meeting {
+            id: "test-reminder".into(),
+            title: "Test reminder".into(),
+            start: start.to_rfc3339(),
+            minutes_until: 3,
+            meet_url: None,
+            link_note: "+test",
+        },
+    );
+}
+
 /// Event ids already performed for, so a 45-second poll does not re-trigger the same reminder.
 /// Keyed by id plus start time, so a rescheduled meeting is announced again.
 struct Announced {

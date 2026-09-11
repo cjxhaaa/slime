@@ -44,6 +44,16 @@ const LookRange = 520;
 const SLEEPY_AFTER = 75;
 const ASLEEP_AFTER = 95;
 
+/**
+ * Seconds between hops while a meeting alert is up.
+ *
+ * A hop leaves the ground at 0.72 * 780 px/s against 2100 px/s^2 of gravity, so it is airborne for
+ * about 0.54s. At the original 0.85s that left barely three tenths of a second on the ground, which
+ * is not a pulse — it is continuous bouncing, and it reads as panic rather than as a reminder.
+ * Landing and visibly resting between hops is what makes it a beat.
+ */
+const AlertBounceInterval = 1.5;
+
 /** Body palette per mood. Colour is reserved for state — it is the one thing that must read instantly. */
 const PALETTE: Record<string, { core: string; edge: string; rim: string }> = {
   calm: { core: '#8ff0d4', edge: '#33c6a6', rim: '#1d9c85' },
@@ -339,7 +349,7 @@ export class Slime {
     // A negative one would shrink it first, which reads as flinching rather than as alarm.
     this.blob.pulse(150);
     this.vy = -HOP_SPEED * 0.8;
-    this.nextAlertBounceAt = this.clock + 0.9;
+    this.nextAlertBounceAt = this.clock + AlertBounceInterval;
   }
 
   clearAlert(): void {
@@ -434,7 +444,7 @@ export class Slime {
       if (this.clock >= this.nextAlertBounceAt && this.y >= ground - 1) {
         this.vy = -HOP_SPEED * 0.72;
         this.blob.squash(-0.18);
-        this.nextAlertBounceAt = this.clock + 0.85;
+        this.nextAlertBounceAt = this.clock + AlertBounceInterval;
       }
       return;
     }
