@@ -313,6 +313,11 @@ Slime can do the same. Build with the credentials in the environment and they ar
 SLIME_GOOGLE_CLIENT_ID=…apps.googleusercontent.com SLIME_GOOGLE_CLIENT_SECRET=… npm run tauri build
 ```
 
+On Windows, `scripts/build-with-google.ps1` does that for you: it asks for the two values once,
+offers to save them to `scripts/google-client.json` (gitignored), and runs the build. It also forces
+a rebuild of the app crate first — Rust caches on source hash, not on environment, so a build after
+changing the credentials would otherwise reuse the old object and silently ship the wrong client.
+
 Settings then shows a single Connect button — the walkthrough, both credential fields and the Save
 button are hidden, because they are setup work that no longer exists. A credential pasted in Settings
 still overrides the built-in one, so a build can be pointed at a different Cloud project without

@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Your Google OAuth client, used by scripts/build-with-google.ps1. Never commit it.
+scripts/google-client.json
