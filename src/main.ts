@@ -2,10 +2,22 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-import { Slime } from './slime/Slime';
+import { Slime, type Bite, type DevourRect } from './slime/Slime';
 import { Bubble } from './ui/Bubble';
 import { PawCursor } from './ui/PawCursor';
 import { VelocityTracker } from './ui/VelocityTracker';
+
+/** A window the slime could eat, as Rust reports it. All coordinates are physical screen pixels. */
+interface Prey {
+  hwnd: number;
+  title: string;
+  process: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  hung: boolean;
+}
 
 interface Meeting {
   id: string;
@@ -52,6 +64,14 @@ let pixelsPerCssPx = 1;
 let cursor: { x: number; y: number } | null = null;
 
 let grabbed = false;
+/**
+ * A press that has landed on a slime mid-meal and has not yet travelled far enough to be a pull.
+ *
+ * It cannot become a grab immediately, because grabbing calls the meal off and a plain click is
+ * not meant to: on a window that has stopped responding, that click is the separate consent for a
+ * force kill.
+ */
+let pullPending = false;
 let pressedAt = 0;
 let pressedPoint = { x: 0, y: 0 };
 
@@ -115,6 +135,136 @@ function toLocal(screenX: number, screenY: number): { x: number; y: number } {
     x: (screenX - origin.x) / pixelsPerCssPx,
     y: (screenY - origin.y) / pixelsPerCssPx,
   };
+}
+
+function toScreen(localX: number, localY: number): { x: number; y: number } {
+  return {
+    x: localX * pixelsPerCssPx + origin.x,
+    y: localY * pixelsPerCssPx + origin.y,
+  };
+}
+
+/**
+ * Eating a window.
+ *
+ * Hold the slime still over something for two seconds and it latches on and starts to engulf it.
+ * Releasing the button does *not* call it off - once it has committed it finishes the meal on its
+ * own. The way to stop it is to take hold of it and pull it away, which is the same gesture as
+ * picking it up, and reads as peeling it off the window rather than as cancelling a dialog.
+ *
+ * That split is deliberate. A dead-man's switch would mean the safe action is to keep holding
+ * perfectly still, which is the opposite of the instinct when something unexpected starts
+ * happening on screen. Here the instinct - grab it - is the abort.
+ */
+const DEVOUR_HOLD_MS = 2000;
+/** How far the hand may wander and still count as holding still. Loose enough for hand tremor. */
+const STILL_RADIUS = 10;
+/** How far a press has to travel before it counts as pulling the slime off a meal. */
+const DEVOUR_PULL_PX = 8;
+
+let stillSince = 0;
+let stillPoint = { x: 0, y: 0 };
+/** True while a `window_at` call is in flight, so the frame loop does not stack them up. */
+let askingForPrey = false;
+/** What is being eaten, for the bubble. Kept here rather than in the slime, which does not read. */
+let devourTarget: Prey | null = null;
+let devourNote: { text: string; until: number } | null = null;
+
+function noteDevour(text: string, seconds: number): void {
+  devourNote = { text, until: performance.now() + seconds * 1000 };
+}
+
+/**
+ * Targets whatever is under the body and begins the engulf.
+ *
+ * The probe point is the slime's drawn centre, not the pointer: the slime is what is sitting on the
+ * window, and after a release there is no pointer to ask about at all.
+ */
+async function tryBeginDevour(): Promise<void> {
+  askingForPrey = true;
+  try {
+    const at = toScreen(slime.drawX, slime.drawY);
+    const prey = await invoke<Prey | null>('window_at', {
+      x: Math.round(at.x),
+      y: Math.round(at.y),
+    });
+    // The gesture can end, or a meal can already have started, while this round trip was in flight.
+    if (!prey || !grabbed || slime.devourPhase) return;
+    const topLeft = toLocal(prey.x, prey.y);
+    const rect: DevourRect = {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: prey.width / pixelsPerCssPx,
+      height: prey.height / pixelsPerCssPx,
+    };
+    devourTarget = prey;
+    devourNote = null;
+    slime.beginDevour(prey.hwnd, rect);
+  } catch (error) {
+    console.warn('could not look for a window to eat', error);
+  } finally {
+    askingForPrey = false;
+    // Whether or not anything was found, the hold is spent. Without this a slime resting over bare
+    // desktop asks again on every single frame.
+    stillSince = performance.now();
+  }
+}
+
+function reportBite(outcome: Bite): void {
+  const name = devourTarget?.process || devourTarget?.title || 'it';
+  switch (outcome) {
+    case 'closed':
+    case 'killed':
+      // No words. The window is gone and the slime just burped, which is the whole report.
+      break;
+    case 'resisting':
+      noteDevour(`${name} is asking you something`, 4);
+      break;
+    case 'too-tough':
+      noteDevour(`Can't chew ${name}`, 4);
+      break;
+    case 'hung':
+    case 'gone':
+      break;
+  }
+}
+
+/** The polite close, once the body has finished wrapping. */
+async function runSwallow(hwnd: number): Promise<void> {
+  let outcome: Bite = 'gone';
+  try {
+    outcome = await invoke<Bite>('swallow', { hwnd });
+  } catch (error) {
+    console.warn('the swallow failed', error);
+  }
+  slime.finishDevour(outcome);
+  reportBite(outcome);
+}
+
+/**
+ * The force kill, which is reached only by clicking a slime that is already wrapped around a
+ * window that will not answer. Never automatic, and never the tail of a polite close.
+ */
+async function forceSwallow(): Promise<void> {
+  const hwnd = slime.devouringHwnd;
+  if (hwnd === null) return;
+  let outcome: Bite = 'gone';
+  try {
+    outcome = await invoke<Bite>('force', { hwnd });
+  } catch (error) {
+    console.warn('the force kill failed', error);
+  }
+  slime.finishDevour(outcome);
+  reportBite(outcome);
+}
+
+function devourText(now: number): string | null {
+  if (slime.isChewing) {
+    const name = devourTarget?.process || 'it';
+    return `${name} is not responding\nClick to force it, or pull me off`;
+  }
+  if (devourNote && now < devourNote.until) return devourNote.text;
+  return null;
 }
 
 /**
@@ -318,6 +468,8 @@ function frame(now: number): void {
   // the slime wakes the loop on the same frame instead of up to an idle interval later.
   const engaged =
     grabbed ||
+    pullPending ||
+    slime.devourPhase !== null ||
     showingPaw ||
     paw.hasRipples() ||
     bubble.isSettling ||
@@ -345,7 +497,27 @@ function frame(now: number): void {
 
   // One hit test per frame, against the position that is about to be drawn — which is what the
   // pointer is aimed at. Both the bubble text and the click lease below hang off it.
+  //
+  // `hitTest` is deliberately still measured against the resting body radius while a window is
+  // being eaten, rather than against the engulfed shape. The lease below is granted from it, and a
+  // slime wrapped around a maximized window would otherwise claim every click inside that window
+  // for the duration — which is the exact failure the lease exists to make impossible. So the
+  // handle stays a body-sized patch in the middle of the meal.
   const overBody = cursor !== null && slime.hitTest(cursor.x, cursor.y);
+
+  // Holding the slime still over a window starts a meal. Measured from the last time the hand
+  // moved appreciably, so this fires on stillness rather than on elapsed grab time.
+  if (
+    grabbed &&
+    !askingForPrey &&
+    slime.devourPhase === null &&
+    now - stillSince > DEVOUR_HOLD_MS
+  ) {
+    void tryBeginDevour();
+  }
+  // Handed over exactly once, when the body finishes wrapping.
+  const readyToSwallow = slime.takeSwallowRequest();
+  if (readyToSwallow !== null) void runSwallow(readyToSwallow);
 
   // What the bubble says, in priority order. An alert outranks everything: it is the reason this
   // app exists, and it must not be displaced by an idle greeting.
@@ -356,7 +528,8 @@ function frame(now: number): void {
     if (cursor !== null && slime.hitTest(cursor.x, cursor.y)) slime.acknowledgeAlert();
     bubble.show(countdownText(alertMeeting));
   } else {
-    const text = overBody || grabbed ? hoverText() : null;
+    // What the slime is doing right now outranks what the calendar says later.
+    const text = devourText(now) ?? (overBody || grabbed ? hoverText() : null);
     if (text) bubble.show(text);
     else bubble.hide();
   }
@@ -453,8 +626,20 @@ function wirePointer(): void {
     paw.setPressed(true);
     cursor = { x: event.clientX, y: event.clientY };
     if (slime.hitTest(event.clientX, event.clientY)) {
+      if (slime.devourPhase !== null) {
+        // Touching a slime mid-meal is not yet an abort. Wait to see whether this becomes a pull.
+        pullPending = true;
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // Not fatal; see the note on the capture below.
+        }
+        return;
+      }
       grabbed = true;
       slime.grab(event.clientX, event.clientY);
+      stillSince = performance.now();
+      stillPoint = { x: event.clientX, y: event.clientY };
       dragVelocity.reset();
       dragVelocity.add(event.clientX, event.clientY, event.timeStamp);
       // Capture keeps the move and up events coming to this element for the whole gesture, so a
@@ -471,7 +656,28 @@ function wirePointer(): void {
     // The DOM stream is the only drag input. The polled cursor from Rust arrives at 30Hz, and
     // feeding both meant the drag moved in visible 33ms steps while everything else ran at 60.
     cursor = { x: event.clientX, y: event.clientY };
+
+    if (pullPending) {
+      const pulled = Math.hypot(event.clientX - pressedPoint.x, event.clientY - pressedPoint.y);
+      if (pulled < DEVOUR_PULL_PX) return;
+      // Far enough to be a pull. `grab` calls the meal off, and the body unwinds back to a blob
+      // in the hand rather than snapping, so peeling it off looks like peeling it off.
+      pullPending = false;
+      grabbed = true;
+      slime.grab(event.clientX, event.clientY);
+      stillSince = performance.now();
+      stillPoint = { x: event.clientX, y: event.clientY };
+      dragVelocity.reset();
+    }
+
     if (!grabbed) return;
+
+    // The hold that starts a meal is reset by movement, not by the press ending, so pausing
+    // mid-drag is what arms it and carrying on disarms it again.
+    if (Math.hypot(event.clientX - stillPoint.x, event.clientY - stillPoint.y) > STILL_RADIUS) {
+      stillPoint = { x: event.clientX, y: event.clientY };
+      stillSince = performance.now();
+    }
 
     // Chromium coalesces pointermove down to one event per animation frame, so this handler sees
     // roughly 20-60 positions a second no matter how fast the mouse actually reports. The samples
@@ -496,6 +702,20 @@ function wirePointer(): void {
     const moved = Math.hypot(event.clientX - pressedPoint.x, event.clientY - pressedPoint.y);
     pointerDown = false;
     paw.setPressed(false);
+    if (pullPending) {
+      pullPending = false;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      // A press that never became a pull. On a window that has stopped answering, that press is
+      // the second consent a force kill needs; on anything else it means nothing and the meal
+      // carries on. It is never a poke — the slime has its mouth full.
+      if (slime.isChewing) {
+        void forceSwallow();
+        paw.ping(event.clientX, event.clientY);
+      }
+      return;
+    }
     if (grabbed) {
       grabbed = false;
       const thrown = dragVelocity.release(event.timeStamp);
@@ -561,6 +781,24 @@ async function main(): Promise<void> {
       meet_url: 'https://meet.google.com/debug',
     };
     slime.raiseAlert(countdownText(alertMeeting), joinAlertMeeting);
+  };
+
+  // Engulfs a rectangle without needing a real window under the slime. The real path is gated on
+  // Win32 calls that only exist inside Tauri, so in a plain browser - which is the only way to see
+  // this overlay at all, since a transparent WebView2 window cannot be screenshotted - the morph
+  // is otherwise untunable. `swallow` then fails and is handled, which exercises the unwind too.
+  debugHooks.__simulateDevour = (x = 240, y = 160, width = 1000, height = 640) => {
+    devourTarget = {
+      hwnd: 0,
+      title: 'Simulated',
+      process: 'simulated.exe',
+      x,
+      y,
+      width,
+      height,
+      hung: false,
+    };
+    slime.beginDevour(0, { x, y, width, height });
   };
 
   await refreshGeometry();

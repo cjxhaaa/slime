@@ -8,7 +8,31 @@ export type Mood =
   | 'surprised'
   | 'alert'
   | 'nudge'
-  | 'dragged';
+  | 'dragged'
+  | 'devouring';
+
+/** What became of a window the slime tried to eat. Mirrors the `Bite` enum on the Rust side. */
+export type Bite = 'closed' | 'resisting' | 'hung' | 'killed' | 'too-tough' | 'gone';
+
+export interface DevourRect {
+  /** Canvas CSS pixels, already converted from the physical screen rect Rust reports. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * How long the body takes to engulf a window, and therefore how long there is to change your mind.
+ *
+ * This is the whole safety margin of the feature, so it is spent on screen rather than on a timer:
+ * the membrane visibly creeps over the window for all three seconds, and grabbing the slime and
+ * pulling it off at any point during them calls the whole thing off. Nothing about the commitment
+ * is invisible, which is what makes a gesture this destructive safe to trigger by holding still.
+ */
+const EngulfSeconds = 3;
+/** How long the body takes to peel back off, whether it ate or gave up. */
+const ReleaseSeconds = 0.45;
 
 export interface Env {
   width: number;
@@ -65,6 +89,9 @@ const PALETTE: Record<string, { core: string; edge: string; rim: string }> = {
   // Acknowledged but still pending: the same hue, drained of urgency. Still clearly not "calm",
   // because the meeting has not gone away.
   nudge: { core: '#ffe9c4', edge: '#e8b978', rim: '#b58a4e' },
+  // Eating. Deeper and more saturated than calm - the same creature, visibly committed to
+  // something, and distinct at a glance from both "fine" and "a meeting is coming".
+  devour: { core: '#7ae0bb', edge: '#18a383', rim: '#0d6f5b' },
   sleep: { core: '#b9d8ee', edge: '#6fa8cd', rim: '#4d86ab' },
 };
 
@@ -123,6 +150,22 @@ export class Slime {
    * accumulator is still holding. This is the standard fixed-timestep interpolation and it decouples
    * how smooth the motion looks from how the step count happens to land in each frame.
    */
+  /**
+   * The window being eaten, or null. Owns position and shape for as long as it exists, which is
+   * why it is a record rather than another `mood` - every other mood is a way of sitting on the
+   * floor, and this one is not on the floor at all.
+   */
+  private devour: {
+    hwnd: number;
+    rect: DevourRect;
+    phase: 'engulfing' | 'straining';
+    /** Set when the engulf completes, cleared once the caller has picked it up. */
+    swallowPending: boolean;
+    outcome: Bite | null;
+    until: number;
+  } | null = null;
+  private readonly devourShape: Float32Array;
+
   private prevX = 0;
   private prevY = 0;
   private renderX = 0;
@@ -142,6 +185,7 @@ export class Slime {
     this.radius = radius;
     this.blob = new Blob(radius);
     this.points = new Float32Array(this.blob.count * 2);
+    this.devourShape = new Float32Array(this.blob.count);
   }
 
   get groundY(): number {
@@ -207,6 +251,11 @@ export class Slime {
   get isAnimating(): boolean {
     return (
       this.grabbed ||
+      this.devour !== null ||
+      // A morph moves the rest shape while the offsets sit quietly at zero, so `energy()` below
+      // reads it as settled. Without this the loop stands down mid-engulf and the body freezes
+      // halfway onto the window.
+      this.blob.isMorphing ||
       Math.abs(this.vx) > 0.5 ||
       Math.abs(this.vy) > 0.5 ||
       Math.abs(this.x - this.renderX) > 0.05 ||
@@ -255,7 +304,15 @@ export class Slime {
    */
   bounds(): { x: number; y: number; width: number; height: number } {
     const ground = this.groundFor(this.envHeight);
-    const reach = this.radius * 2.2;
+    // The resting term covers the sleep marks and the elongation of a throw. The blob term covers
+    // a body that has morphed larger than it ever gets on its own, and it is read from the ring's
+    // present shape rather than from the devour state, because the two do not end together: letting
+    // go of a window clears that state immediately while the body takes almost half a second to
+    // shrink back. Keying this off the state left the unwinding body drawing outside its own dirty
+    // rect, which the clip silently cut a notch out of.
+    //
+    // In every ordinary case the resting term is the larger of the two, so this costs nothing.
+    const reach = Math.max(this.radius * 2.2, this.blob.maxReach * 1.2);
     const top = Math.min(this.renderY - reach, this.renderY - this.radius * 0.7 - 60);
     const bottom = Math.max(this.renderY + reach, ground + this.radius * 1.1);
     return {
@@ -289,7 +346,123 @@ export class Slime {
     this.renderY = y;
   }
 
+  /** Null unless a window is being eaten. */
+  get devourPhase(): 'engulfing' | 'straining' | null {
+    return this.devour?.phase ?? null;
+  }
+
+  /**
+   * True once the body is wrapped around a window that will not respond.
+   *
+   * This is the only state a force kill is offered from, and it is deliberately narrow: everything
+   * else the slime can be doing, including wrapped around a window that merely refuses to close,
+   * reads false.
+   */
+  get isChewing(): boolean {
+    return this.devour?.phase === 'straining' && this.devour.outcome === 'hung';
+  }
+
+  /** The window currently being eaten, for a caller that needs to name it. */
+  get devouringHwnd(): number | null {
+    return this.devour?.hwnd ?? null;
+  }
+
+  /**
+   * Latches onto a window and starts engulfing it.
+   *
+   * The rect is in canvas CSS pixels. The body's centre moves to the middle of it while the ring
+   * morphs onto its outline, both starting now - the centre arrives well before the shape does, so
+   * the ring is still near circular through the part of the move where being off-register shows.
+   */
+  beginDevour(hwnd: number, rect: DevourRect): void {
+    this.grabbed = false;
+    this.mood = 'devouring';
+    this.vx = 0;
+    this.vy = 0;
+    this.trail = { x: 0, y: 0 };
+    this.lastInteraction = this.clock;
+    this.hopsLeft = 0;
+    this.devour = {
+      hwnd,
+      rect,
+      phase: 'engulfing',
+      swallowPending: false,
+      outcome: null,
+      until: this.clock + EngulfSeconds,
+    };
+    Blob.rectRadii(this.devourShape, this.blob.count, rect.width / 2, rect.height / 2);
+    this.blob.morphTo(this.devourShape, EngulfSeconds);
+  }
+
+  /**
+   * The handle to close, handed over exactly once when the engulf finishes.
+   *
+   * Polled rather than pushed through a callback because closing is asynchronous while this is
+   * reached from inside the fixed-step simulation, which runs several times per frame - a callback
+   * from here would fire the close two or three times for one meal.
+   */
+  takeSwallowRequest(): number | null {
+    if (!this.devour?.swallowPending) return null;
+    this.devour.swallowPending = false;
+    return this.devour.hwnd;
+  }
+
+  /**
+   * What the window did. A clean close ends in a burp; anything still standing is spat back out.
+   *
+   * `hung` is the one outcome that does not end the state: the body stays wrapped and keeps
+   * working at it, because that is the only position a force is offered from.
+   */
+  finishDevour(outcome: Bite): void {
+    if (!this.devour) return;
+    this.devour.outcome = outcome;
+    if (outcome === 'hung') {
+      this.devour.phase = 'straining';
+      return;
+    }
+    this.letGo();
+    if (outcome === 'closed' || outcome === 'killed') {
+      // The burp. What a swallow that went down looks like from the outside.
+      this.mood = 'happy';
+      this.moodUntil = this.clock + 1.6;
+      this.blob.squash(0.34);
+      this.blob.pulse(120);
+    } else {
+      // Spat out: it would not go, so the body recoils off it instead of settling. The difference
+      // matters - a window that is still there after a clean-looking swallow is the one case where
+      // the animation would otherwise lie about what happened.
+      this.mood = 'surprised';
+      this.moodUntil = this.clock + 1.2;
+      this.blob.pulse(-150);
+      this.vy = -260;
+    }
+  }
+
+  /**
+   * Called off a window without eating it - the user grabbed the slime and pulled it away.
+   *
+   * The same unwind as a refusal: from the body's point of view nothing was swallowed either way,
+   * and the only difference is whose decision it was.
+   */
+  abortDevour(): void {
+    if (!this.devour) return;
+    this.letGo();
+    this.mood = 'surprised';
+    this.moodUntil = this.clock + 0.6;
+    this.blob.pulse(-90);
+  }
+
+  /** Peels the ring back to a circle and hands the body back to gravity. */
+  private letGo(): void {
+    this.devour = null;
+    this.blob.morphTo(null, ReleaseSeconds);
+  }
+
   grab(px: number, py: number): void {
+    // Grabbing is the abort gesture, so taking hold of a slime mid-meal always calls it off.
+    // Whether a grab was committed enough to count is the caller's decision, and by the time it
+    // calls here it has made it.
+    if (this.devour) this.abortDevour();
     this.grabbed = true;
     this.mood = 'dragged';
     // Anchored to the drawn position rather than the simulated one, so a pet caught mid-flight does
@@ -401,6 +574,27 @@ export class Slime {
     this.envHeight = env.height;
     const ground = this.groundFor(env.height);
 
+    if (this.devour) {
+      // Latched on. Neither gravity nor the walls apply: the body is held against a window, and a
+      // maximized one extends past every edge of the work area the overlay is sized to.
+      const centreX = this.devour.rect.x + this.devour.rect.width / 2;
+      const centreY = this.devour.rect.y + this.devour.rect.height / 2;
+      const k = Math.min(1, dt * 9);
+      this.x += (centreX - this.x) * k;
+      this.y += (centreY - this.y) * k;
+      this.vx = 0;
+      this.vy = 0;
+      this.trail.x *= Math.max(0, 1 - dt * 6);
+      this.trail.y *= Math.max(0, 1 - dt * 6);
+      if (this.devour.phase === 'engulfing' && this.clock >= this.devour.until) {
+        this.devour.phase = 'straining';
+        this.devour.swallowPending = true;
+      }
+      this.updateFace(dt, env);
+      this.blob.update(dt);
+      return;
+    }
+
     if (this.grabbed) {
       // Straight to the hand, no smoothing.
       //
@@ -467,7 +661,7 @@ export class Slime {
     void dt;
     const idleFor = this.clock - this.lastInteraction;
 
-    if (this.grabbed) return;
+    if (this.grabbed || this.devour) return;
 
     // Keyed off the live alert rather than the current mood, so picking the slime up mid-reminder
     // interrupts the performance instead of cancelling it. The mood does change while it is held
@@ -586,8 +780,9 @@ export class Slime {
   draw(context: CanvasRenderingContext2D): void {
     const ground = this.groundFor(this.envHeight);
     const airborne = Math.max(0, ground - this.renderY);
-    const palette =
-      this.mood === 'nudge'
+    const palette = this.devour
+      ? PALETTE.devour
+      : this.mood === 'nudge'
         ? PALETTE.nudge
         : this.mood === 'alert'
         ? PALETTE.alert
@@ -595,23 +790,27 @@ export class Slime {
           ? PALETTE.sleep
           : PALETTE.calm;
 
-    // Contact shadow. It shrinks and fades with height, which is most of what sells the jump.
-    const shadowScale = Math.max(0.35, 1 - airborne / 420);
-    context.save();
-    context.globalAlpha = 0.22 * shadowScale;
-    context.fillStyle = '#0b2a24';
-    context.beginPath();
-    context.ellipse(
-      this.renderX,
-      ground + this.radius * 0.72,
-      this.radius * 0.95 * shadowScale,
-      this.radius * 0.24 * shadowScale,
-      0,
-      0,
-      Math.PI * 2,
-    );
-    context.fill();
-    context.restore();
+    // Contact shadow. It shrinks and fades with height, which is most of what sells the jump -
+    // and means nothing for a body latched onto a window halfway up the screen, where it would be
+    // an ellipse sitting on the taskbar with nothing above it.
+    if (!this.devour) {
+      const shadowScale = Math.max(0.35, 1 - airborne / 420);
+      context.save();
+      context.globalAlpha = 0.22 * shadowScale;
+      context.fillStyle = '#0b2a24';
+      context.beginPath();
+      context.ellipse(
+        this.renderX,
+        ground + this.radius * 0.72,
+        this.radius * 0.95 * shadowScale,
+        this.radius * 0.24 * shadowScale,
+        0,
+        0,
+        Math.PI * 2,
+      );
+      context.fill();
+      context.restore();
+    }
 
     // Directional stretch while flying or being dragged.
     const speed = Math.hypot(this.trail.x, this.trail.y);

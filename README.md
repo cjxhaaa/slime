@@ -444,8 +444,79 @@ controlled by whoever can put an event on your calendar.
 
 ## Eating a window
 
-Hold the slime still over a window and it engulfs and swallows it. That is another way to close
-things, and the only one that still works once an app has stopped responding.
+Hold the slime still over a window for two seconds and it latches on, spends three seconds
+engulfing it, and swallows it. That is another way to close things, and the only one that still
+works once an app has stopped responding.
+
+### Letting go is not calling it off
+
+Releasing the button does **not** abort. Once the slime has committed it finishes the meal on its
+own, and the way to stop it is to take hold of it and pull it off the window — the same gesture as
+picking it up.
+
+That split is the safety design, and it is the opposite way round from the obvious one. A
+dead-man's switch — keep holding or it stops — makes the *safe* action "stay perfectly still",
+which is the opposite of what anyone does when something unexpected starts happening on screen.
+Here the instinct, grab the thing, is the abort.
+
+What makes that safe enough to trigger by merely holding still is that none of the commitment is
+invisible. The three seconds are spent on screen: the membrane visibly creeps out over the window
+for all of them, and the window is closed only when that animation completes. There is no timer
+running behind a still image.
+
+The abort is a *pull*, not a click, so a press on a slime mid-meal waits to see whether it travels
+eight pixels before it counts. That leaves the plain click free to mean something else, which is
+what the force kill needs.
+
+### The stages are the animation
+
+1. The engulf, three seconds, abortable throughout.
+2. `WM_CLOSE`, then a 2.5 s wait polling `IsWindow` at 10 Hz. A normal app goes in well under a
+   frame, so the window simply vanishes as the body closes over it.
+3. If it is still there, it is one of two things, and they are not the same thing.
+
+**That last distinction is the whole safety argument of the backend.** The obvious implementation
+escalates to a kill on "the window is still there after n seconds", which kills an editor showing a
+*save changes?* prompt — a window is still there precisely because the app heard the knock and is
+waiting for you. So a responsive window that stays is `Resisting`, which is a stop: the slime spits
+it back out and says it is asking you something. Only `IsHungAppWindow` — the signal the shell uses
+to write "(Not Responding)" on a title bar — makes a window eligible to be killed.
+
+And even then the kill is not automatic. A hung window leaves the slime wrapped around it and
+chewing, and the force happens on a *click*, which is a second deliberate act. `WM_CLOSE` is
+refusable, promptable and undoable; `TerminateProcess` is none of those, so it does not ride along
+on the gesture that started a polite close. `force` re-checks `IsHungAppWindow` itself rather than
+trusting the frontend, because three seconds of animation is long enough for an app to have
+recovered and put a dialog up in the meantime.
+
+An elevated process cannot be opened by this one, which is not worth fixing — a desk pet that can
+kill anything on the machine is a worse trade than one that visibly cannot chew through an admin
+window. That comes back as `TooTough`.
+
+### Two things the wrapped body must not do
+
+**Claim clicks across the whole window.** The click lease is granted from `hitTest`, so a slime
+wrapped around a maximized window would take every click inside it for as long as the meal lasts —
+which is exactly the failure the lease exists to make impossible. `hitTest` therefore keeps
+measuring against the resting body radius even while the body is the size of a window, so the
+handle stays a body-sized patch in the middle of the meal. The face is drawn there, so the place to
+grab is the place that looks like the slime.
+
+**Outlive its own dirty rect.** The bounds are computed from the ring's present reach rather than
+from the devour state, because the two do not end together: letting go clears the state at once
+while the body takes another 0.45 s to shrink back. Keying the bounds off the state left the
+unwinding body drawing outside its own dirty rect, and the clip cut a visible notch out of it. In
+every ordinary case the resting term is still the larger of the two, so this costs nothing when
+nothing is being eaten.
+
+Engulfing a maximized window does mean repainting most of an eight-megapixel transparent layer for
+three seconds, which is the cost the whole stand-down design exists to avoid. It is accepted here:
+it is bounded, it is rare, and it happens only because the user asked for it.
+
+The three seconds are simulation time, not wall time, and the simulation is deliberately allowed to
+fall behind during a stall rather than catching up at several times speed. A throttled overlay
+therefore takes *longer* than three seconds to eat something — which is fine, because the animation
+and the deadline are the same clock. The close still fires exactly when the body finishes closing.
 
 Closing escalates in three stages, and the escalation is the animation rather than something hidden
 behind it:
@@ -504,12 +575,23 @@ pinned to physical pixels.
 ### Trying it
 
 **Tray → Test devour (3s, at cursor)** waits three seconds, then targets whatever is under the
-pointer and runs the polite close, printing the target and the outcome. The delay exists because by
-the time a menu event arrives the menu has closed and the pointer is still down by the tray, so
-sampling immediately would only ever test whatever sits in the bottom corner of the screen.
+pointer and runs the polite close with no animation, printing the target and the outcome. The delay
+exists because by the time a menu event arrives the menu has closed and the pointer is still down by
+the tray, so sampling immediately would only ever test whatever sits in the bottom corner of the
+screen.
 
 The force kill is deliberately not reachable from the tray. It is the irreversible half, and it
 belongs to a gesture the user is still holding, not to a menu item that can be clicked by accident.
+
+`__simulateDevour(x, y, width, height)` in a devtools console engulfs a rectangle with no real
+window under it. The real path runs through Win32 calls that only exist inside Tauri, and the
+overlay can only be *seen* in an ordinary browser, so without this the animation is untunable for
+the same reason `__simulateMeeting` exists. The swallow then fails and is handled, which exercises
+the unwind as well.
+
+Note that the browser pane used for this drives no `requestAnimationFrame` of its own — the only
+frames that run are the ones a screenshot triggers — so timings measured there mean nothing and the
+simulation has to be stepped by hand to see anything move.
 
 `cargo test -- --nocapture list_eatable_windows` prints every window the hunt is willing to eat.
 There is nothing to assert against a live desktop — what it is read for is the taskbar, the desktop
@@ -547,9 +629,9 @@ Not built yet:
 - Drag, throw and poke are wired and typecheck, but have only been exercised through synthetic
   events — they want a few minutes of actual mouse-in-hand testing.
 - Reminder lead time is hardcoded at 5 minutes, and there is no settings control for it.
-- Eating a window has its backend and its gesture-free test path, but no gesture and no animation
-  yet: no hold-still trigger, no engulf, no burp. `IsHungAppWindow` and the force kill have not been
-  exercised against an actually hung app.
+- Eating a window is complete and typechecks, and the engulf, the abort and the unwind were
+  confirmed visually. Not yet exercised with a mouse in hand, and `IsHungAppWindow`, the force kill
+  and the `Resisting` path have never been run against a real hung app or a real save prompt.
 - Multi-monitor: the overlay is pinned to the primary monitor only.
 - No autostart-on-login registration.
 - No sound.

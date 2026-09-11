@@ -17,6 +17,22 @@ export class Blob {
   private readonly velocity: Float32Array;
   private readonly scratch: Float32Array;
 
+  /**
+   * The radius each ring point springs back to, per point rather than one number for the whole
+   * ring. A circle is every entry equal to `restRadius`; anything else is a shape the body settles
+   * into and wobbles around, which is what lets it wrap a window rather than merely grow.
+   *
+   * Deliberately separate from `offset`: the offsets are the jelly, and they stay a deviation from
+   * whatever shape is currently being held. Encoding a rectangle as a set of large static offsets
+   * instead would have the springs fighting to erase it every step.
+   */
+  private readonly rest: Float32Array;
+  /** Where the morph started, so it can be paced rather than eased asymptotically. */
+  private readonly conformFrom: Float32Array;
+  private conformTo: Float32Array | null = null;
+  private conformProgress = 1;
+  private conformSeconds = 1;
+
   /** Squash along y; x is derived so area stays roughly constant. */
   private squashY = 1;
   private squashVelocity = 0;
@@ -32,6 +48,57 @@ export class Blob {
     this.offset = new Float32Array(count);
     this.velocity = new Float32Array(count);
     this.scratch = new Float32Array(count);
+    this.rest = new Float32Array(count).fill(restRadius);
+    this.conformFrom = new Float32Array(count);
+  }
+
+  /**
+   * Morphs the ring onto an arbitrary shape over a fixed duration, or back to a circle with `null`.
+   *
+   * Paced, not eased: an exponential approach never actually arrives, and here the duration *is*
+   * the interaction — the morph is the window in which the user can still call the whole thing off,
+   * so it has to take the time it claims to take and then be finished.
+   */
+  morphTo(target: Float32Array | null, seconds: number): void {
+    this.conformFrom.set(this.rest);
+    this.conformTo = target;
+    this.conformProgress = 0;
+    this.conformSeconds = Math.max(0.0001, seconds);
+  }
+
+  /** 0 to 1 across the current morph. Reads 1 when there is nothing in flight. */
+  get morphProgress(): number {
+    return this.conformProgress;
+  }
+
+  /**
+   * True while the rest shape itself is still moving.
+   *
+   * `energy()` cannot see this: it measures deviation *from* the rest shape, and a morph moves the
+   * rest shape with the offsets sitting quietly at zero. Without this the render loop stands down
+   * in the middle of an engulf and the body freezes halfway onto the window.
+   */
+  get isMorphing(): boolean {
+    return this.conformProgress < 1;
+  }
+
+  /**
+   * Per-angle radii that trace a rectangle of the given half-extents, for `morphTo`.
+   *
+   * The corners come out rounded because the outline is drawn as quadratics through the midpoints
+   * between samples, which is the right look anyway — a slime stretched over a window should read
+   * as a membrane pulled taut, not as a crisp rectangle.
+   */
+  static rectRadii(into: Float32Array, count: number, halfWidth: number, halfHeight: number): Float32Array {
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const cos = Math.abs(Math.cos(angle));
+      const sin = Math.abs(Math.sin(angle));
+      const toVertical = cos > 1e-6 ? halfWidth / cos : Infinity;
+      const toHorizontal = sin > 1e-6 ? halfHeight / sin : Infinity;
+      into[i] = Math.min(toVertical, toHorizontal);
+    }
+    return into;
   }
 
   /** Dents the surface around `angle` — used for pokes, landings and the cursor pushing in. */
@@ -73,6 +140,7 @@ export class Blob {
    */
   energy(): number {
     let worst = Math.abs(this.squashY - 1) * this.restRadius + Math.abs(this.squashVelocity);
+
     for (let i = 0; i < this.count; i++) {
       const magnitude = Math.abs(this.offset[i]) + Math.abs(this.velocity[i]) * 0.02;
       if (magnitude > worst) worst = magnitude;
@@ -80,7 +148,38 @@ export class Blob {
     return worst;
   }
 
+  /**
+   * How far the outline currently reaches from the centre, deformation included.
+   *
+   * The caller's dirty rect is built from this. It has to be measured rather than assumed from
+   * `restRadius` because a morphed body is arbitrarily larger than its resting size, and it has to
+   * be measured from the *current* shape rather than from whatever the caller thinks it asked for:
+   * a morph back to a circle takes time, so the body outlives the state that made it big.
+   */
+  get maxReach(): number {
+    const scale = this.squashScale;
+    const widest = Math.max(scale.x, scale.y);
+    let worst = 0;
+    for (let i = 0; i < this.count; i++) {
+      const reach = this.rest[i] + Math.abs(this.offset[i]);
+      if (reach > worst) worst = reach;
+    }
+    return worst * widest;
+  }
+
   update(dt: number): void {
+    if (this.conformProgress < 1) {
+      this.conformProgress = Math.min(1, this.conformProgress + dt / this.conformSeconds);
+      // Smoothstep, so the body leaves and arrives softly instead of starting at full speed —
+      // a membrane being pulled over something, not a shape being scaled.
+      const t = this.conformProgress;
+      const eased = t * t * (3 - 2 * t);
+      for (let i = 0; i < this.count; i++) {
+        const want = this.conformTo ? this.conformTo[i] : this.restRadius;
+        this.rest[i] = this.conformFrom[i] + (want - this.conformFrom[i]) * eased;
+      }
+    }
+
     // The ring. Neighbour terms are read from a snapshot so the wave does not travel a whole lap in
     // a single step, which is the difference between a wobble and a buzz.
     this.scratch.set(this.offset);
@@ -97,7 +196,7 @@ export class Blob {
     for (let i = 0; i < this.count; i++) {
       this.offset[i] += this.velocity[i] * dt;
       // Hard clamp so an extreme throw cannot invert the outline through the centre.
-      const limit = this.restRadius * 0.55;
+      const limit = this.rest[i] * 0.55;
       if (this.offset[i] > limit) {
         this.offset[i] = limit;
         this.velocity[i] *= 0.4;
@@ -122,7 +221,7 @@ export class Blob {
     const scale = this.squashScale;
     for (let i = 0; i < this.count; i++) {
       const angle = (i / this.count) * Math.PI * 2;
-      let radius = this.restRadius + this.offset[i];
+      let radius = this.rest[i] + this.offset[i];
       if (stretch !== 0) {
         // Directional stretch: the body elongates along the travel direction, which is what turns a
         // dragged blob into a droplet rather than an oval.
