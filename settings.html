@@ -13,6 +13,7 @@
         <h2>Google Calendar</h2>
         <p id="status" class="status">Checking…</p>
 
+        <div id="byo-client">
         <details id="howto">
           <summary>How to get a client ID</summary>
           <p class="muted">
@@ -28,8 +29,10 @@
               Internal needs a Workspace organisation.
             </li>
             <li>
-              <strong>Press “Publish app” so the status is “In production”.</strong> Do not leave it
-              in Testing — see the warning below.
+              <strong>Press “Publish app” so the status is “In production”.</strong> Publishing by
+              itself asks for nothing — no website, no privacy policy, no domain ownership. Those
+              belong to <em>verification</em>, which is a separate step you do not need. Do not leave
+              it in Testing; see the warning below.
             </li>
             <li>
               Under Credentials, create an <strong>OAuth client ID</strong> with application type
@@ -59,6 +62,7 @@
 
         <label for="client-secret">Client secret</label>
         <input id="client-secret" type="password" spellcheck="false" autocomplete="off" />
+        </div>
 
         <div class="row">
           <button id="save" class="secondary">Save client</button>

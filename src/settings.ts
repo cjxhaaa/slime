@@ -29,6 +29,7 @@ interface ConfigStatus {
   has_client: boolean;
   connected: boolean;
   account: string;
+  built_in_client: boolean;
 }
 
 interface Meeting {
@@ -52,6 +53,7 @@ const refreshButton = el<HTMLButtonElement>('refresh');
 const quitButton = el<HTMLButtonElement>('quit');
 const howto = el<HTMLDetailsElement>('howto');
 const meetingList = el<HTMLUListElement>('meetings');
+const byoClient = el<HTMLDivElement>('byo-client');
 
 function say(text: string, kind: 'info' | 'error' = 'info'): void {
   message.textContent = text;
@@ -68,8 +70,15 @@ async function refreshStatus(): Promise<ConfigStatus> {
   statusLine.dataset.connected = String(status.connected);
   disconnectButton.hidden = !status.connected;
   connectButton.textContent = status.connected ? 'Reconnect' : 'Connect Google';
+
+  // A build that carries its own credentials should look like every other app that connects to
+  // Google: one button. The whole bring-your-own-client apparatus — the walkthrough, the two
+  // fields, the Save button — is setup work that only exists when the build has no client of its
+  // own, so it disappears entirely rather than sitting there looking like something to fill in.
+  byoClient.hidden = status.built_in_client;
+  saveButton.hidden = status.built_in_client;
   // The walkthrough only needs to be open while there is still setting up to do.
-  howto.open = !status.has_client;
+  howto.open = !status.has_client && !status.built_in_client;
   return status;
 }
 

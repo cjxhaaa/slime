@@ -301,6 +301,34 @@ learn to tune out. Clicking it opens the link.
 Announcements are deduped by event id plus start time, so a rescheduled meeting is announced again
 but a 45-second poll does not re-trigger the same one.
 
+### Making it a one-click Connect
+
+Google has no anonymous OAuth: every program that touches a Google API has to present a registered
+client ID. Apps that "just connect" are not exempt from that — their developer registered one client,
+once, and shipped it inside the binary, so each user only ever sees a button.
+
+Slime can do the same. Build with the credentials in the environment and they are compiled in:
+
+```bash
+SLIME_GOOGLE_CLIENT_ID=…apps.googleusercontent.com SLIME_GOOGLE_CLIENT_SECRET=… npm run tauri build
+```
+
+On Windows, `scripts/build-with-google.ps1` does that for you: it asks for the two values once,
+offers to save them to `scripts/google-client.json` (gitignored), and runs the build. It also forces
+a rebuild of the app crate first — Rust caches on source hash, not on environment, so a build after
+changing the credentials would otherwise reuse the old object and silently ship the wrong client.
+
+Settings then shows a single Connect button — the walkthrough, both credential fields and the Save
+button are hidden, because they are setup work that no longer exists. A credential pasted in Settings
+still overrides the built-in one, so a build can be pointed at a different Cloud project without
+rebuilding.
+
+Shipping the secret in the binary is deliberate and is what Google intends for installed apps: a
+desktop client secret is explicitly not confidential, which is the entire reason this flow uses PKCE.
+The security rests on the per-attempt verifier, not on that value staying hidden.
+
+The registration itself still has to happen once, by whoever builds it. What follows is how.
+
 ### Connecting your Google account
 
 You need your own OAuth client — this app has no shared one, and a client ID baked into a
@@ -321,8 +349,17 @@ and needs no verification: an unverified app shows an extra "unverified" screen 
 → Go to Slime) and is capped at 100 users, neither of which matters for a pet on your own desk.
 Verification, with its security review, only becomes relevant if the app is handed to strangers.
 
-A personal Google account is sufficient throughout. The only thing it cannot do is choose the
-Internal audience, which requires a Workspace organisation — External is the right answer anyway.
+A personal Google account is sufficient throughout, at no cost and with no billing enabled. Two
+things are worth separating, because conflating them is what makes this look impossible:
+
+- **Publishing** to "In production" asks for nothing — no website, no privacy policy, no domain
+  ownership. It is one button.
+- **Verification** is what wants a verified domain, a public homepage and a hosted privacy policy.
+  It is a separate, optional step, and its only effects are removing the one-time "unverified app"
+  screen and lifting a 100-user lifetime cap. Neither matters for a pet on your own desk.
+
+The only thing a personal account genuinely cannot do is choose the Internal audience, which needs a
+Workspace organisation — External is the right answer here anyway.
 
 The flow is PKCE on a loopback listener bound to `127.0.0.1` on an OS-assigned port, so two
 instances can never collide and nothing off-machine can reach it. Google issues a secret even for
