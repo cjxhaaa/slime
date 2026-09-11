@@ -170,9 +170,16 @@ pub async fn begin_google_auth(
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let expected_state = random_urlsafe(32);
 
+    // `select_account` as well as `consent`, so the chooser always appears.
+    //
+    // Without it Google silently uses whichever account the browser happens to be defaulted to.
+    // Signing in with a Workspace account whose organisation blocks unreviewed third-party apps
+    // then fails with "your institution's admin needs to review Slime" and Error 400
+    // access_not_configured — which says nothing about the actual problem being that the wrong
+    // account was picked for you.
     let auth_url = format!(
         "{AUTH_ENDPOINT}?response_type=code&client_id={}&redirect_uri={}&scope={}&code_challenge={}\
-         &code_challenge_method=S256&state={}&access_type=offline&prompt=consent",
+         &code_challenge_method=S256&state={}&access_type=offline&prompt=select_account%20consent",
         urlencoding::encode(&client.client_id),
         urlencoding::encode(&redirect_uri),
         urlencoding::encode(SCOPES),

@@ -422,6 +422,13 @@ Three ways out, in order of preference:
 A personal Google account is otherwise sufficient throughout, at no cost and with no billing
 enabled. The only thing it genuinely cannot do is choose the Internal audience above.
 
+The authorisation request asks for `prompt=select_account consent`, so the account chooser
+always appears. Without `select_account`, Google silently authorises whichever account the
+browser happens to be defaulted to - and if that is a Workspace account whose organisation
+blocks unreviewed third-party apps, the flow dies on "your institution's admin needs to review
+Slime" with Error 400 access_not_configured, which says nothing about the real problem being
+that an account was picked for you.
+
 The flow is PKCE on a loopback listener bound to `127.0.0.1` on an OS-assigned port, so two
 instances can never collide and nothing off-machine can reach it. Google issues a secret even for
 desktop clients and it genuinely cannot be kept secret in a distributed program, which is precisely
