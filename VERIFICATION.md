@@ -61,28 +61,19 @@ A shot list that covers all four, about 90 seconds:
 
 Upload to YouTube. **Unlisted is fine**, public is not required. Paste the link into the submission.
 
-## 4. Scope justification — paste this
+## 4. Scope justification - paste this
+
+The box on the Data Access page is capped at **1000 characters**, which is tight enough that
+the obvious draft does not fit. Google wants three things in it and all three have to survive
+the cut: what the data is used for, why a narrower scope will not do, and where the data goes.
 
 **Scope:** `https://www.googleapis.com/auth/calendar.events.readonly`
 
-> Slime is a Windows desktop pet that reminds the user about their own upcoming meetings. It reads
-> the signed-in user's calendar events and uses exactly three fields from each upcoming event: the
-> title, to name the reminder; the start time, to decide when to show it and to render a live
-> countdown; and the conferencing link (`hangoutLink` or `conferenceData`), so that clicking the
-> reminder opens the meeting. Approximately five minutes before an event begins, the on-screen pet
-> changes colour, animates, and displays the event title with a countdown.
+> Slime is a Windows desktop pet that reminds the signed-in user about their own upcoming meetings. From each upcoming event it uses three fields: the title, to name the reminder; the start time, to schedule it and render a countdown; and the conferencing link (hangoutLink / conferenceData), so clicking the reminder joins the meeting. About five minutes before an event starts, the pet changes colour, animates, and shows the title with a countdown.
 >
-> A narrower scope is not sufficient. `calendar.readonly` is broader, not narrower, as it also
-> exposes calendar metadata and settings the app never uses. There is no read-only scope limited
-> further than `calendar.events.readonly` — the app already requests the narrowest scope that
-> returns event start times and conferencing links, which are the minimum needed to know when a
-> meeting starts and how to join it. No write scope is requested, because the app never modifies
-> the calendar.
+> A narrower scope does not exist. calendar.readonly is broader - it also exposes calendar lists, metadata and settings we never touch - and nothing read-only sits below calendar.events.readonly. No write scope is requested; the app never modifies the calendar.
 >
-> Event data is requested directly from the Google Calendar API by the application running on the
-> user's own computer, held in memory to render the reminder, and discarded. It is never written to
-> disk, logged, or transmitted to the developer or to any third party. There is no server component
-> and no account. OAuth tokens are stored in the Windows Credential Manager on the user's machine.
+> Events are fetched by the app on the user's own machine, held in memory to draw the reminder, and discarded. They are never written to disk, logged, or sent to the developer or any third party. There is no server and no account; OAuth tokens stay in Windows Credential Manager.
 
 ## What is still only yours to do
 
