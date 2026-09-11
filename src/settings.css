@@ -188,3 +188,16 @@ details li {
 footer {
   text-align: center;
 }
+
+/*
+ * The one piece of setup that silently breaks a week later if it is skipped, so it does not get to
+ * look like the rest of the prose.
+ */
+.warn {
+  margin: 12px 0 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  font-size: 13px;
+}

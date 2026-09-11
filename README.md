@@ -314,6 +314,16 @@ distributed binary would be a credential anyone could extract.
    URI to fill in: desktop clients are allowed to use loopback, which is what Slime listens on.
 5. Paste the client ID and secret into Slime's settings, then press Connect.
 
+**Publish the app to production, even though it will be unverified.** Google revokes refresh tokens
+after 7 days for an External app whose publishing status is still Testing, which for this app means
+it logs itself out every week for no visible reason. Publishing removes that rule. It costs nothing
+and needs no verification: an unverified app shows an extra "unverified" screen at consent (Advanced
+→ Go to Slime) and is capped at 100 users, neither of which matters for a pet on your own desk.
+Verification, with its security review, only becomes relevant if the app is handed to strangers.
+
+A personal Google account is sufficient throughout. The only thing it cannot do is choose the
+Internal audience, which requires a Workspace organisation — External is the right answer anyway.
+
 The flow is PKCE on a loopback listener bound to `127.0.0.1` on an OS-assigned port, so two
 instances can never collide and nothing off-machine can reach it. Google issues a secret even for
 desktop clients and it genuinely cannot be kept secret in a distributed program, which is precisely

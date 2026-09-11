@@ -15,20 +15,39 @@
 
         <details id="howto">
           <summary>How to get a client ID</summary>
+          <p class="muted">
+            A personal Google account is enough. There is no charge, no billing to enable and no
+            Workspace needed.
+          </p>
           <ol>
             <li>Open the Google Cloud console and create or pick a project.</li>
             <li>Enable the <strong>Google Calendar API</strong> for it.</li>
             <li>
-              On the OAuth consent screen, add your own Google account as a test user. The calendar
-              scope is a sensitive one, so an app in testing mode only works for listed users.
+              Configure the consent screen (newer consoles call this <em>Google Auth Platform</em>).
+              With a personal account the only available audience is <strong>External</strong>;
+              Internal needs a Workspace organisation.
+            </li>
+            <li>
+              <strong>Press “Publish app” so the status is “In production”.</strong> Do not leave it
+              in Testing — see the warning below.
             </li>
             <li>
               Under Credentials, create an <strong>OAuth client ID</strong> with application type
               <strong>Desktop app</strong>. There is no redirect URI to fill in — a desktop client is
               allowed to use a loopback address, which is what Slime listens on.
             </li>
-            <li>Paste the client ID and secret below.</li>
+            <li>Paste the client ID and secret below and press Connect.</li>
+            <li>
+              Google will show an “unverified app” screen once. Choose
+              <strong>Advanced → Go to Slime</strong>. Verification only matters for handing the app
+              to other people; an unverified app still works for up to 100 users.
+            </li>
           </ol>
+          <p class="warn">
+            <strong>Don’t leave the app in Testing.</strong> Google revokes refresh tokens after
+            <strong>7 days</strong> for an External app still in Testing, so Slime would log itself
+            out every week. Publishing to production removes that rule, and costs nothing.
+          </p>
           <p class="muted">
             Slime asks for read-only access to calendar events and nothing else. It cannot change
             your calendar.

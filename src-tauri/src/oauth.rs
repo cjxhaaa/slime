@@ -226,7 +226,11 @@ pub async fn access_token(app: &AppHandle) -> Result<String, String> {
         if response.status() == reqwest::StatusCode::BAD_REQUEST {
             store::clear_tokens();
             *state.tokens.lock().unwrap() = None;
-            return Err("Google sign-in has expired. Connect again in Settings.".into());
+            // Far and away the most likely cause, and one the user cannot guess: Google revokes
+            // refresh tokens after seven days for an External app still in Testing. Saying so here
+            // is the difference between a one-time fix and reconnecting every week forever.
+            return Err("Google sign-in has expired — reconnect in Settings. If this keeps                  happening about once a week, the OAuth app is still in Testing: publish it to                  production in the Google Cloud console and it will stop."
+                .into());
         }
         return Err(format!("refresh failed with status {}", response.status()));
     }
