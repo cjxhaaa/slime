@@ -329,6 +329,21 @@ the render loop at full frame rate for all of it. The bubble now reports when it
 when its text *changes* - a countdown ticking over once a minute - and only those force a
 repaint.
 
+### A broken calendar connection is visible
+
+If the calendar cannot be read - the sign-in expired, the permission was revoked, Google is
+unreachable - the reminders simply stop coming. That used to be entirely silent, so the first
+sign of trouble would be a missed meeting.
+
+The poller now reports the failure to the overlay, and hovering the pet says what is wrong
+instead of naming the next meeting: "Calendar sign-in expired", "Calendar permission missing",
+"Can't reach Google Calendar". On hover rather than announced, because this is a state to
+discover when you look at the pet, not something to interrupt you with. A successful poll
+clears it.
+
+The message is a translation of the failure, not the failure itself: the raw text is a status
+line with Google's JSON body attached, which is right for a log and useless on a pet's head.
+
 **Tray → Test reminder** fires the whole performance immediately through the same `meeting-soon`
 event the poller uses. Tuning the rhythm otherwise means creating a real calendar event and waiting
 out the lead time for each adjustment, and going through the real path is what would have caught the
