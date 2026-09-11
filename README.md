@@ -1,12 +1,64 @@
 # Slime
 
-A desk pet that lives on top of your screen and gets agitated when a Google Meet is about to start.
+A desk pet that lives on top of your screen. It gets agitated when a Google Meet is about to start,
+and it eats windows you want rid of.
 
 Everything you see is simulated, not animated: there are no sprites, no frames and no art assets in
 this repo. The body is a soft-body physics ring and the face is drawn from primitives, which is
 exactly why a slime was the right character — squash and stretch *is* the animation language, so a
 blob gets expressive behaviour out of physics that a cat would need a rigged skeleton and an artist
 to match.
+
+## What it actually does for you
+
+Two jobs, and both are shaped by the same constraint: **a desk pet has almost no bandwidth.** All it
+can say is a colour, a rhythm, a shape and a line of text you have to hover for. So neither of these
+is allowed to be a notification with a face on it — the pet is only worth having if you can read it
+out of the corner of your eye and ignore it the rest of the time.
+
+### It warns you about a meeting before you have missed it
+
+Five minutes before a calendar event that has a video link, the slime swells, turns amber and starts
+hopping on a beat. **Click it to join.** No window opens, nothing takes focus, and nothing has to be
+dismissed.
+
+Reaching for it is enough to stop the hopping — moving the pointer over the pet is already the
+gesture that says "seen it", so it drops to a quiet pulse instead of demanding a second
+acknowledgement. It stays in that state until three minutes after the meeting has started, because
+acknowledging is not the same as the meeting having happened.
+
+If the calendar connection breaks, hovering the pet says so — "Calendar sign-in expired",
+"Calendar permission missing" — rather than the reminders just silently stopping, which would make a
+missed meeting the first sign of trouble.
+
+This one needs a Google account connected, which means a client ID of your own; see
+[Connecting your Google account](#connecting-your-google-account). Until then the poller idles,
+which is its normal state on a fresh install.
+
+### It closes windows, including ones that have stopped responding
+
+Hold the slime still over a window for two seconds and it latches on, wraps itself over the window
+across three seconds, and swallows it. **The window closes when the animation finishes** — the
+commitment is all on screen, so pulling the slime off it at any point calls the meal off.
+
+It is worth having over the X button in three situations:
+
+- **The app is hung.** Clicking X on a frozen window does nothing at all. The slime escalates to
+  killing the process — but only when Windows itself reports the app as not responding, and only if
+  you click a second time to say so. An app showing a *save changes?* prompt is answering, not
+  frozen, and never gets killed.
+- **The window is buried.** The slime only needs one visible sliver to land on, so it hauls the
+  window to the front first, then eats it. Measured on an ordinary desktop, three of four open
+  windows were 33%, 65% and 92% hidden behind something else.
+- **You do not want to aim.** The X is a small target in a corner that moves with every window. The
+  pet is wherever you last put it.
+
+### And the rest of the time it stays out of the way
+
+Clicks pass straight through it to whatever is underneath, so it can sit anywhere on the screen
+without being in the way of anything. It idles at about 4% of a core, falls asleep after 95 seconds
+of being left alone, and mostly decides to do nothing — a pet that fidgets constantly is exhausting
+to have on screen. Drag it, throw it, poke it; **Ctrl+Alt+Shift+Q** quits from anywhere.
 
 ## Stack
 
