@@ -378,24 +378,31 @@ distributed binary would be a credential anyone could extract.
    URI to fill in: desktop clients are allowed to use loopback, which is what Slime listens on.
 5. Paste the client ID and secret into Slime's settings, then press Connect.
 
-**Publish the app to production, even though it will be unverified.** Google revokes refresh tokens
-after 7 days for an External app whose publishing status is still Testing, which for this app means
-it logs itself out every week for no visible reason. Publishing removes that rule. It costs nothing
-and needs no verification: an unverified app shows an extra "unverified" screen at consent (Advanced
-→ Go to Slime) and is capped at 100 users, neither of which matters for a pet on your own desk.
-Verification, with its security review, only becomes relevant if the app is handed to strangers.
+**Avoiding the 7-day expiry is the awkward part, and not for the reason you would guess.** Google
+revokes refresh tokens after 7 days for an External app whose publishing status is still Testing,
+so it logs itself out every week. But publishing is not simply a button:
 
-A personal Google account is sufficient throughout, at no cost and with no billing enabled. Two
-things are worth separating, because conflating them is what makes this look impossible:
+- **Publishing** an External app to production requires a homepage URL, a privacy policy URL and
+  a terms-of-service URL on the Branding page, plus the matching authorized domain. Google's own
+  wording: "These links are required for all external production apps." Until they are there the
+  Publish button is greyed out, with only a pointer back to the Branding page to explain why.
+- **Verification** is the separate, heavier step that additionally wants the domain *verified* in
+  Search Console and reviews what the app does. Its only effects are removing the one-time
+  "unverified app" screen and lifting a 100-user lifetime cap - neither of which matters for a
+  pet on your own desk.
 
-- **Publishing** to "In production" asks for nothing — no website, no privacy policy, no domain
-  ownership. It is one button.
-- **Verification** is what wants a verified domain, a public homepage and a hosted privacy policy.
-  It is a separate, optional step, and its only effects are removing the one-time "unverified app"
-  screen and lifting a 100-user lifetime cap. Neither matters for a pet on your own desk.
+Three ways out, in order of preference:
 
-The only thing a personal account genuinely cannot do is choose the Internal audience, which needs a
-Workspace organisation — External is the right answer here anyway.
+1. **Make it Internal.** An Internal app is exempt from the 7-day expiry, the 100-user cap and
+   verification, and needs none of those URLs. It requires the Cloud project to live in a
+   Workspace organisation, so it is only available if you have one.
+2. **Host two static pages.** GitHub Pages is enough: a homepage and a privacy policy on the same
+   domain, with that domain added under Authorized domains. Publish then unblocks permanently.
+3. **Stay in Testing and reconnect weekly.** Nothing to set up. The app detects this case
+   specifically and names it, rather than failing silently.
+
+A personal Google account is otherwise sufficient throughout, at no cost and with no billing
+enabled. The only thing it genuinely cannot do is choose the Internal audience above.
 
 The flow is PKCE on a loopback listener bound to `127.0.0.1` on an OS-assigned port, so two
 instances can never collide and nothing off-machine can reach it. Google issues a secret even for
