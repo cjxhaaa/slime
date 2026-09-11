@@ -126,6 +126,33 @@ whenever the mouse twitched. A pet that tracks something across the room reads a
 Hover wakes the loop on the same frame rather than up to an idle interval later, because the wake
 test uses the live cursor position rather than last frame's paw state.
 
+### The window is full-screen on purpose, and shrinking it is not worth it
+
+The obvious next optimisation is to stop being a full-screen transparent window at all: make it a
+small window that follows the slime, so the compositor has a fraction of the area to recombine. It
+was measured before being built, by resizing the live overlay with `SetWindowPos` and holding the
+render load constant:
+
+| Overlay | Area | CPU (one core) |
+|---|---|---|
+| Full work area | 8.0 MP | 36.3% |
+| 600x600 | 0.36 MP | 25.8% |
+
+**A 22x area reduction bought 29% less CPU.** So the per-frame cost is almost all fixed overhead —
+frame loop, canvas state, WebView2's commit and present — not per-pixel compositing. A window that
+chases the slime would buy roughly ten points for a large amount of new complexity: repositioning
+per frame, keeping the bubble and cursor inside the frame, and re-deriving screen-space coordinates
+every time it moves. Not worth it, and this table is here so it does not get re-litigated.
+
+Nor is it the dev build. A release build (LTO, no vite client, no source maps) measures the same
+35-41% of a core while animating as `tauri dev` does, so the numbers above are not a dev artifact.
+Idle in release is the same story as in dev: it stands down.
+
+What that leaves is the fixed per-frame cost, which is why standing the loop down — not making each
+frame cheaper — was the optimisation that actually mattered. The one lever left would be capping the
+pet below 60 fps while it moves, which would roughly halve the animating cost and is deliberately
+not taken: motion smoothness is the thing this app is actually judged on.
+
 ## Input rate, and what it is not
 
 The drag is driven **only** by the DOM pointer stream. It used to be driven by that *and* the 30 Hz
