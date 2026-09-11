@@ -301,6 +301,29 @@ learn to tune out. Clicking it opens the link.
 Announcements are deduped by event id plus start time, so a rescheduled meeting is announced again
 but a 45-second poll does not re-trigger the same one.
 
+### Making it a one-click Connect
+
+Google has no anonymous OAuth: every program that touches a Google API has to present a registered
+client ID. Apps that "just connect" are not exempt from that — their developer registered one client,
+once, and shipped it inside the binary, so each user only ever sees a button.
+
+Slime can do the same. Build with the credentials in the environment and they are compiled in:
+
+```bash
+SLIME_GOOGLE_CLIENT_ID=…apps.googleusercontent.com SLIME_GOOGLE_CLIENT_SECRET=… npm run tauri build
+```
+
+Settings then shows a single Connect button — the walkthrough, both credential fields and the Save
+button are hidden, because they are setup work that no longer exists. A credential pasted in Settings
+still overrides the built-in one, so a build can be pointed at a different Cloud project without
+rebuilding.
+
+Shipping the secret in the binary is deliberate and is what Google intends for installed apps: a
+desktop client secret is explicitly not confidential, which is the entire reason this flow uses PKCE.
+The security rests on the per-attempt verifier, not on that value staying hidden.
+
+The registration itself still has to happen once, by whoever builds it. What follows is how.
+
 ### Connecting your Google account
 
 You need your own OAuth client — this app has no shared one, and a client ID baked into a

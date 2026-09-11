@@ -51,8 +51,39 @@ fn clear(account: &str) {
     }
 }
 
+/// A client baked in at build time, so a finished build just has a Connect button.
+///
+/// This is how every shipped app that "just connects" does it: Google has no anonymous OAuth, so
+/// somebody has to register a client once — but that somebody is whoever builds the app, not
+/// whoever runs it. Set `SLIME_GOOGLE_CLIENT_ID` (and secret) when building and the credential
+/// fields disappear from Settings entirely.
+///
+/// Shipping the secret is fine here and is what Google intends for installed apps: a desktop client
+/// secret is explicitly not treated as confidential, which is exactly why this flow uses PKCE — the
+/// security rests on the per-attempt verifier, not on that value staying hidden.
+fn built_in_client() -> Option<GoogleClient> {
+    let client_id = option_env!("SLIME_GOOGLE_CLIENT_ID")?.trim();
+    if client_id.is_empty() {
+        return None;
+    }
+    Some(GoogleClient {
+        client_id: client_id.to_string(),
+        client_secret: option_env!("SLIME_GOOGLE_CLIENT_SECRET")
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
+    })
+}
+
+/// True when this build carries its own credentials and the user never needs to see them.
+pub fn has_built_in_client() -> bool {
+    built_in_client().is_some()
+}
+
+/// A credential pasted in Settings wins, so a build with its own client can still be pointed at a
+/// different Cloud project without rebuilding.
 pub fn load_client() -> Option<GoogleClient> {
-    load(CLIENT_ACCOUNT)
+    load(CLIENT_ACCOUNT).or_else(built_in_client)
 }
 
 pub fn save_client(client: &GoogleClient) -> Result<(), String> {

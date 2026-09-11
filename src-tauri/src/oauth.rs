@@ -33,6 +33,9 @@ pub struct ConfigStatus {
     has_client: bool,
     connected: bool,
     account: String,
+    /// True when the client came from the build rather than from something the user pasted, which
+    /// is what lets Settings hide the credential fields and show only a Connect button.
+    built_in_client: bool,
 }
 
 #[tauri::command]
@@ -42,6 +45,7 @@ pub fn google_config_status() -> ConfigStatus {
         has_client: store::load_client().is_some(),
         connected: tokens.is_some(),
         account: tokens.map(|t| t.account).unwrap_or_default(),
+        built_in_client: store::has_built_in_client(),
     }
 }
 
