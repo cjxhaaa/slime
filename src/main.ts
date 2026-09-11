@@ -149,13 +149,19 @@ function countdownText(meeting: Meeting): string {
   const minutes = Math.round((start - Date.now()) / 60000);
   const when =
     minutes > 1 ? `in ${minutes} min` : minutes === 1 ? 'in 1 min' : minutes === 0 ? 'now' : 'started';
-  return `${meeting.title}\n${when} · click to join`;
+  // Not every meeting has somewhere to click through to, and one that does not is still a
+  // meeting worth being told about - promising a join that cannot happen is worse than not
+  // offering one.
+  const action = meeting.meet_url ? 'click to join' : 'click to dismiss';
+  return `${meeting.title}\n${when} · ${action}`;
 }
 
 function joinAlertMeeting(): void {
   const meeting = alertMeeting;
-  if (!meeting?.meet_url) return;
-  void invoke('open_external', { url: meeting.meet_url });
+  if (!meeting) return;
+  // A link-less meeting still dismisses on click. Returning early here, as an earlier version
+  // did, would leave the slime bouncing with no way to acknowledge it.
+  if (meeting.meet_url) void invoke('open_external', { url: meeting.meet_url });
   alertMeeting = null;
   bubble.hide();
   slime.clearAlert();
@@ -537,6 +543,29 @@ async function main(): Promise<void> {
   };
 
   await refreshGeometry();
+
+  // Restored after an over-broad cleanup regex removed both of these along with a temporary
+  // debug call: it matched from that call up to the next line that was exactly "  });", which was
+  // the end of this block. Nothing downstream noticed, because a missing listener is silent — the
+  // Rust poller went on emitting correctly into nothing for a day.
+  await listen<Meeting>('meeting-soon', (event) => {
+    alertMeeting = event.payload;
+    slime.raiseAlert(countdownText(event.payload), joinAlertMeeting);
+  });
+
+  await listen<Meeting[]>('meetings', (event) => {
+    nextMeeting = event.payload.find((meeting) => meeting.minutes_until >= 0) ?? null;
+    // An alert whose meeting has drifted well past its start has done its job or been ignored;
+    // either way the slime should stop bouncing about it.
+    if (alertMeeting) {
+      const started = (Date.now() - new Date(alertMeeting.start).getTime()) / 60000;
+      if (started > 3) {
+        alertMeeting = null;
+        bubble.hide();
+        slime.clearAlert();
+      }
+    }
+  });
 
   await listen<{ x: number; y: number }>('cursor', (event) => {
     // Never while dragging: the DOM stream owns the gesture. Feeding both meant this 30Hz poll

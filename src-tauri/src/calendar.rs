@@ -26,6 +26,11 @@ pub struct Meeting {
     pub start: String,
     pub minutes_until: i64,
     pub meet_url: Option<String>,
+    /// Why there is or is not a join link, for the log. "The event has no conferencing at all" and
+    /// "it has conferencing but nothing this code recognised" need completely different fixes and
+    /// are indistinguishable from the outside.
+    #[serde(skip)]
+    pub link_note: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +82,17 @@ struct EntryPoint {
 }
 
 impl Event {
+    fn link_note(&self) -> &'static str {
+        if self.video_url().is_some() {
+            return "+link";
+        }
+        match &self.conference_data {
+            None => "-noconference",
+            Some(data) if data.entry_points.is_empty() => "-noentrypoints",
+            Some(_) => "-novideoentry",
+        }
+    }
+
     fn video_url(&self) -> Option<String> {
         if let Some(link) = self.hangout_link.as_ref().filter(|l| !l.is_empty()) {
             return Some(link.clone());
@@ -148,6 +164,7 @@ async fn fetch(app: &AppHandle) -> Result<Vec<Meeting>, String> {
             let start_raw = event.start.as_ref()?.date_time.clone()?;
             let start = DateTime::parse_from_rfc3339(&start_raw).ok()?;
             let meet_url = event.video_url();
+            let link_note = event.link_note();
             Some(Meeting {
                 id: event.id.clone(),
                 title: event
@@ -158,6 +175,7 @@ async fn fetch(app: &AppHandle) -> Result<Vec<Meeting>, String> {
                 start: start_raw,
                 minutes_until: (start.with_timezone(&Utc) - now).num_minutes(),
                 meet_url,
+                link_note,
             })
         })
         .collect();
@@ -193,11 +211,7 @@ pub fn spawn_poller(app: AppHandle) {
                         .iter()
                         .take(3)
                         .map(|m| {
-                            format!(
-                                "{}min{}",
-                                m.minutes_until,
-                                if m.meet_url.is_some() { "+link" } else { "-nolink" }
-                            )
+                            format!("{}min{}", m.minutes_until, m.link_note)
                         })
                         .collect::<Vec<_>>()
                         .join(" ");
@@ -224,9 +238,6 @@ pub fn spawn_poller(app: AppHandle) {
             if let Ok(meetings) = result {
                 for meeting in meetings.iter() {
                     if meeting.minutes_until > LEAD_MINUTES || meeting.minutes_until < -1 {
-                        continue;
-                    }
-                    if meeting.meet_url.is_none() {
                         continue;
                     }
                     let key = format!("{}@{}", meeting.id, meeting.start);
