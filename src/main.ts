@@ -169,7 +169,6 @@ function hoverText(): string | null {
   return `Next: ${nextMeeting.title}\nin ${minutes} min`;
 }
 
-let lastFrame = performance.now();
 let bubbleRect: Rect | null = null;
 
 interface Rect {
@@ -235,6 +234,12 @@ function padRect(rect: Rect, pad: number): Rect {
  */
 const STEP = 1 / 120;
 const MAX_CATCHUP_STEPS = 8;
+/**
+ * The most simulation a single frame is allowed to owe. Anything beyond it is dropped outright: a
+ * stall (the machine asleep, the window occluded for a minute) must not come back as a backlog that
+ * the following frames burn through at several times real speed.
+ */
+const MAX_BACKLOG = MAX_CATCHUP_STEPS * STEP;
 let accumulator = 0;
 
 /**
@@ -251,6 +256,12 @@ let accumulator = 0;
  * drawing. That matters because the idle behaviour scheduler lives in the simulation.
  */
 const IDLE_INTERVAL_MS = 1000 / 20;
+/**
+ * When the simulation last advanced. Elapsed time is measured from here, not from the previous
+ * `requestAnimationFrame` callback: while standing down, two of every three callbacks return
+ * without simulating, and measuring from them silently threw that time away — the idle clock ran
+ * at a third of real time, so the slime took nearly five minutes to fall asleep instead of 95 s.
+ */
 let lastTick = performance.now();
 let wasAnimating = true;
 
@@ -272,13 +283,12 @@ function homeSlime(width: number, height: number): void {
 }
 
 function frame(now: number): void {
-  const elapsed = Math.min(0.25, (now - lastFrame) / 1000);
-  lastFrame = now;
-
   const width = window.innerWidth;
   const height = window.innerHeight;
 
   if (width < 2 * slime.blob.restRadius || height < 2 * slime.blob.restRadius) {
+    // Time spent without a viewport is dropped, not owed.
+    lastTick = now;
     requestAnimationFrame(frame);
     return;
   }
@@ -299,12 +309,13 @@ function frame(now: number): void {
     requestAnimationFrame(frame);
     return;
   }
+  const elapsed = Math.min(0.25, (now - lastTick) / 1000);
   lastTick = now;
 
-  accumulator += elapsed;
-  // Capped so a long stall (the machine asleep, the window occluded for a minute) is dropped rather
-  // than simulated in one enormous burst on the frame it wakes up.
-  const steps = Math.min(MAX_CATCHUP_STEPS, Math.floor(accumulator / STEP));
+  // Clamped, not merely rate-limited. Limiting only the steps per frame left the remainder in the
+  // accumulator, so a 250 ms stall came back as a dozen frames of four-times-speed catch-up.
+  accumulator = Math.min(MAX_BACKLOG, accumulator + elapsed);
+  const steps = Math.floor(accumulator / STEP);
   accumulator -= steps * STEP;
   for (let i = 0; i < steps; i++) {
     slime.update(STEP, { width, height, cursor });
@@ -314,12 +325,15 @@ function frame(now: number): void {
   // increments and a throw judders even though the frame loop is steady.
   slime.beginFrame(accumulator / STEP);
 
+  // One hit test per frame, against the position that is about to be drawn — which is what the
+  // pointer is aimed at. Both the bubble text and the click lease below hang off it.
+  const overBody = cursor !== null && slime.hitTest(cursor.x, cursor.y);
+
   // What the bubble says, in priority order. An alert outranks everything: it is the reason this
   // app exists, and it must not be displaced by an idle greeting.
   if (alertMeeting) {
     bubble.show(countdownText(alertMeeting));
   } else {
-    const overBody = cursor ? slime.hitTest(cursor.x, cursor.y) : false;
     const text = overBody || grabbed ? hoverText() : null;
     if (text) bubble.show(text);
     else bubble.hide();
@@ -341,8 +355,7 @@ function frame(now: number): void {
     cursor.x <= bubbleRect.x + bubbleRect.width &&
     cursor.y >= bubbleRect.y &&
     cursor.y <= bubbleRect.y + bubbleRect.height;
-  const wantsClicks =
-    grabbed || (cursor !== null && (slime.hitTest(cursor.x, cursor.y) || overBubble));
+  const wantsClicks = grabbed || overBody || overBubble;
 
   // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is

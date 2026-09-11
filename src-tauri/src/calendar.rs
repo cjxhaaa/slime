@@ -103,7 +103,7 @@ async fn fetch(app: &AppHandle) -> Result<Vec<Meeting>, String> {
     let now = Utc::now();
     let time_max = now + Duration::hours(LOOKAHEAD_HOURS);
 
-    let response = reqwest::Client::new()
+    let response = oauth::http(app)
         .get(EVENTS_ENDPOINT)
         .bearer_auth(token)
         .query(&[

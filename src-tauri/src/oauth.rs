@@ -23,9 +23,51 @@ const SCOPES: &str = "openid email https://www.googleapis.com/auth/calendar.even
 /// Refresh this far before actual expiry, so a request never starts with a token that dies mid-flight.
 const REFRESH_MARGIN_SECS: i64 = 120;
 
+/// What this process knows about the stored tokens.
+///
+/// The credential store is consulted once, and the answer — including "nothing there" — is kept.
+/// Every path that changes the stored tokens runs through this process, so the cache cannot go
+/// stale; without it, a fresh install with nothing connected re-read the Windows Credential Manager
+/// on every 45-second poll for the life of the process, to learn the same thing each time.
+#[derive(Default)]
+enum TokenCache {
+    #[default]
+    Unloaded,
+    Loaded(Option<Tokens>),
+}
+
 #[derive(Default)]
 pub struct AuthState {
-    tokens: Mutex<Option<Tokens>>,
+    tokens: Mutex<TokenCache>,
+    /// One client for all Google traffic. `reqwest::Client` is a handle to a connection pool and
+    /// a TLS configuration; building a new one per request — as every call here used to — threw
+    /// both away each time, so no connection was ever reused and the TLS setup was redone on every
+    /// poll.
+    http: reqwest::Client,
+}
+
+impl AuthState {
+    fn set_tokens(&self, tokens: Option<Tokens>) {
+        *self.tokens.lock().unwrap() = TokenCache::Loaded(tokens);
+    }
+
+    /// The stored tokens, read from the credential store the first time only.
+    fn tokens(&self) -> Option<Tokens> {
+        let mut guard = self.tokens.lock().unwrap();
+        if let TokenCache::Unloaded = *guard {
+            *guard = TokenCache::Loaded(store::load_tokens());
+        }
+        match &*guard {
+            TokenCache::Loaded(tokens) => tokens.clone(),
+            TokenCache::Unloaded => unreachable!(),
+        }
+    }
+}
+
+/// The shared HTTP client, for the calendar poller.
+pub fn http(app: &AppHandle) -> reqwest::Client {
+    use tauri::Manager;
+    app.state::<AuthState>().http.clone()
 }
 
 #[derive(Serialize)]
@@ -60,7 +102,7 @@ pub fn save_google_client(client_id: String, client_secret: String) -> Result<()
 #[tauri::command]
 pub fn disconnect_google(state: tauri::State<'_, AuthState>) {
     store::clear_tokens();
-    *state.tokens.lock().unwrap() = None;
+    state.set_tokens(None);
 }
 
 #[derive(Deserialize)]
@@ -136,7 +178,7 @@ pub async fn begin_google_auth(
             .unwrap_or_else(|| "Google did not return an authorization code.".into())
     })?;
 
-    let http = reqwest::Client::new();
+    let http = state.http.clone();
     let mut form = vec![
         ("grant_type", "authorization_code".to_string()),
         ("code", code),
@@ -177,7 +219,7 @@ pub async fn begin_google_auth(
         account: account.clone(),
     };
     store::save_tokens(&tokens)?;
-    *state.tokens.lock().unwrap() = Some(tokens);
+    state.set_tokens(Some(tokens));
     Ok(account)
 }
 
@@ -185,26 +227,14 @@ pub async fn begin_google_auth(
 pub async fn access_token(app: &AppHandle) -> Result<String, String> {
     use tauri::Manager;
     let state = app.state::<AuthState>();
-
-    let cached = {
-        let guard = state.tokens.lock().unwrap();
-        guard.clone()
-    };
-    let tokens = match cached {
-        Some(tokens) => tokens,
-        None => {
-            let loaded = store::load_tokens().ok_or("Google is not connected.")?;
-            *state.tokens.lock().unwrap() = Some(loaded.clone());
-            loaded
-        }
-    };
+    let tokens = state.tokens().ok_or("Google is not connected.")?;
 
     if tokens.expires_at - REFRESH_MARGIN_SECS > chrono::Utc::now().timestamp() {
         return Ok(tokens.access_token);
     }
 
     let client = store::load_client().ok_or("The Google OAuth client is missing.")?;
-    let http = reqwest::Client::new();
+    let http = state.http.clone();
     let mut form = vec![
         ("grant_type", "refresh_token".to_string()),
         ("refresh_token", tokens.refresh_token.clone()),
@@ -225,7 +255,7 @@ pub async fn access_token(app: &AppHandle) -> Result<String, String> {
         // stored tokens here means the UI shows "not connected" instead of retrying forever.
         if response.status() == reqwest::StatusCode::BAD_REQUEST {
             store::clear_tokens();
-            *state.tokens.lock().unwrap() = None;
+            state.set_tokens(None);
             // Far and away the most likely cause, and one the user cannot guess: Google revokes
             // refresh tokens after seven days for an External app still in Testing. Saying so here
             // is the difference between a one-time fix and reconnecting every week forever.
@@ -247,7 +277,7 @@ pub async fn access_token(app: &AppHandle) -> Result<String, String> {
         account: tokens.account,
     };
     store::save_tokens(&updated)?;
-    *state.tokens.lock().unwrap() = Some(updated);
+    state.set_tokens(Some(updated));
     Ok(refreshed.access_token)
 }
 

@@ -20,13 +20,23 @@ const MAX_WIDTH = 260;
  * for this kind of overlay to look broken.
  */
 export class Bubble {
+  private text = '';
   private lines: string[] = [];
+  /**
+   * Widest line in CSS pixels, or null until measured. Measuring needs a context with the font set
+   * on it, and the text changes rarely — an alert countdown once a minute — while `layout` runs on
+   * every frame the bubble is visible, so the measurement is kept until the text changes.
+   */
+  private textWidth: number | null = null;
   private appear = 0;
   visible = false;
 
   show(text: string): void {
-    this.lines = text.split('\n').slice(0, 3);
     this.visible = true;
+    if (text === this.text) return;
+    this.text = text;
+    this.lines = text.split('\n').slice(0, 3);
+    this.textWidth = null;
   }
 
   hide(): void {
@@ -55,14 +65,17 @@ export class Bubble {
     stageWidth: number,
   ): BubbleRect | null {
     if (this.appear < 0.01 || this.lines.length === 0) return null;
-    context.save();
-    context.font = FONT;
-    const width =
-      Math.min(
-        MAX_WIDTH,
-        Math.max(...this.lines.map((line) => context.measureText(line).width)),
-      ) + PADDING_X * 2;
-    context.restore();
+    if (this.textWidth === null) {
+      context.save();
+      context.font = FONT;
+      let widest = 0;
+      for (const line of this.lines) {
+        widest = Math.max(widest, context.measureText(line).width);
+      }
+      context.restore();
+      this.textWidth = widest;
+    }
+    const width = Math.min(MAX_WIDTH, this.textWidth) + PADDING_X * 2;
     const height = this.lines.length * LINE_HEIGHT + PADDING_Y * 2;
 
     // Keep it on screen: near an edge the bubble slides along rather than being clipped.
