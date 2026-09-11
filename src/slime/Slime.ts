@@ -39,6 +39,8 @@ const MaxThrowSpeed = 1400;
 const AirDragTau = 1.6;
 const HOP_SPEED = 780;
 const WALK_SPEED = 130;
+/** How far away the pointer can be and still be watched, in CSS pixels. */
+const LookRange = 520;
 const SLEEPY_AFTER = 75;
 const ASLEEP_AFTER = 95;
 
@@ -69,6 +71,8 @@ export class Slime {
   private blinkPhase = 0;
   private look = { x: 0, y: 0 };
   private lookTargetJitter = { x: 0, y: 0 };
+  /** Where the eyes are currently easing toward — the cursor if there is one, else the idle jitter. */
+  private lookTarget = { x: 0, y: 0 };
   private clock = 0;
   private lastInteraction = 0;
   private nextDecisionAt = 3;
@@ -161,6 +165,47 @@ export class Slime {
     const t = Math.max(0, Math.min(1, alpha));
     this.renderX = this.prevX + (this.x - this.prevX) * t;
     this.renderY = this.prevY + (this.y - this.prevY) * t;
+  }
+
+  /**
+   * Whether anything about this slime's appearance is still changing.
+   *
+   * A desk pet spends almost all of its life doing nothing, and every frame it draws makes the
+   * compositor recombine an eight-megapixel transparent layer over the desktop. Knowing when there
+   * is genuinely nothing to redraw is what lets the loop stand down.
+   *
+   * Sleep counts as animating: the drifting "z" marks are drawn from the clock, so an asleep slime
+   * is never static — only slow, which the caller handles by ticking it less often rather than by
+   * not drawing it.
+   */
+  get isAnimating(): boolean {
+    return (
+      this.grabbed ||
+      Math.abs(this.vx) > 0.5 ||
+      Math.abs(this.vy) > 0.5 ||
+      Math.abs(this.x - this.renderX) > 0.05 ||
+      Math.abs(this.y - this.renderY) > 0.05 ||
+      this.blinkPhase > 0.001 ||
+      this.blob.energy() > 0.08 ||
+      // Against the target the eyes are actually easing toward, which is the cursor whenever there
+      // is one. Comparing against the idle jitter target instead — as the first version did — is
+      // never satisfied while the pointer is on screen, so this always answered "yes" and the whole
+      // stand-down never engaged.
+      Math.abs(this.look.x - this.lookTarget.x) > 0.002 ||
+      Math.abs(this.look.y - this.lookTarget.y) > 0.002
+    );
+  }
+
+  /**
+   * Motion slow enough to redraw at the idle rate rather than at full frame rate.
+   *
+   * Sleep is the case: the drifting "z" marks never stop, so an asleep slime always needs painting,
+   * but at 20 Hz they read exactly the same as at 60 and cost a third as much. Keeping this separate
+   * from `isAnimating` is what lets the common case — asleep in the corner all afternoon — stand
+   * down without freezing the one thing on screen that is supposed to move.
+   */
+  get hasSlowAnimation(): boolean {
+    return this.mood === 'asleep';
   }
 
   /** Where the body is being drawn this frame, which is what the bubble anchors to. */
@@ -455,10 +500,19 @@ export class Slime {
       const dx = env.cursor.x - this.x;
       const dy = env.cursor.y - this.y;
       const distance = Math.hypot(dx, dy) || 1;
-      const reach = Math.min(1, distance / 260);
-      targetX = (dx / distance) * reach;
-      targetY = (dy / distance) * reach;
+      // Beyond this the pointer is ignored entirely. Partly because a pet that tracks something
+      // right across the room reads as staring rather than as noticing, and partly for cost: the
+      // eyes easing toward a new target counts as animating, so following a pointer anywhere on a
+      // 2560-wide screen kept the whole loop at full frame rate whenever the mouse so much as
+      // twitched — which is most of the time the app is open.
+      if (distance < LookRange) {
+        const reach = Math.min(1, distance / 260);
+        targetX = (dx / distance) * reach;
+        targetY = (dy / distance) * reach;
+      }
     }
+    this.lookTarget.x = targetX;
+    this.lookTarget.y = targetY;
     const ease = Math.min(1, dt * 6);
     this.look.x += (targetX - this.look.x) * ease;
     this.look.y += (targetY - this.look.y) * ease;

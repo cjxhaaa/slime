@@ -96,6 +96,36 @@ aware sees virtualised window rects: `GetWindowRect` reports this window as 2560
 viewport is also 2560, and the ratio looks like 1 when it is really 1.5. That misreading is what
 briefly convinced me the backing store was 2.25x oversampled, which it is not.
 
+## Standing down when nothing is happening
+
+This app is open all day, and it was costing **31% of a core to sit still**. Measured by simply
+stopping the frame loop, that cost was almost entirely the loop itself: with it stopped the process
+idled at 4.2%. Every frame that touches the canvas makes the compositor recombine an eight-megapixel
+transparent layer over the whole desktop, whether any pixel changed or not.
+
+So the loop now stands down. It drops to a 20 Hz tick when nothing is happening, and a tick where
+nothing visible changed does not paint at all. **Idle went from 31.2% of a core to 4.0%** — the floor
+measured with the loop stopped entirely, so idle rendering now costs essentially nothing.
+
+Three things this has to get right, each of which was wrong in the first attempt:
+
+- **The "is anything moving" test has to be against the target the eyes are actually easing toward.**
+  The first version compared the eye position against the *idle jitter* target, which is never what
+  they are chasing while a pointer is on screen — so it always answered "yes" and the whole
+  stand-down silently never engaged. Idle CPU was unchanged, which is how it was caught.
+- **A trailing paint after motion stops.** The frame that first reports nothing moving is the frame
+  that has to settle the image; skip it and the screen keeps whatever was drawn mid-movement.
+- **Sleep is slow, not static.** The drifting "z" marks never stop, so an asleep slime always needs
+  painting — but at 20 Hz, which looks identical and costs a third as much. That is a separate
+  question from whether the loop needs full frame rate, so it is a separate flag.
+
+Cursor tracking is also range-gated (520 px). The eyes easing toward a new target counts as
+animating, so following the pointer anywhere on a 2560-wide screen held the loop at full rate
+whenever the mouse twitched. A pet that tracks something across the room reads as staring anyway.
+
+Hover wakes the loop on the same frame rather than up to an idle interval later, because the wake
+test uses the live cursor position rather than last frame's paw state.
+
 ## Input rate, and what it is not
 
 The drag is driven **only** by the DOM pointer stream. It used to be driven by that *and* the 30 Hz
@@ -113,9 +143,14 @@ The coalesced samples are not wasted, though — `getCoalescedEvents()` hands th
 into the velocity fit, which wants every sample it can get.
 
 Two further sources of per-frame noise were removed rather than measured away. The 30 Hz cursor poll
-is silenced for the duration of a gesture (`set_pointer_owned`): it exists so the slime can watch a
-pointer it cannot receive events from, and during a drag it *is* receiving events at frame rate, so
-each emission was an IPC delivery deserialised and dispatched on the same thread rendering the drag.
+is silenced for the duration of a gesture: it exists so the slime can watch a pointer it cannot
+receive events from, and during a drag it *is* receiving events at frame rate, so each emission was
+an IPC delivery deserialised and dispatched on the same thread rendering the drag. That suppression
+rides on the click lease (`hold_clicks(dragging)`) rather than being its own flag — it was briefly a
+standalone latch set on pointerdown and cleared on pointerup, and a pointerup that never arrived
+muted the poll forever, so the frontend's cursor went permanently null, so nothing was ever over the
+slime, so every click passed through it. In this app, anything that can strand the frontend has to
+expire on its own.
 And the dirty region is now two rects rather than their union whenever they do not overlap — once
 the slime moves faster than its own width per frame, the union is mostly the empty space between
 where it was and where it is.

@@ -238,6 +238,23 @@ const MAX_CATCHUP_STEPS = 8;
 let accumulator = 0;
 
 /**
+ * Rate to tick at when nothing is happening, and the bookkeeping for standing down.
+ *
+ * A desk pet spends nearly all of its life doing nothing, and this one was costing 31% of a core to
+ * do it: every frame it touched the canvas, which makes the compositor recombine an eight-megapixel
+ * transparent layer over the whole desktop whether the pixels changed or not. So an idle frame is
+ * both rarer and cheaper now — the loop drops to 20 Hz, and a frame where nothing visible changed
+ * does not paint at all.
+ *
+ * 20 Hz is chosen against MAX_CATCHUP_STEPS: a 50 ms gap is six 1/120 s steps, comfortably under the
+ * cap, so the simulation still advances in real time rather than being throttled along with the
+ * drawing. That matters because the idle behaviour scheduler lives in the simulation.
+ */
+const IDLE_INTERVAL_MS = 1000 / 20;
+let lastTick = performance.now();
+let wasAnimating = true;
+
+/**
  * The slime cannot be placed until the webview reports a real viewport.
  *
  * At startup `innerWidth`/`innerHeight` can still be 0 — the window is created before its content
@@ -266,6 +283,23 @@ function frame(now: number): void {
     return;
   }
   if (!homed) homeSlime(width, height);
+
+  // Anything the user is engaged with keeps the loop at full rate even when the body is still: a
+  // hover, a held button, a live alert, a bubble mid-fade.
+  // The hover test is against the live cursor rather than last frame's paw state, so moving onto
+  // the slime wakes the loop on the same frame instead of up to an idle interval later.
+  const engaged =
+    grabbed ||
+    showingPaw ||
+    paw.hasRipples() ||
+    bubble.opacity > 0.01 ||
+    alertMeeting !== null ||
+    (cursor !== null && slime.hitTest(cursor.x, cursor.y));
+  if (!engaged && !slime.isAnimating && now - lastTick < IDLE_INTERVAL_MS) {
+    requestAnimationFrame(frame);
+    return;
+  }
+  lastTick = now;
 
   accumulator += elapsed;
   // Capped so a long stall (the machine asleep, the window occluded for a minute) is dropped rather
@@ -343,7 +377,15 @@ function frame(now: number): void {
   previousDirty = painted;
   fullRepaint = false;
 
-  if (regions.length > 0) {
+  // One more paint after motion stops, then nothing. Without that trailing frame the screen keeps
+  // whatever was drawn mid-movement, because the frame that would have settled it is the first one
+  // to report nothing moving.
+  const animating =
+    slime.isAnimating || showPaw || paw.hasRipples() || bubble.opacity > 0.01 || alertMeeting !== null;
+  const shouldPaint = animating || slime.hasSlowAnimation || wasAnimating || fullRepaint;
+  wasAnimating = animating;
+
+  if (shouldPaint && regions.length > 0) {
     context.save();
     const clip = new Path2D();
     for (const region of regions) {

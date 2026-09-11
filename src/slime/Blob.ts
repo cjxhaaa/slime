@@ -67,6 +67,19 @@ export class Blob {
     return { x: 1 / y, y };
   }
 
+  /**
+   * How much deformation is still in flight, in pixels. Zero means the ring has settled back to a
+   * circle and redrawing it would produce the same image.
+   */
+  energy(): number {
+    let worst = Math.abs(this.squashY - 1) * this.restRadius + Math.abs(this.squashVelocity);
+    for (let i = 0; i < this.count; i++) {
+      const magnitude = Math.abs(this.offset[i]) + Math.abs(this.velocity[i]) * 0.02;
+      if (magnitude > worst) worst = magnitude;
+    }
+    return worst;
+  }
+
   update(dt: number): void {
     // The ring. Neighbour terms are read from a snapshot so the wave does not travel a whole lap in
     // a single step, which is the difference between a wobble and a buzz.
