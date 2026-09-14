@@ -1,7 +1,6 @@
 # Slime
 
-A desk pet that lives on top of your screen. It gets agitated when a Google Meet is about to start,
-and it eats windows you want rid of.
+A desk pet that lives on top of your screen. It eats windows you want rid of.
 
 Everything you see is simulated, not animated: there are no sprites, no frames and no art assets in
 this repo. The body is a soft-body physics ring and the face is drawn from primitives, which is
@@ -11,29 +10,10 @@ to match.
 
 ## What it actually does for you
 
-Two jobs, and both are shaped by the same constraint: **a desk pet has almost no bandwidth.** All it
-can say is a colour, a rhythm, a shape and a line of text you have to hover for. So neither of these
-is allowed to be a notification with a face on it — the pet is only worth having if you can read it
-out of the corner of your eye and ignore it the rest of the time.
-
-### It warns you about a meeting before you have missed it
-
-Five minutes before a calendar event that has a video link, the slime swells, turns amber and starts
-hopping on a beat. **Click it to join.** No window opens, nothing takes focus, and nothing has to be
-dismissed.
-
-Reaching for it is enough to stop the hopping — moving the pointer over the pet is already the
-gesture that says "seen it", so it drops to a quiet pulse instead of demanding a second
-acknowledgement. It stays in that state until three minutes after the meeting has started, because
-acknowledging is not the same as the meeting having happened.
-
-If the calendar connection breaks, hovering the pet says so — "Calendar sign-in expired",
-"Calendar permission missing" — rather than the reminders just silently stopping, which would make a
-missed meeting the first sign of trouble.
-
-This one needs a Google account connected, which means a client ID of your own; see
-[Connecting your Google account](#connecting-your-google-account). Until then the poller idles,
-which is its normal state on a fresh install.
+One job so far, shaped by a constraint that applies to anything else this ever grows: **a desk pet
+has almost no bandwidth.** All it can say is a colour, a rhythm, a shape and a line of text you have
+to hover for. So nothing here is allowed to be a notification with a face on it — the pet is only
+worth having if you can read it out of the corner of your eye and ignore it the rest of the time.
 
 ### It closes windows, including ones that have stopped responding
 
@@ -70,7 +50,8 @@ Tauri 2 + TypeScript, Canvas 2D, Rust backend.
 Tauri over Electron because this thing runs all day: it uses the system WebView2 that Windows
 already ships, so it idles at roughly a third of what an Electron build of the same app would.
 Everything a desk pet needs — a transparent always-on-top window, click-through, a tray icon — is
-native to it, and the Rust side is where the OAuth loopback listener belongs anyway.
+native to it, and the Rust side is where reaching into another application's windows belongs
+anyway.
 
 Using the system webview means the renderer is not the same engine everywhere: WebView2 on Windows,
 WKWebView on macOS, WebKitGTK on Linux. That mostly does not matter for Canvas 2D, but the repaint
@@ -87,24 +68,11 @@ npm run tauri dev
 To build an installer to actually give someone:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File scripts/build-with-google.ps1
+npm run tauri build
 ```
-
-On macOS and Linux, the same script:
-
-```bash
-./scripts/build-with-google.sh
-```
-
-That is the one to use, not a bare `npm run tauri build`. A plain build compiles without the Google
-credentials, and `option_env!` resolves a missing variable to `None` *silently* — so it succeeds, it
-runs, and the first thing the person who installs it sees is a form asking for a client ID and
-secret they have no way to obtain. The script bakes the client in and the app just shows Connect.
-See [making it a one-click Connect](#making-it-a-one-click-connect) for what it is doing and why it
-touches a source file first.
 
 The installer lands in `src-tauri/target/release/bundle/nsis/`; on macOS and Linux the `.dmg`,
-`.deb` and `.AppImage` land beside it and the shell script lists whichever it produced. Nothing is
+`.deb` and `.AppImage` land beside it. Nothing is
 signed, so Windows SmartScreen shows "unknown publisher" on first run — More info -> Run anyway —
 and macOS Gatekeeper refuses an unsigned `.app` outright until it is opened once from the context
 menu, or cleared with `xattr -dr com.apple.quarantine`. Signing either away needs a paid certificate
@@ -154,17 +122,11 @@ feature and killing an editor with an unsaved-work dialog open.
 ### Linux build prerequisites
 
 On top of the usual Tauri set (`libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`,
-`libgtk-3-dev`, `librsvg2-dev`), two more earn their place here:
+`libgtk-3-dev`, `librsvg2-dev`), one more earns its place here:
 
-- `libdbus-1-dev` — the credential store talks to Secret Service over D-Bus. The kernel keyring
-  (`linux-native`) would need no daemon, but it does not survive a reboot, and a refresh token that
-  evaporates on restart is worse than one that needs a keyring unlocked.
 - `libayatana-appindicator3-dev` — the tray. A stock GNOME session does not show one without an
   extension, so tray creation is treated as best-effort: it is logged and skipped rather than
   aborting startup, and `Ctrl+Alt+Shift+Q` is the exit that does not depend on it.
-
-At runtime the credential store needs a Secret Service provider actually running — gnome-keyring or
-kwallet. Without one, connecting a Google account fails at the point of saving the tokens.
 
 ## How the overlay works
 
@@ -430,11 +392,11 @@ one thing that has to read instantly from the corner of your eye.
 
 The idle scheduler mostly decides to do nothing. That is deliberate — a pet that fidgets constantly
 is exhausting to have on screen, so stillness is the common case and movement is the exception. It
-falls asleep after about 95 seconds of being left alone, and wakes when poked or when a meeting is
-coming.
+falls asleep after about 95 seconds of being left alone, and wakes when poked or when something
+raises an alert.
 
 - **Drag** it to move it. Release with speed to throw it; it bounces off the walls and floor.
-- **Click** it to poke it, or to join the meeting while it is bouncing.
+- **Click** it to poke it, or to answer the alert while it is bouncing.
 - **Right-click** it to open settings.
 - **Ctrl+Alt+Shift+Q** quits, from anywhere. This exists because every other way out goes through
   something this app can break: the tray icon, which Windows 11 hides in the overflow flyout by
@@ -442,161 +404,6 @@ coming.
   most want to quit.
 
 A press is a poke if it was under 260 ms and moved less than 6 px; anything else is a throw.
-
-## Meeting reminders
-
-There is no Meet API. A Meet link is a property of a calendar event — `hangoutLink`, or a `video`
-entry in `conferenceData` — so this reads Google Calendar events and nothing else. The scope
-requested is `calendar.events.readonly`: Slime cannot change your calendar.
-
-The Rust poller (`src-tauri/src/calendar.rs`) checks every 45 seconds, and five minutes before an
-event with a video link it emits `meeting-soon`. The slime swells, turns amber, and bounces on a
-beat — a steady pulse rather than continuous motion, because constant movement is the thing you
-learn to tune out. Clicking it opens the link.
-
-Announcements are deduped by event id plus start time, so a rescheduled meeting is announced again
-but a 45-second poll does not re-trigger the same one.
-
-The lead time is nominally 5 minutes and in practice lands somewhere in the 5:00-6:00 window:
-`num_minutes()` truncates, so 5m59s reads as 5 and already qualifies, and the poll cadence decides
-which second inside that it actually fires. The window closes one minute after the start, so opening
-the app just after a meeting begins still gets a reminder while opening it well into one does not.
-
-Hops are spaced 1.5s apart. A hop is airborne for about 0.54s, so the original 0.85s spacing left
-three tenths of a second on the ground — not a pulse but continuous bouncing, which reads as panic
-rather than as a reminder. Landing and visibly resting between hops is what makes it a beat.
-
-### Hovering acknowledges; it does not dismiss
-
-Hopping stops as soon as the pointer is over the pet. Reaching for it is already the gesture
-that says "I have seen this", so requiring a click to stop the flailing asked for a second
-acknowledgement of something already acknowledged - and it meant the slime was still bouncing
-around at the exact moment you were trying to aim at it.
-
-Acknowledging is not dismissing, because the meeting has not happened yet. The reminder drops to
-a `nudge` state: the same hue drained of urgency, eyes back to normal, no hopping, and one soft
-pulse every 3.2s - enough to stay in peripheral vision without asking for anything. Clicking
-still joins (or dismisses, for a meeting with no link), and it still clears itself three minutes
-after the start.
-
-This is also why a visible bubble no longer counts as "something is animating". A nudge can
-stand for minutes showing the same words, and treating the bubble's presence as motion pinned
-the render loop at full frame rate for all of it. The bubble now reports when it is *fading* and
-when its text *changes* - a countdown ticking over once a minute - and only those force a
-repaint.
-
-### A broken calendar connection is visible
-
-If the calendar cannot be read - the sign-in expired, the permission was revoked, Google is
-unreachable - the reminders simply stop coming. That used to be entirely silent, so the first
-sign of trouble would be a missed meeting.
-
-The poller now reports the failure to the overlay, and hovering the pet says what is wrong
-instead of naming the next meeting: "Calendar sign-in expired", "Calendar permission missing",
-"Can't reach Google Calendar". On hover rather than announced, because this is a state to
-discover when you look at the pet, not something to interrupt you with. A successful poll
-clears it.
-
-The message is a translation of the failure, not the failure itself: the raw text is a status
-line with Google's JSON body attached, which is right for a log and useless on a pet's head.
-
-**Tray → Test reminder** fires the whole performance immediately through the same `meeting-soon`
-event the poller uses. Tuning the rhythm otherwise means creating a real calendar event and waiting
-out the lead time for each adjustment, and going through the real path is what would have caught the
-frontend listener going missing.
-
-### Making it a one-click Connect
-
-Google has no anonymous OAuth: every program that touches a Google API has to present a registered
-client ID. Apps that "just connect" are not exempt from that — their developer registered one client,
-once, and shipped it inside the binary, so each user only ever sees a button.
-
-Slime can do the same. Build with the credentials in the environment and they are compiled in:
-
-```bash
-SLIME_GOOGLE_CLIENT_ID=…apps.googleusercontent.com SLIME_GOOGLE_CLIENT_SECRET=… npm run tauri build
-```
-
-On Windows, `scripts/build-with-google.ps1` does that for you: it asks for the two values once,
-offers to save them to `scripts/google-client.json` (gitignored), and runs the build. It also forces
-a rebuild of the app crate first — Rust caches on source hash, not on environment, so a build after
-changing the credentials would otherwise reuse the old object and silently ship the wrong client.
-
-Settings then shows a single Connect button — the walkthrough, both credential fields and the Save
-button are hidden, because they are setup work that no longer exists. A credential pasted in Settings
-still overrides the built-in one, so a build can be pointed at a different Cloud project without
-rebuilding.
-
-Shipping the secret in the binary is deliberate and is what Google intends for installed apps: a
-desktop client secret is explicitly not confidential, which is the entire reason this flow uses PKCE.
-The security rests on the per-attempt verifier, not on that value staying hidden.
-
-The registration itself still has to happen once, by whoever builds it. What follows is how.
-
-### Connecting your Google account
-
-You need your own OAuth client — this app has no shared one, and a client ID baked into a
-distributed binary would be a credential anyone could extract.
-
-1. In the Google Cloud console, create or pick a project.
-2. Enable the **Google Calendar API**.
-2b. Under **Data Access**, add the scope `calendar.events.readonly`. A scope the app has not
-   declared may not be offered on the consent screen, and the resulting sign-in succeeds while
-   being unable to read anything.
-3. On the OAuth consent screen, add your own account as a **test user**. The calendar scope is a
-   sensitive one, so an app in testing mode only works for listed users.
-4. Under Credentials, create an **OAuth client ID** of type **Desktop app**. There is no redirect
-   URI to fill in: desktop clients are allowed to use loopback, which is what Slime listens on.
-5. Paste the client ID and secret into Slime's settings, then press Connect.
-
-**Avoiding the 7-day expiry is the awkward part, and not for the reason you would guess.** Google
-revokes refresh tokens after 7 days for an External app whose publishing status is still Testing,
-so it logs itself out every week. But publishing is not simply a button:
-
-- **Publishing** an External app to production requires a homepage URL, a privacy policy URL and
-  a terms-of-service URL on the Branding page, plus the matching authorized domain. Google's own
-  wording: "These links are required for all external production apps." Until they are there the
-  Publish button is greyed out, with only a pointer back to the Branding page to explain why.
-- **Verification** is the separate, heavier step that additionally wants the domain *verified* in
-  Search Console and reviews what the app does. Its only effects are removing the one-time
-  "unverified app" screen and lifting a 100-user lifetime cap - neither of which matters for a
-  pet on your own desk.
-
-Three ways out, in order of preference:
-
-1. **Make it Internal.** An Internal app is exempt from the 7-day expiry, the 100-user cap and
-   verification, and needs none of those URLs. It requires the Cloud project to live in a
-   Workspace organisation, so it is only available if you have one.
-2. **Host the pages in `docs/`.** Google wants three URLs, not two: a homepage, a privacy
-   policy *and* terms of service, all on one domain that is listed under Authorized domains.
-   `docs/` contains all three, written to match what this app actually does. Serve that
-   directory with GitHub Pages (Settings > Pages > main branch, /docs) and fill the URLs in.
-   Publish then unblocks permanently.
-3. **Stay in Testing and reconnect weekly.** Nothing to set up. The app detects this case
-   specifically and names it, rather than failing silently.
-
-A personal Google account is otherwise sufficient throughout, at no cost and with no billing
-enabled. The only thing it genuinely cannot do is choose the Internal audience above.
-
-The authorisation request asks for `prompt=select_account consent`, so the account chooser
-always appears. Without `select_account`, Google silently authorises whichever account the
-browser happens to be defaulted to - and if that is a Workspace account whose organisation
-blocks unreviewed third-party apps, the flow dies on "your institution's admin needs to review
-Slime" with Error 400 access_not_configured, which says nothing about the real problem being
-that an account was picked for you.
-
-The flow is PKCE on a loopback listener bound to `127.0.0.1` on an OS-assigned port, so two
-instances can never collide and nothing off-machine can reach it. Google issues a secret even for
-desktop clients and it genuinely cannot be kept secret in a distributed program, which is precisely
-why the flow uses PKCE — security rests on the per-attempt verifier, not on that value.
-
-Tokens and the client credentials go into the Windows Credential Manager via the `keyring` crate,
-not a config file. The `state` parameter is checked on the callback, and a `400` from a refresh
-clears the stored tokens so the UI says "not connected" instead of retrying a revoked grant forever.
-
-Two smaller deliberate choices: `open_external` refuses anything that is not `https://`, and the
-settings list renders event titles with `textContent`. Both are because a calendar invite is data
-controlled by whoever can put an event on your calendar.
 
 ## Eating a window
 
@@ -830,7 +637,7 @@ belongs to a gesture the user is still holding, not to a menu item that can be c
 `__simulateDevour(x, y, width, height)` in a devtools console engulfs a rectangle with no real
 window under it. The real path runs through Win32 calls that only exist inside Tauri, and the
 overlay can only be *seen* in an ordinary browser, so without this the animation is untunable for
-the same reason `__simulateMeeting` exists. The swallow then fails and is handled, which exercises
+the same reason `__raiseAlert` exists. The swallow then fails and is handled, which exercises
 the unwind as well.
 
 Note that the browser pane used for this drives no `requestAnimationFrame` of its own — the only
@@ -846,8 +653,9 @@ or another virtual desktop's windows turning up, each of which is a filter above
 Two handles are attached to `window` for use from a devtools console:
 
 - `__slime` — the live simulation object, for reading position, velocity and mood.
-- `__simulateMeeting(minutes, title)` — fires the whole reminder performance immediately. Tuning the
-  alert animation is otherwise gated on an actual calendar entry, which makes it untunable.
+- `__raiseAlert(text)` — fires the whole attention performance immediately: swell, hop on a beat,
+  quieten on hover, clear on click. Nothing raises an alert on its own yet, so this is the only way
+  to see it.
 
 **You cannot screenshot the overlay with a normal screen capture.** It is a transparent WebView2
 window, so it is layered and DirectComposition-rendered: `BitBlt` from the screen DC omits it
@@ -859,20 +667,18 @@ calls fail there and are handled, and everything visual behaves the same.
 ## Status
 
 Verified **on Windows**: the Rust side compiles clean, TypeScript typechecks, the production bundle
-builds, and the app runs at about 69 MB resident. The slime renders and simulates, tracks the cursor, and the full
-reminder performance was confirmed visually — amber body, wide eyes, airborne with the contact
-shadow shrinking away, speech bubble anchored to it.
+builds, and the app runs at about 69 MB resident. The slime renders and simulates, tracks the
+cursor, and the attention performance was confirmed visually — amber body, wide eyes, airborne with
+the contact shadow shrinking away, speech bubble anchored to it.
 
-**Not verified end to end:** the Google OAuth round trip and the calendar poll. Both are written and
-compile, but they need a real OAuth client ID pasted into Settings, which is yours to create — I
-should not be handling your credentials. Until then the poller idles, which is its normal state on a
-fresh install.
+**Nothing persists between runs.** There is no save file and no settings store of any kind, so the
+app forgets even where you left the slime. That is the first thing that has to change before it
+grows any progression of its own.
 
 Not built yet:
 
 - Drag, throw and poke are wired and typecheck, but have only been exercised through synthetic
   events — they want a few minutes of actual mouse-in-hand testing.
-- Reminder lead time is hardcoded at 5 minutes, and there is no settings control for it.
 - Eating a window is complete and typechecks **on Windows**, and the engulf, the abort and the
   unwind were confirmed visually. Not yet exercised with a mouse in hand, and `IsHungAppWindow`, the
   force kill and the `Resisting` path have never been run against a real hung app or a real save

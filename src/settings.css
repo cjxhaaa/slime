@@ -56,36 +56,6 @@ section {
   margin-bottom: 16px;
 }
 
-label {
-  display: block;
-  font-size: 12px;
-  color: var(--muted);
-  margin: 12px 0 4px;
-}
-
-input {
-  width: 100%;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--ink);
-  font: inherit;
-  font-family: ui-monospace, "Cascadia Mono", monospace;
-  font-size: 12px;
-}
-
-input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-
-.row {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
-}
-
 button {
   font: inherit;
   font-weight: 600;
@@ -95,17 +65,6 @@ button {
   background: var(--accent);
   color: #05231d;
   cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-button.secondary {
-  background: transparent;
-  border-color: var(--line);
-  color: var(--ink);
 }
 
 button.link {
@@ -120,84 +79,10 @@ button.link.danger {
   color: var(--danger);
 }
 
-.status {
-  margin: 0;
-  font-weight: 600;
-}
-
-.status[data-connected="true"] {
-  color: var(--accent);
-}
-
-.message {
-  margin: 10px 0 0;
-  font-size: 13px;
-  min-height: 1.2em;
-  color: var(--muted);
-  white-space: pre-wrap;
-}
-
-.message[data-kind="error"] {
-  color: var(--danger);
-}
-
 .muted {
   color: var(--muted);
 }
 
-details {
-  margin: 10px 0 4px;
-  font-size: 13px;
-}
-
-summary {
-  cursor: pointer;
-  color: var(--accent);
-  font-weight: 600;
-}
-
-details ol {
-  padding-left: 20px;
-}
-
-details li {
-  margin-bottom: 6px;
-}
-
-.meetings {
-  list-style: none;
-  margin: 0 0 12px;
-  padding: 0;
-}
-
-.meetings li {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-}
-
-.meetings li:last-child {
-  border-bottom: none;
-}
-
-.meetings .when {
-  color: var(--muted);
-  font-size: 12px;
-}
-
 footer {
   text-align: center;
-}
-
-/*
- * The one piece of setup that silently breaks a week later if it is skipped, so it does not get to
- * look like the rest of the prose.
- */
-.warn {
-  margin: 12px 0 4px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  font-size: 13px;
 }

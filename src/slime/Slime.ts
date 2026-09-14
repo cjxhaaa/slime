@@ -72,16 +72,16 @@ const SLEEPY_AFTER = 75;
 const ASLEEP_AFTER = 95;
 
 /**
- * Seconds between hops while a meeting alert is up.
+ * Seconds between hops while an alert is up.
  *
  * A hop leaves the ground at 0.72 * 780 px/s against 2100 px/s^2 of gravity, so it is airborne for
  * about 0.54s. At the original 0.85s that left barely three tenths of a second on the ground, which
- * is not a pulse — it is continuous bouncing, and it reads as panic rather than as a reminder.
+ * is not a pulse — it is continuous bouncing, and it reads as panic rather than as a summons.
  * Landing and visibly resting between hops is what makes it a beat.
  */
 const AlertBounceInterval = 1.5;
 
-/** Seconds between the soft pulses of an acknowledged reminder. Slow enough to be peripheral. */
+/** Seconds between the soft pulses of an acknowledged alert. Slow enough to be peripheral. */
 const NudgeBreathInterval = 3.2;
 
 /** Body palette per mood. Colour is reserved for state — it is the one thing that must read instantly. */
@@ -89,10 +89,10 @@ const PALETTE: Record<string, { core: string; edge: string; rim: string }> = {
   calm: { core: '#8ff0d4', edge: '#33c6a6', rim: '#1d9c85' },
   alert: { core: '#ffd48a', edge: '#f59b2c', rim: '#c9761a' },
   // Acknowledged but still pending: the same hue, drained of urgency. Still clearly not "calm",
-  // because the meeting has not gone away.
+  // because whatever raised it has not gone away.
   nudge: { core: '#ffe9c4', edge: '#e8b978', rim: '#b58a4e' },
   // Eating. Deeper and more saturated than calm - the same creature, visibly committed to
-  // something, and distinct at a glance from both "fine" and "a meeting is coming".
+  // something, and distinct at a glance from both "fine" and "something wants you".
   devour: { core: '#7ae0bb', edge: '#18a383', rim: '#0d6f5b' },
   sleep: { core: '#b9d8ee', edge: '#6fa8cd', rim: '#4d86ab' },
 };
@@ -134,8 +134,8 @@ export class Slime {
    *
    * Hovering is the acknowledgement rather than clicking: reaching for the pet is already the
    * gesture that says "I have seen this", and it has the side benefit that the slime stops
-   * flailing exactly when you are trying to aim at it. The reminder does not go away though — it
-   * drops to something quiet, because the meeting has not happened yet.
+   * flailing exactly when you are trying to aim at it. The alert does not go away though — it
+   * drops to something quiet, because it has been seen rather than answered.
    */
   private alertAcknowledged = false;
   private dragTarget = { x: 0, y: 0 };
@@ -306,7 +306,7 @@ export class Slime {
     return this.mood === 'asleep';
   }
 
-  /** True while a reminder is still standing, acknowledged or not. */
+  /** True while an alert is still standing, acknowledged or not. */
   get hasLiveAlert(): boolean {
     return this.alertText !== null;
   }
@@ -622,7 +622,13 @@ export class Slime {
     this.moodUntil = this.clock + 1.4;
   }
 
-  /** Starts the meeting performance. Persists until dismissed — this is the one thing it must not drop. */
+  /**
+   * Starts the attention performance: swell, then hop on a beat until it is answered.
+   *
+   * Persists until `clearAlert` — this is the one thing it must not drop. The caller owns what
+   * clicking it means, because the slime has no idea what it is alerting about: `poke` runs
+   * `action` and nothing else, so whatever raised the alert also decides how it ends.
+   */
   raiseAlert(text: string, action: () => void): void {
     this.alertText = text;
     this.alertAction = action;
@@ -637,7 +643,7 @@ export class Slime {
     this.nextAlertBounceAt = this.clock + AlertBounceInterval;
   }
 
-  /** Stops the hopping without dismissing the reminder. Idempotent: hovering repeatedly is normal. */
+  /** Stops the hopping without dismissing the alert. Idempotent: hovering repeatedly is normal. */
   acknowledgeAlert(): void {
     if (!this.alertText || this.alertAcknowledged) return;
     this.alertAcknowledged = true;
@@ -777,9 +783,9 @@ export class Slime {
 
     if (this.grabbed || this.devour) return;
 
-    // Keyed off the live alert rather than the current mood, so picking the slime up mid-reminder
+    // Keyed off the live alert rather than the current mood, so picking the slime up mid-alert
     // interrupts the performance instead of cancelling it. The mood does change while it is held
-    // and for the startle right after, and without this the reminder would never come back.
+    // and for the startle right after, and without this the alert would never come back.
     if (this.alertText) {
       this.mood = this.alertAcknowledged ? 'nudge' : 'alert';
       if (this.alertAcknowledged) {

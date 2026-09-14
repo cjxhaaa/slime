@@ -10,96 +10,16 @@
       <h1>Slime</h1>
 
       <section>
-        <h2>Google Calendar</h2>
-        <p id="status" class="status">Checking…</p>
-
-        <div id="byo-client">
-        <details id="howto">
-          <summary>How to get a client ID</summary>
-          <p class="muted">
-            A personal Google account is enough. There is no charge, no billing to enable and no
-            Workspace needed.
-          </p>
-          <ol>
-            <li>Open the Google Cloud console and create or pick a project.</li>
-            <li>Enable the <strong>Google Calendar API</strong> for it.</li>
-            <li>
-              Configure the consent screen (newer consoles call this <em>Google Auth Platform</em>).
-              With a personal account the only available audience is <strong>External</strong>;
-              Internal needs a Workspace organisation.
-            </li>
-            <li>
-              Under <strong>Data Access</strong>, press <strong>Add or remove scopes</strong> and
-              add <code>calendar.events.readonly</code> — paste it into the “manually add scopes”
-              box if the filter does not find it. An app that has not declared a scope may not be
-              offered it on the consent screen at all, which is the difference between a sign-in
-              that works and one that silently cannot read anything.
-            </li>
-            <li>
-              <strong>Decide how you will avoid the 7-day expiry</strong> (see the warning
-              below). Publishing an External app to production needs a homepage, a privacy
-              policy and a terms-of-service URL on the Branding page first - the Publish button
-              stays greyed out until they are filled in. If your project lives in a Workspace
-              organisation, setting the user type to <strong>Internal</strong> avoids the expiry,
-              the 100-user cap and all of those URLs instead.
-            </li>
-            <li>
-              Under Credentials, create an <strong>OAuth client ID</strong> with application type
-              <strong>Desktop app</strong>. There is no redirect URI to fill in — a desktop client is
-              allowed to use a loopback address, which is what Slime listens on.
-            </li>
-            <li>Paste the client ID and secret below and press Connect.</li>
-            <li>
-              Google will show an “unverified app” screen once. Choose
-              <strong>Advanced → Go to Slime</strong>. Verification only matters for handing the app
-              to other people; an unverified app still works for up to 100 users.
-            </li>
-            <li>
-              <strong>Tick the calendar permission on the consent screen.</strong> Sensitive
-              permissions have their own checkbox and are <em>off</em> until ticked — pressing
-              Continue without it gives Slime a valid sign-in that cannot read your calendar.
-            </li>
-          </ol>
-          <p class="warn">
-            <strong>Don’t leave the app in Testing.</strong> Google revokes refresh tokens after
-            <strong>7 days</strong> for an External app still in Testing, so Slime would log itself
-            out every week. Publishing to production removes that rule, and costs nothing.
-          </p>
-          <p class="muted">
-            Slime asks for read-only access to calendar events and nothing else. It cannot change
-            your calendar.
-          </p>
-        </details>
-
-        <label for="client-id">Client ID</label>
-        <input id="client-id" type="text" spellcheck="false" autocomplete="off" placeholder="…apps.googleusercontent.com" />
-
-        <label for="client-secret">Client secret</label>
-        <input id="client-secret" type="password" spellcheck="false" autocomplete="off" />
-        </div>
-
-        <div class="row">
-          <button id="save" class="secondary">Save client</button>
-          <button id="connect">Connect Google</button>
-        </div>
-        <p id="message" class="message"></p>
-        <button id="disconnect" class="link" hidden>Disconnect</button>
-      </section>
-
-      <section>
-        <h2>Next up</h2>
-        <ul id="meetings" class="meetings">
-          <li class="muted">Nothing loaded yet.</li>
-        </ul>
-        <button id="refresh" class="secondary">Refresh</button>
-      </section>
-
-      <section>
         <h2>Behaviour</h2>
         <p class="muted">
-          Drag the slime to move it. Click it to poke it, or to join the meeting while it is
-          bouncing. Right-click it to open this window. It falls asleep when left alone.
+          Drag the slime to move it, or throw it. Click it to poke it. Right-click it to open this
+          window. It falls asleep when left alone, and wakes when you reach for it.
         </p>
+        <p class="muted">
+          On Windows, holding it still over a window for two seconds makes it eat the window.
+          Pulling it off before the body finishes wrapping calls the meal off.
+        </p>
+        <p class="muted">Ctrl+Alt+Shift+Q quits from anywhere, even if the overlay stops responding.</p>
       </section>
 
       <footer>

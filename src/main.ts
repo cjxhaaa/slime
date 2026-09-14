@@ -21,14 +21,6 @@ interface Prey {
   occlusion: number;
 }
 
-interface Meeting {
-  id: string;
-  title: string;
-  start: string;
-  minutes_until: number;
-  meet_url: string | null;
-}
-
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const context = canvas.getContext('2d')!;
 
@@ -76,17 +68,6 @@ let grabbed = false;
 let pullPending = false;
 let pressedAt = 0;
 let pressedPoint = { x: 0, y: 0 };
-
-let alertMeeting: Meeting | null = null;
-/**
- * Why the calendar is not being read, if it is not.
- *
- * A broken connection used to be completely silent — the reminders just never came, and the
- * first sign of trouble was a missed meeting. Shown on hover rather than announced, because
- * this is a state to discover when you look, not an interruption.
- */
-let calendarProblem: string | null = null;
-let nextMeeting: Meeting | null = null;
 
 /**
  * Sizes the backing store to the window's real device pixels, so the slime rasterises at native
@@ -345,41 +326,6 @@ function requestClicks(wantsClicks: boolean, dragging: boolean, now: number): vo
   void invoke('release_clicks').catch(() => {});
 }
 
-function countdownText(meeting: Meeting): string {
-  const start = new Date(meeting.start).getTime();
-  const minutes = Math.round((start - Date.now()) / 60000);
-  const when =
-    minutes > 1 ? `in ${minutes} min` : minutes === 1 ? 'in 1 min' : minutes === 0 ? 'now' : 'started';
-  // Not every meeting has somewhere to click through to, and one that does not is still a
-  // meeting worth being told about - promising a join that cannot happen is worse than not
-  // offering one.
-  const action = meeting.meet_url ? 'click to join' : 'click to dismiss';
-  return `${meeting.title}\n${when} · ${action}`;
-}
-
-function joinAlertMeeting(): void {
-  const meeting = alertMeeting;
-  if (!meeting) return;
-  // A link-less meeting still dismisses on click. Returning early here, as an earlier version
-  // did, would leave the slime bouncing with no way to acknowledge it.
-  if (meeting.meet_url) void invoke('open_external', { url: meeting.meet_url });
-  alertMeeting = null;
-  bubble.hide();
-  slime.clearAlert();
-}
-
-function hoverText(): string | null {
-  // Outranks the next meeting: if the calendar cannot be read, whatever was last known about
-  // it is stale, and saying so is more use than quoting it.
-  if (calendarProblem) return `${calendarProblem}
-Right-click to open settings`;
-  if (!nextMeeting) return null;
-  const start = new Date(nextMeeting.start).getTime();
-  const minutes = Math.round((start - Date.now()) / 60000);
-  if (minutes < 0 || minutes > 240) return null;
-  return `Next: ${nextMeeting.title}\nin ${minutes} min`;
-}
-
 let bubbleRect: Rect | null = null;
 
 interface Rect {
@@ -516,7 +462,7 @@ function frame(now: number): void {
     showingPaw ||
     paw.hasRipples() ||
     bubble.isSettling ||
-    (alertMeeting !== null && !slime.isAlertAcknowledged) ||
+    (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
   if (!engaged && !slime.isAnimating && now - lastTick < IDLE_INTERVAL_MS) {
     requestAnimationFrame(frame);
@@ -566,17 +512,16 @@ function frame(now: number): void {
   const readyToSwallow = slime.takeSwallowRequest();
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
 
-  // What the bubble says, in priority order. An alert outranks everything: it is the reason this
-  // app exists, and it must not be displaced by an idle greeting.
-  if (alertMeeting) {
+  // What the bubble says, in priority order. An alert outranks everything: it is the one thing
+  // on screen asking for an answer, and it must not be displaced by an idle greeting.
+  if (slime.alertText) {
     // Reaching for the pet is already the gesture that says "seen it", so hovering ends the
-    // hopping without dismissing the reminder — and it stops the slime flailing at the exact
+    // hopping without dismissing the alert - and it stops the slime flailing at the exact
     // moment you are trying to aim at it.
     if (cursor !== null && slime.hitTest(cursor.x, cursor.y)) slime.acknowledgeAlert();
-    bubble.show(countdownText(alertMeeting));
+    bubble.show(slime.alertText);
   } else {
-    // What the slime is doing right now outranks what the calendar says later.
-    const text = devourText(now) ?? (overBody || grabbed ? hoverText() : null);
+    const text = devourText(now);
     if (text) bubble.show(text);
     else bubble.hide();
   }
@@ -641,7 +586,7 @@ function frame(now: number): void {
     paw.hasRipples() ||
     bubble.isSettling ||
     bubble.takeTextDirty() ||
-    (alertMeeting !== null && !slime.isAlertAcknowledged);
+    (slime.hasLiveAlert && !slime.isAlertAcknowledged);
   const shouldPaint = animating || slime.hasSlowAnimation || wasAnimating || fullRepaint;
   wasAnimating = animating;
 
@@ -774,9 +719,9 @@ function wirePointer(): void {
     }
     // A short press that barely moved is a poke, not a throw.
     if (heldFor < 260 && moved < 6) {
-      if (alertMeeting) {
-        // The bubble is part of the alert's target, so a click anywhere on it joins.
-        joinAlertMeeting();
+      if (slime.hasLiveAlert) {
+        // The bubble is part of the alert's target, so a click anywhere on it answers it.
+        slime.poke(event.clientX, event.clientY);
         paw.ping(event.clientX, event.clientY);
       } else if (slime.hitTest(event.clientX, event.clientY)) {
         // Only the body gets poked. Clicks land here from the hover bubble too, and denting the
@@ -825,17 +770,13 @@ async function main(): Promise<void> {
   const debugHooks = window as unknown as Record<string, unknown>;
   // Handle for inspecting the simulation from a devtools console.
   debugHooks.__slime = slime;
-  // Fires the full reminder performance without waiting for a real meeting. Tuning the alert
-  // animation is otherwise gated on the calendar, which makes it untunable.
-  debugHooks.__simulateMeeting = (minutes = 3, title = 'Standup') => {
-    alertMeeting = {
-      id: 'debug',
-      title,
-      start: new Date(Date.now() + minutes * 60_000).toISOString(),
-      minutes_until: minutes,
-      meet_url: 'https://meet.google.com/debug',
-    };
-    slime.raiseAlert(countdownText(alertMeeting), joinAlertMeeting);
+  // Fires the full alert performance without needing anything to raise one. The animation is
+  // otherwise only reachable from whatever feature happens to be driving alerts.
+  debugHooks.__raiseAlert = (text = 'Something happened\nclick to dismiss') => {
+    slime.raiseAlert(text, () => {
+      bubble.hide();
+      slime.clearAlert();
+    });
   };
 
   // Engulfs a rectangle without needing a real window under the slime. The real path is gated on
@@ -858,33 +799,6 @@ async function main(): Promise<void> {
   };
 
   await refreshGeometry();
-
-  // Restored after an over-broad cleanup regex removed both of these along with a temporary
-  // debug call: it matched from that call up to the next line that was exactly "  });", which was
-  // the end of this block. Nothing downstream noticed, because a missing listener is silent — the
-  // Rust poller went on emitting correctly into nothing for a day.
-  await listen<Meeting>('meeting-soon', (event) => {
-    alertMeeting = event.payload;
-    slime.raiseAlert(countdownText(event.payload), joinAlertMeeting);
-  });
-
-  await listen<string | null>('calendar-problem', (event) => {
-    calendarProblem = event.payload;
-  });
-
-  await listen<Meeting[]>('meetings', (event) => {
-    nextMeeting = event.payload.find((meeting) => meeting.minutes_until >= 0) ?? null;
-    // An alert whose meeting has drifted well past its start has done its job or been ignored;
-    // either way the slime should stop bouncing about it.
-    if (alertMeeting) {
-      const started = (Date.now() - new Date(alertMeeting.start).getTime()) / 60000;
-      if (started > 3) {
-        alertMeeting = null;
-        bubble.hide();
-        slime.clearAlert();
-      }
-    }
-  });
 
   await listen<{ x: number; y: number }>('cursor', (event) => {
     // Never while dragging: the DOM stream owns the gesture. Feeding both meant this 30Hz poll

@@ -1,7 +1,4 @@
-mod calendar;
 mod devour;
-mod oauth;
-mod store;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -123,18 +120,6 @@ fn release_clicks(app: AppHandle, state: tauri::State<ClickState>) {
 }
 
 #[tauri::command]
-fn open_external(app: AppHandle, url: String) -> Result<(), String> {
-    // Only ever hand the OS an https link. A calendar entry is remote data, and letting an
-    // arbitrary scheme (file:, ms-…:) out of it would turn a hostile invite into a local launcher.
-    if !url.starts_with("https://") {
-        return Err("refusing to open a non-https url".into());
-    }
-    tauri_plugin_opener::OpenerExt::opener(&app)
-        .open_url(url, None::<&str>)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 fn open_settings(app: AppHandle) {
     toggle_settings(&app);
 }
@@ -232,7 +217,6 @@ fn place_overlay(window: &tauri::WebviewWindow) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -243,18 +227,11 @@ pub fn run() {
                 .build(),
         )
         .manage(ClickState::new())
-        .manage(oauth::AuthState::default())
         .invoke_handler(tauri::generate_handler![
             hold_clicks,
             release_clicks,
-            open_external,
             open_settings,
             quit_app,
-            oauth::google_config_status,
-            oauth::save_google_client,
-            oauth::begin_google_auth,
-            oauth::disconnect_google,
-            calendar::next_meetings,
             devour::devour_supported,
             devour::window_at,
             devour::raise,
@@ -285,11 +262,6 @@ pub fn run() {
             }
 
             let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            // Tuning the reminder performance otherwise means creating a real calendar event and
-            // waiting out the lead time for every single adjustment. This makes it one click, and
-            // it doubles as the way to confirm the whole chain works after an install.
-            let test_item =
-                MenuItem::with_id(app, "test-reminder", "Test reminder", true, None::<&str>)?;
             // Aims at the cursor after a delay rather than at click time: by the time a menu event
             // arrives the menu has closed and the pointer is still down by the tray, so sampling
             // immediately would only ever test whatever sits in the bottom corner of the screen.
@@ -302,10 +274,7 @@ pub fn run() {
             )?;
             let quit_item =
                 MenuItem::with_id(app, "quit", "Quit Slime  (Ctrl+Alt+Shift+Q)", true, None::<&str>)?;
-            let menu = Menu::with_items(
-                app,
-                &[&settings_item, &test_item, &devour_item, &quit_item],
-            )?;
+            let menu = Menu::with_items(app, &[&settings_item, &devour_item, &quit_item])?;
             // Losing the tray must not cost the pet. On Linux the tray is StatusNotifierItem,
             // which a stock GNOME session does not implement without an extension, so a failure
             // here is routine rather than exceptional — and `?` would turn a missing menu into no
@@ -316,7 +285,6 @@ pub fn run() {
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => toggle_settings(app),
-                    "test-reminder" => calendar::emit_test_reminder(app),
                     "test-devour" => test_devour(app),
                     "quit" => app.exit(0),
                     _ => {}
@@ -370,7 +338,6 @@ pub fn run() {
                 }
             });
 
-            calendar::spawn_poller(handle);
             Ok(())
         })
         .on_window_event(|window, event| {
