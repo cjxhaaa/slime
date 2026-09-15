@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 
+
+# Left over from the removed Google integration. Nothing reads it any more, but it is a
+# real OAuth client credential, so it stays ignored until you delete it yourself.
+scripts/google-client.json
