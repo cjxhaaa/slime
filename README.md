@@ -648,6 +648,56 @@ simulation has to be stepped by hand to see anything move.
 There is nothing to assert against a live desktop — what it is read for is the taskbar, the desktop
 or another virtual desktop's windows turning up, each of which is a filter above having failed.
 
+## The save
+
+One file, `save.json`, in the platform's app-data directory. Today it holds one thing — where you
+left the slime — which is one more thing than this used to remember.
+
+Writing it is four steps and a spare copy. That is more ceremony than a pair of coordinates
+deserves and the right amount for what goes in next:
+
+1. refuse anything that is not JSON, so a bug upstream cannot commit a file that will not load;
+2. write to a scratch file and **sync it to the disk**, so the bytes are really there;
+3. copy the current save aside as `save.bak`;
+4. rename the scratch file over the live one, which is atomic.
+
+A crash at any point leaves either the old save or the new one, never half of either, and a live
+file that will not parse on the next start falls through to the backup. All three paths are
+exercised: a planted position comes back, and a deliberately truncated `save.json` is recovered
+from `save.bak`.
+
+This is not defensive programming for its own sake. An idle game's save *is* the player's holdings,
+and the review pages of the games this one is following around are full of people who lost an
+afternoon to a silent rollback.
+
+### The shape lives in TypeScript
+
+Rust stores opaque JSON and only checks that it parses. There is no struct for the save on that
+side and there does not need to be, so the backend never changes as the schema grows. The only
+reason it looks at the content at all is that a loader which cannot tell a good file from a damaged
+one has no reason to keep a backup.
+
+### Two things that were easy to get wrong
+
+**Homing waits for the load rather than racing it.** Placing the slime in the default corner and
+then teleporting it to the restored point a few frames later is a visible jump, on every launch,
+and it would be the first thing anyone sees — so the frame loop holds off exactly the way it already
+holds off for a viewport that is not laid out yet. If the read hangs, a one-second deadline lets the
+pet appear anyway, and saving stays *off* for that session: writing a default position over a
+perfectly good save is the one outcome worth refusing outright.
+
+**Only a real change is written.** The signal for "the body has come to rest" also goes true when a
+speech bubble finishes fading, so without comparing against what is already on disk, hovering the
+pet and moving away would spend a write saying the slime is exactly where it already was. Positions
+are rounded to whole pixels, which is what makes that comparison hold at all.
+
+### One instance only
+
+Two copies would take turns overwriting each other's progress, and the second one would look like
+it was working right up until the first one wrote again. `tauri-plugin-single-instance` makes the
+second launch leave without a word. There is nothing to raise for it — the overlay never takes
+focus.
+
 ## Developing it
 
 Two handles are attached to `window` for use from a devtools console:
@@ -671,9 +721,8 @@ builds, and the app runs at about 69 MB resident. The slime renders and simulate
 cursor, and the attention performance was confirmed visually — amber body, wide eyes, airborne with
 the contact shadow shrinking away, speech bubble anchored to it.
 
-**Nothing persists between runs.** There is no save file and no settings store of any kind, so the
-app forgets even where you left the slime. That is the first thing that has to change before it
-grows any progression of its own.
+**The slime comes back where you left it**, and that is the only thing that persists so far — see
+[The save](#the-save). Everything in [CULTIVATION.md](CULTIVATION.md) is designed and unbuilt.
 
 Not built yet:
 

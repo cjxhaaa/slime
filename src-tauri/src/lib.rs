@@ -1,4 +1,5 @@
 mod devour;
+mod save;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -217,6 +218,11 @@ fn place_overlay(window: &tauri::WebviewWindow) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be registered first, and exists to protect the save file: two copies of this app
+        // running at once would take turns overwriting each other's progress, and the second one
+        // would look like it had worked right up until the first one wrote again. The overlay
+        // never takes focus, so there is nothing to raise for the second launch — it just leaves.
+        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -232,6 +238,8 @@ pub fn run() {
             release_clicks,
             open_settings,
             quit_app,
+            save::load_save,
+            save::write_save,
             devour::devour_supported,
             devour::window_at,
             devour::raise,

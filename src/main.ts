@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime, type Bite, type DevourRect } from './slime/Slime';
+import { allowSaving, loadSave, requestSave } from './save';
 import { Bubble } from './ui/Bubble';
 import { PawCursor } from './ui/PawCursor';
 import { VelocityTracker } from './ui/VelocityTracker';
@@ -433,9 +434,29 @@ let wasAnimating = true;
  */
 let homed = false;
 
+/**
+ * Whether the saved position is still on its way.
+ *
+ * Homing waits for it rather than racing it. Placing the slime in the default corner and then
+ * teleporting it to the restored point a few frames later is a visible jump, on every single
+ * launch, and it would be the first thing anyone sees.
+ */
+let restorePending = true;
+let restoredPoint: { x: number; y: number } | null = null;
+
 function homeSlime(width: number, height: number): void {
-  // Bottom-right, out of the way of most window content.
-  slime.teleportTo(width - 140, height - 80);
+  const margin = slime.blob.restRadius;
+  // Bottom-right by default, out of the way of most window content.
+  const point = restoredPoint ?? { x: width - 140, y: height - 80 };
+  // Clamped, because the display this was saved on may not be the display it comes back onto: a
+  // point that sat comfortably on screen at 3840 wide is past the edge at 1920, and a slime
+  // placed off screen cannot be dragged back.
+  const limitX = Math.max(margin, width - margin);
+  const limitY = Math.max(margin, height - margin);
+  slime.teleportTo(
+    Math.min(Math.max(point.x, margin), limitX),
+    Math.min(Math.max(point.y, margin), limitY),
+  );
   homed = true;
 }
 
@@ -445,6 +466,13 @@ function frame(now: number): void {
 
   if (width < 2 * slime.blob.restRadius || height < 2 * slime.blob.restRadius) {
     // Time spent without a viewport is dropped, not owed.
+    lastTick = now;
+    requestAnimationFrame(frame);
+    return;
+  }
+  if (restorePending) {
+    // Same shape as the degenerate-viewport case above: not ready is not the same as idle, and a
+    // frame spent waiting is dropped rather than owed.
     lastTick = now;
     requestAnimationFrame(frame);
     return;
@@ -587,6 +615,14 @@ function frame(now: number): void {
     bubble.isSettling ||
     bubble.takeTextDirty() ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged);
+  // The frame the body stops moving is the frame its resting place becomes final, so that is the
+  // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
+  // and two numbers — because the write itself is debounced well outside it.
+  if (wasAnimating && !animating) {
+    // Rounded to whole pixels. Sub-pixel precision in a save file is noise, and rounding is what
+    // makes "this is the same position we already stored" an equality that actually holds.
+    requestSave({ slime: { x: Math.round(slime.x), y: Math.round(slime.y) } });
+  }
   const shouldPaint = animating || slime.hasSlowAnimation || wasAnimating || fullRepaint;
   wasAnimating = animating;
 
@@ -742,6 +778,27 @@ function wirePointer(): void {
 
 async function main(): Promise<void> {
   resize();
+
+  // Started before the loop and deliberately not awaited: the loop holds off homing until this
+  // settles (see `restorePending`), so the slime does not appear in one place and jump to another,
+  // but a read that never comes back must not mean a pet that never appears either.
+  void loadSave()
+    .then((saved) => {
+      restoredPoint = saved?.slime ?? null;
+      // Only a load that actually finished earns the right to write. A fresh install comes back
+      // null, which counts; a thrown read does not, and leaves saving off for the session.
+      allowSaving();
+    })
+    .catch((error) => {
+      console.warn(`SAVE_LOAD_FAILED ${String(error)}`);
+    })
+    .finally(() => {
+      restorePending = false;
+    });
+  // The pet still has to turn up if that read hangs. It simply will not save this session.
+  setTimeout(() => {
+    restorePending = false;
+  }, 1000);
 
   window.addEventListener('resize', () => {
     resize();

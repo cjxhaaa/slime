@@ -1,0 +1,112 @@
+import { invoke } from '@tauri-apps/api/core';
+
+/**
+ * Everything that survives a restart.
+ *
+ * The schema lives here rather than in Rust because the gameplay does — that side stores opaque
+ * JSON and only checks that it parses, so it never needs touching as this grows. Today it is one
+ * point; cultivation state goes in beside it.
+ */
+export interface SaveState {
+  slime: { x: number; y: number };
+}
+
+/**
+ * Bumped whenever the shape below changes incompatibly.
+ *
+ * Present from the first release, before there is anything to migrate, because a save format
+ * without a version has to *guess* what it is looking at the first time one is needed.
+ */
+const Version = 1;
+
+/**
+ * How long a change sits before it is written.
+ *
+ * Long enough that settling after a throw is one write rather than several, short enough that
+ * quitting a moment later still keeps it. Nothing here is precious to the second: the worst case
+ * is the slime coming back a couple of seconds' worth of drift from where it was left.
+ */
+const FlushDelayMs = 2000;
+
+/** The serialised save waiting to go out, and the last one that actually went out. */
+let pending: string | null = null;
+let written: string | null = null;
+let timer: number | null = null;
+/**
+ * True while a write is in the air.
+ *
+ * Two overlapping writes would both be going through the same scratch file on the Rust side, and
+ * the loser would rename a half-written one over the save. Rare, but the cost of losing that race
+ * is the whole file.
+ */
+let writing = false;
+/**
+ * Writing stays off until a load has actually come back.
+ *
+ * Without this, a read that is slow or broken ends with the pet homed to its default corner and
+ * that default promptly written over a save that was perfectly fine. Refusing to write is the
+ * failure worth having: it loses the last session's drift, not the save.
+ */
+let loaded = false;
+
+/** The stored state, or null for a fresh start. Never throws; an unreadable save is a fresh start. */
+export async function loadSave(): Promise<SaveState | null> {
+  const raw = await invoke<string | null>('load_save');
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<SaveState> & { version?: unknown };
+    // A file from a future version is not something this build can reason about, and guessing at
+    // it is how a save gets quietly mangled. Starting fresh is bad; corrupting is worse.
+    if (typeof parsed.version !== 'number' || parsed.version > Version) return null;
+    const point = parsed.slime;
+    if (typeof point?.x !== 'number' || typeof point?.y !== 'number') return null;
+    return { slime: { x: point.x, y: point.y } };
+  } catch {
+    return null;
+  }
+}
+
+/** Called once the load has settled, successfully or as a confirmed absence. */
+export function allowSaving(): void {
+  loaded = true;
+}
+
+/**
+ * Records a change, to be written once it stops changing. Cheap enough to call from the loop.
+ *
+ * State that matches what is already on disk is dropped here rather than written again. That
+ * matters more than it sounds: the caller's "has it settled" signal also goes true when a bubble
+ * finishes fading or a ripple dies, so without this check, hovering the pet and moving away would
+ * spend a disk write saying the slime is exactly where it already was.
+ */
+export function requestSave(state: SaveState): void {
+  if (!loaded) return;
+  const json = JSON.stringify({ version: Version, ...state });
+  if (json === written || json === pending) return;
+  pending = json;
+  timer ??= window.setTimeout(() => void flush(), FlushDelayMs);
+}
+
+async function flush(): Promise<void> {
+  timer = null;
+  if (writing) {
+    // Come back once the one in flight is done, rather than racing it through the scratch file.
+    timer = window.setTimeout(() => void flush(), FlushDelayMs);
+    return;
+  }
+  const json = pending;
+  pending = null;
+  if (json === null) return;
+
+  writing = true;
+  try {
+    await invoke('write_save', { json });
+    written = json;
+  } catch (error) {
+    // Nothing useful to do about it here, and an exception thrown out of a timer would take the
+    // frame loop with it. Visible in the dev log, which is where a disk problem belongs.
+    console.warn(`SAVE_FAILED ${String(error)}`);
+  } finally {
+    writing = false;
+  }
+}
