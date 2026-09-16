@@ -807,7 +807,7 @@ function frame(now: number): void {
     context.clip(clip);
 
     motes.draw(context, slime.bodyColour);
-    glyphs.draw(context);
+    glyphs.draw(context, slime.bodyColour);
     slime.draw(context);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     paw.draw(context);

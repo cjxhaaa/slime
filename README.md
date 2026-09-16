@@ -676,6 +676,15 @@ green is a shade; purple to near-black is an event.
 
 ### It eats what you type
 
+The keys arrive as **paper charms** — a narrow slip of talisman paper with the letter in cinnabar,
+ringed in whatever colour the pet's realm is currently wearing. They tumble in the air and settle
+upright, riding a slow current rather than lying on the floor. The first pass drew a white rounded
+square with the letter in a monospace face, which is precisely what it looked like: a key that had
+fallen off a keyboard, in a game about condensing your work into something.
+
+The colours do two jobs at once on an unknown desktop: warm paper stands off a dark wallpaper, and
+the halo stands off a pale one.
+
 **Every key knocks a speck of dust loose**, and it drifts back into the body and goes in with a
 small dent where it landed. About once every five seconds one of them is a whole key instead — a
 real letter, thrown far enough that the pet has to walk over and swallow it properly.
