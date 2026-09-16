@@ -676,14 +676,28 @@ green is a shade; purple to near-black is an event.
 
 ### It eats what you type
 
-A key you press turns up beside the slime a moment later, arcs, lands, and the pet goes and
-swallows it. That is where the difference between working and being away lives: the floor is 35%
-of the full rate and applies to being asleep, at lunch, and switched off alike, and the glyphs make
-up the rest. One rule instead of an offline system, an idle system and a cap — and no
-offline-earnings screen, because there is nothing for one to announce.
+**Every key knocks a speck of dust loose**, and it drifts back into the body and goes in with a
+small dent where it landed. About once every five seconds one of them is a whole key instead — a
+real letter, thrown far enough that the pet has to walk over and swallow it properly.
 
-**The letter is one you really pressed**, which is the whole point: a random character reads as
-decoration, and decoration is not worth a keyboard hook.
+That is where the difference between working and being away lives: the floor is 35% of the full
+rate and applies to being asleep, at lunch and switched off alike, and the dust makes up the rest.
+Typing at an ordinary five keys a second comes to exactly the full rate, and typing at half that
+lands halfway between. One rule instead of an offline system, an idle system and a cap — and no
+offline-earnings screen, because there is nothing left for one to announce.
+
+### Two tiers, because one number cannot do two jobs
+
+The first attempt had a single throttle doing both jobs: how dense the stream looks, *and* how much
+of your keyboard reaches the screen. Those pull in opposite directions — fast enough to feel like
+the pet is eating your work is also fast enough to spell out a password — so every value was a
+compromise, and the one that was safe felt like nothing was happening.
+
+Splitting it fixes both. **Dust carries no letter, so there can be one for every key**: a nameless
+speck says "you typed" and nothing else. Letters ride only on the rare keycaps.
+
+The general version, which cost a rewrite to learn: when one constant turns up in two unrelated
+justifications, it is probably two constants.
 
 ### Which means reading the keyboard, so: about four percent of it, out of order
 
@@ -692,12 +706,14 @@ message-only window of our own. That is a keylogger-shaped API and an antivirus 
 an accepted cost rather than a surprise, and it is the same one Bongo Cat pays.
 
 What is *not* accepted is a password drifting across a shared screen one letter at a time. The
-throttle is the defence, and it is arithmetic rather than good intentions: one glyph goes out every
-five and a half seconds against typing that runs at about five keys a second, so **roughly four
-percent of what you type is ever shown** — and the one that is shown is drawn at random from the
-buffer, which is then cleared. A password typed in two seconds contributes zero or one character,
-unlabelled, out of sequence, in a day of other letters. Punctuation never enters the pool at all:
-it is the most identifying part of a password, and an exclamation mark says more than a `K` does.
+defence is arithmetic rather than good intentions, and **it lives in Rust rather than in the
+frontend**: the backend will not hand over a letter more than once every five and a half seconds
+however often it is asked, so a timer changed on the other side of the IPC boundary cannot turn
+this into a keylogger. Against typing at about five keys a second that is **roughly four percent
+of what you type**, drawn at random from a buffer that is then cleared. A password typed in two
+seconds contributes zero or one character, unlabelled, out of sequence, in a day of other letters.
+Punctuation never enters the pool at all: it is the most identifying part of a password, and an
+exclamation mark says more than a `K` does.
 
 Nothing is written down. A key is used to choose a glyph and dropped; the buffer holds a few
 seconds at most and is emptied on every read.
@@ -808,6 +824,8 @@ focus.
 Two handles are attached to `window` for use from a devtools console:
 
 - `__slime` — the live simulation object, for reading position, velocity and mood.
+- `__typed(count)` — knocks that much dust loose without a keyboard, for tuning the density of the
+  stream and the dent each speck leaves.
 - `__dropGlyph(char)` — drops a key beside the pet without anyone having typed one. The real path
   needs Raw Input, which only exists inside Tauri.
 - `__setStage(realm, stage, progress)` — jumps the body anywhere on the ladder and repaints it.

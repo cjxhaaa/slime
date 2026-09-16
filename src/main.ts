@@ -4,8 +4,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime, type Bite, type DevourRect } from './slime/Slime';
 import { lookFor } from './game/appearance';
-import { Cultivation, GatherSeconds } from './game/cultivation';
+import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cultivation';
 import { Glyphs } from './game/Glyphs';
+import { Motes } from './game/Motes';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -41,6 +42,7 @@ function petWindow(): ReturnType<typeof getCurrentWindow> {
 const slime = new Slime(0, 0);
 const cultivation = new Cultivation();
 const glyphs = new Glyphs();
+const motes = new Motes();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -609,6 +611,7 @@ function frame(now: number): void {
     paw.hasRipples() ||
     bubble.isSettling ||
     glyphs.busy ||
+    motes.busy ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
   if (!engaged && !slime.isAnimating && now - lastTick < IDLE_INTERVAL_MS) {
@@ -677,16 +680,25 @@ function frame(now: number): void {
     if (text) bubble.show(text);
     else bubble.hide();
   }
+  // The dust first: it comes to the pet rather than the other way round, so it needs no errand and
+  // no decision — just a dent where each speck went in.
+  const absorbed = motes.update(elapsed, slime.x, slime.y, slime.blob.restRadius * 0.85);
+  if (absorbed > 0) {
+    cultivation.absorb(absorbed);
+    slime.absorb(Math.random() * Math.PI * 2);
+  }
+
   // The errand, resolved once per frame: go to the nearest landed glyph, or back to where the pet
   // was standing before all this started.
   const ground = height - 12 - slime.blob.restRadius;
   glyphs.update(elapsed, ground, width);
+  const reached = glyphs.nearest(slime.x);
   const eaten = glyphs.eatNear(slime.x, slime.y, gatherReach());
   for (let i = 0; i < eaten; i++) {
-    cultivation.gather();
-    slime.blob.pulse(34);
+    cultivation.swallow();
+    slime.gulp(reached ? Math.atan2(reached.y - slime.y, reached.x - slime.x) : 0);
   }
-  if (eaten > 0) applyLook();
+  if (absorbed > 0 || eaten > 0) applyLook();
 
   const target = glyphs.nearest(slime.x);
   if (target) {
@@ -737,7 +749,7 @@ function frame(now: number): void {
   const painted = unionRect(
     slime.bounds(),
     unionRect(
-      glyphs.bounds(),
+      unionRect(glyphs.bounds(), motes.bounds()),
       unionRect(
         bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
         showPaw || paw.hasRipples() ? paw.bounds() : null,
@@ -772,6 +784,7 @@ function frame(now: number): void {
     bubble.isSettling ||
     bubble.takeTextDirty() ||
     glyphs.busy ||
+    motes.busy ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged);
   // The frame the body stops moving is the frame its resting place becomes final, so that is the
   // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
@@ -793,6 +806,7 @@ function frame(now: number): void {
     }
     context.clip(clip);
 
+    motes.draw(context, slime.bodyColour);
     glyphs.draw(context);
     slime.draw(context);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
@@ -996,17 +1010,23 @@ async function main(): Promise<void> {
     }
   }, CultivationTickMs);
 
-  // Asking for a key is also how the pet finds out anyone is there: nothing typed means nothing
-  // comes back, which means no glyph, no chase, and no frame drawn. An idle machine costs nothing.
+  // Asking is also how the pet finds out anyone is there: nothing typed means a count of zero,
+  // which means no dust, no chase and no frame drawn. An idle machine costs nothing.
   window.setInterval(() => {
     if (quiet) return;
-    void invoke<string | null>('take_keystroke')
-      .then((key) => {
-        if (!key || quiet) return;
-        glyphs.spawn(key, slime.x, slime.y - slime.blob.restRadius * 0.4);
+    void invoke<{ presses: number; key: string | null }>('take_input')
+      .then((input) => {
+        if (quiet) return;
+        // Capped at the rate the economy is balanced around, so leaning on a key is worth no more
+        // than typing — and cannot turn the desktop into a snowstorm either.
+        const counted = Math.min(input.presses, Math.ceil(ExpectedKeysPerSecond * InputPollSeconds));
+        if (counted > 0) motes.spawn(counted, slime.x, slime.y, slime.blob.restRadius);
+        if (input.key) {
+          glyphs.spawn(input.key, slime.x, slime.y - slime.blob.restRadius * 0.4);
+        }
       })
       .catch(() => {});
-  }, GatherSeconds * 1000);
+  }, InputPollSeconds * 1000);
 
   // Qi is worth a write on its own schedule: it changes every tick, so waiting for the body to
   // come to rest would mean a session spent entirely still saves nothing at all.
@@ -1054,6 +1074,12 @@ async function main(): Promise<void> {
   // Drops a key beside the pet without anyone having typed one. The real path needs Raw Input,
   // which only exists inside Tauri, and the overlay can only be *seen* in an ordinary browser —
   // so without this the arc, the chase and the reach are all untunable.
+  // Knocks dust loose without a keyboard, for tuning the stream's density and the dent it leaves.
+  debugHooks.__typed = (count = 5) => {
+    motes.spawn(count, slime.x, slime.y, slime.blob.restRadius);
+    return motes.count;
+  };
+
   debugHooks.__dropGlyph = (char = 'A') => {
     glyphs.spawn(String(char).toUpperCase().slice(0, 1), slime.x, slime.y - slime.blob.restRadius * 0.4);
     return glyphs.count;

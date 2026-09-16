@@ -34,15 +34,31 @@ const BottleneckFactor = 0.25;
 export const IdleFactor = 0.35;
 
 /**
- * How often a glyph is offered while someone is typing.
+ * Typing speed the economy is balanced around.
  *
- * This number is doing two unrelated jobs at once, which is why it is not simply "as often as
- * looks nice". It sets the recurring render cost — a chase is about a second and a half of
- * full-rate animation, so one every five seconds is roughly a quarter duty cycle against 38% of a
- * core — and it sets how much of the keyboard ever reaches the screen, which at five keys a second
- * is about four percent of it. Both want the same answer.
+ * Someone at this rate earns exactly the full working rate; slower earns proportionally less, and
+ * the backend's cap on how fast keys can be counted stops anyone leaning on a key to earn more.
+ * The number is ordinary prose typing, not a peak.
  */
-export const GatherSeconds = 5.5;
+export const ExpectedKeysPerSecond = 5;
+
+/**
+ * How often the frontend asks what has been typed.
+ *
+ * Fast, because every key is supposed to knock a speck loose and a quarter-second lag on that would
+ * read as the pet being slow rather than as the pet being fed. The *letters* are rationed
+ * separately and on the backend, so polling faster cannot make more of them appear.
+ */
+export const InputPollSeconds = 0.25;
+
+/**
+ * Extra for actually fetching a whole key, in seconds of the working top-up.
+ *
+ * Small on purpose. The motes already add up to the full rate on their own, so this is the tip for
+ * walking over there — at roughly one key every five seconds it comes to under a fifth on top, and
+ * it must never grow into a reason to sit and watch the pet instead of working.
+ */
+const KeycapBonusSeconds = 1;
 
 export interface CultivationSnapshot {
   realm: number;
@@ -137,19 +153,30 @@ export class Cultivation {
   }
 
   /**
-   * What one glyph is worth.
+   * What one speck of dust is worth.
    *
-   * Sized as the gap between idling and working, over one spawn interval, so that someone typing
-   * steadily earns the full rate and someone away from the desk earns the floor. The design states
-   * that split as 35% against 100%; this is the only place it turns into a number.
+   * The gap between idling and working, divided by how many keys a second that working is assumed
+   * to be. Typing at the expected rate therefore comes to exactly the full rate, and every slower
+   * rate lands proportionally between the floor and it — which is the design's 35%-against-100%
+   * split, now continuous instead of arriving in lumps every five seconds.
    */
-  gatherValue(): number {
-    return this.rate() * (1 / IdleFactor - 1) * GatherSeconds;
+  moteValue(): number {
+    return (this.rate() * (1 / IdleFactor - 1)) / ExpectedKeysPerSecond;
   }
 
-  /** Swallows a glyph. Safe between settles: qi is a plain total until the next one. */
-  gather(): void {
-    this.qi += this.gatherValue();
+  /** What a whole key is worth on top. See `KeycapBonusSeconds`. */
+  keycapValue(): number {
+    return this.rate() * (1 / IdleFactor - 1) * KeycapBonusSeconds;
+  }
+
+  /** Takes in dust. Safe between settles: qi is a plain total until the next one. */
+  absorb(motes: number): void {
+    this.qi += this.moteValue() * motes;
+  }
+
+  /** Swallows a fetched key. */
+  swallow(): void {
+    this.qi += this.keycapValue();
   }
 
   get readyToBreakThrough(): boolean {

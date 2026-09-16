@@ -11,8 +11,9 @@
 // repo that runs outside a webview, and it exits with a status so a CI step could read it.
 declare const process: { exit(code: number): never };
 
-import { Cultivation, GatherSeconds, IdleFactor } from './cultivation.js';
+import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
 import { Glyphs } from './Glyphs.js';
+import { Motes } from './Motes.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
 
 let failures = 0;
@@ -36,13 +37,27 @@ c.settle(30);
 check('30s with nobody typing', c.qi, 30 * IdleFactor, 1e-9);
 checkTrue('not ready that early', !c.readyToBreakThrough);
 
-// 2. THE economic identity the whole design rests on: idling for one glyph interval, plus the one
-//    glyph that interval produces, has to come to exactly the full working rate. If this drifts,
-//    typing all day and leaving the machine on stop meaning what the plan says they mean.
+// 2. THE economic identity the whole design rests on: one second of idling, plus the dust one
+//    second of ordinary typing knocks loose, has to come to exactly one second of working flat
+//    out. If this drifts, "away" and "at the keyboard" stop meaning what the plan says they mean.
 c = new Cultivation(0);
-c.settle(GatherSeconds);
-c.gather();
-check('idle + one glyph == working flat out', c.qi, baseRate(0, 0) * GatherSeconds, 1e-9);
+c.settle(1);
+c.absorb(ExpectedKeysPerSecond);
+check('idle + a second of typing == working flat out', c.qi, baseRate(0, 0), 1e-9);
+
+// 2b. Typing at half speed lands halfway between the floor and working, not at either end.
+c = new Cultivation(0);
+c.settle(1);
+c.absorb(ExpectedKeysPerSecond / 2);
+check('half speed lands halfway', c.qi, baseRate(0, 0) * (IdleFactor + (1 - IdleFactor) / 2), 1e-9);
+
+// 2c. Fetching a whole key is a tip, not an income. It has to stay small against what the dust
+//     from the same stretch of typing is already worth, or the pet becomes better to watch than to
+//     work beside — which is the failure mode the plan calls a product accident.
+c = new Cultivation(0);
+const keycap = c.keycapValue();
+const dustOverTheSameStretch = c.moteValue() * ExpectedKeysPerSecond * 5.5;
+checkTrue('a fetched key is a tip, not an income', keycap < dustOverTheSameStretch * 0.25);
 
 // 3. The first breakthrough, and the overflow carried past it.
 c = new Cultivation(0);
@@ -91,11 +106,11 @@ c.addModifier({ name: 'test', factor: () => 2 });
 c.settle(10);
 check('a x2 modifier', c.qi, 10 * IdleFactor * 2, 1e-9);
 
-// 9. A glyph is worth less while a breakthrough is waiting, same as everything else.
+// 9. Dust is worth less while a breakthrough is waiting, same as everything else.
 c = new Cultivation(0);
-const openValue = c.gatherValue();
+const openValue = c.moteValue();
 c.settle(600);
-checkTrue('a glyph is worth a quarter at the bottleneck', c.gatherValue() < openValue * 0.26);
+checkTrue('dust is worth a quarter at the bottleneck', c.moteValue() < openValue * 0.26);
 
 // 10. The ladder, as pure functions: what the pacing table in the plan claims.
 let workingSeconds = 0;
@@ -171,6 +186,30 @@ check('an ignored key eventually clears itself', g.count, 0);
 g = new Glyphs();
 for (let i = 0; i < 40; i++) g.spawn('Z', 800, 560);
 checkTrue('the pile is bounded', g.count <= 6);
+
+// ---------------------------------------------------------------- motes
+
+// 16. Every key knocks one speck loose, and they start clear of the body rather than inside it.
+const m = new Motes();
+m.spawn(8, 500, 400, 46);
+check('one speck per key', m.count, 8);
+
+// 17. They come to the pet rather than the other way round, and all of them arrive.
+let arrived = 0;
+for (let i = 0; i < 300 && m.count > 0; i++) arrived += m.update(1 / 60, 500, 400, 40);
+check('all of them are taken in', arrived, 8);
+check('and none are left drifting', m.count, 0);
+
+// 18. Leaning on a key is not typing. The pile is bounded however hard it is pushed.
+const flood = new Motes();
+flood.spawn(500, 500, 400, 46);
+checkTrue('the snowstorm is bounded', flood.count <= 36);
+
+// 19. Nothing at the keyboard means nothing on screen and nothing to draw.
+const still = new Motes();
+still.spawn(0, 500, 400, 46);
+checkTrue('an idle keyboard costs nothing', !still.busy && still.bounds() === null);
+
 
 Math.random = realRandom;
 

@@ -4,9 +4,9 @@
 //! owns. A message-only window on its own thread is self-contained: nothing else in the process can
 //! be disturbed by it, and it can be told to stop listening without touching the UI at all.
 
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -21,18 +21,36 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WNDCLASSW,
 };
 
+use super::Input;
+
 /// Ours, posted to the worker thread so registration happens where the window lives.
 const WM_LISTEN: u32 = WM_APP + 1;
 
-/// Letters typed since the frontend last asked.
+/// **How many** keys have been pressed since the frontend last asked.
 ///
-/// A few seconds' worth. It is cleared on every read, so this never becomes a record of anything —
-/// the longest it can hold a key is the gap between two polls.
+/// A count, not a record. It is what lets every keystroke put something on screen without every
+/// keystroke putting a *letter* on screen, which is the entire difference between a pet that eats
+/// your typing and a pet that transcribes it onto your desktop.
+static PRESSES: AtomicU32 = AtomicU32::new(0);
+
+/// Letters typed since the last one was handed out.
+///
+/// Cleared every time one is taken, so the longest this can hold a key is the gap between letters —
+/// a few seconds. It never becomes a record of anything.
 static RECENT: Mutex<Vec<char>> = Mutex::new(Vec::new());
+/// When a letter was last handed out, so the rate below is enforced here rather than trusted to the
+/// caller. A frontend bug must not be able to turn this into a keylogger.
+static LAST_LETTER: Mutex<Option<Instant>> = Mutex::new(None);
 /// The worker's window, as an integer because a raw handle is not `Sync`.
 static WINDOW: AtomicIsize = AtomicIsize::new(0);
 
-/// Enough to cover a burst of fast typing between polls. Older keys are dropped off the front.
+/// The soonest two letters can be shown.
+///
+/// Against typing at roughly five keys a second this is what keeps letter exposure near four
+/// percent. It is enforced on this side deliberately: the privacy property should not depend on
+/// how often the frontend happens to poll.
+const LETTER_INTERVAL: Duration = Duration::from_millis(5500);
+/// Enough to cover a burst of fast typing between letters. Older keys drop off the front.
 const BUFFER_CAP: usize = 64;
 
 pub fn start() {
@@ -79,7 +97,22 @@ pub fn start() {
     });
 }
 
-pub fn take_keystroke() -> Option<String> {
+/// How much has been typed since the last call, and — occasionally — one of the keys.
+pub fn take_input() -> Input {
+    Input {
+        presses: PRESSES.swap(0, Ordering::SeqCst),
+        key: take_letter(),
+    }
+}
+
+fn take_letter() -> Option<String> {
+    let mut last = LAST_LETTER.lock().ok()?;
+    let now = Instant::now();
+    if let Some(previous) = *last {
+        if now.duration_since(previous) < LETTER_INTERVAL {
+            return None;
+        }
+    }
     let mut recent = RECENT.lock().ok()?;
     if recent.is_empty() {
         return None;
@@ -90,11 +123,13 @@ pub fn take_keystroke() -> Option<String> {
     let index = scatter(recent.len());
     let key = recent[index];
     recent.clear();
+    *last = Some(now);
     Some(key.to_string())
 }
 
 pub fn set_listening(on: bool) {
     if !on {
+        PRESSES.store(0, Ordering::SeqCst);
         if let Ok(mut recent) = RECENT.lock() {
             recent.clear();
         }
@@ -179,6 +214,10 @@ unsafe fn collect(lparam: LPARAM) {
     if u32::from(keyboard.Message) != WM_KEYDOWN && u32::from(keyboard.Message) != WM_SYSKEYDOWN {
         return;
     }
+    // Every key counts towards the motes, including the ones that have no letter to show. Space and
+    // backspace are typing too, and a pet that ignored them would look like it was missing beats.
+    PRESSES.fetch_add(1, Ordering::Relaxed);
+
     let Some(key) = printable(keyboard.VKey) else {
         return;
     };

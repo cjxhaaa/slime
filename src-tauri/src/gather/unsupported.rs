@@ -15,8 +15,8 @@
 
 pub fn start() {}
 
-pub fn take_keystroke() -> Option<String> {
-    None
+pub fn take_input() -> super::Input {
+    super::Input { presses: 0, key: None }
 }
 
 pub fn set_listening(_on: bool) {}

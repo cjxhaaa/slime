@@ -239,7 +239,7 @@ pub fn run() {
             release_clicks,
             open_settings,
             quit_app,
-            gather::take_keystroke,
+            gather::take_input,
             gather::set_quiet,
             gather::quiet_state,
             save::load_save,

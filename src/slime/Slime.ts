@@ -247,6 +247,42 @@ export class Slime {
 
   private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0 };
   private chaseX: number | null = null;
+  /**
+   * How lit up the membrane is from something just going into it, 0 to 1, decaying.
+   *
+   * The dent alone was not enough to read at a glance — a two-pixel ripple on a forty-six pixel
+   * body is invisible from across a desk. What sells swallowing something is the body brightening
+   * around where it went in, which is also the one thing a soft body can do that a sprite cannot
+   * fake cheaply.
+   */
+  private absorbFlash = 0;
+
+  /**
+   * A speck of dust going in. Small, frequent, and barely more than a ripple.
+   *
+   * Deliberately does *not* count as being interacted with: motes arrive several times a second
+   * while someone is typing, and treating each as a poke would mean a pet that can never fall
+   * asleep at a desk that is being worked at. It is eating, not playing.
+   */
+  absorb(angle: number): void {
+    this.blob.poke(angle, -85, 1.0);
+    this.absorbFlash = Math.min(1, this.absorbFlash + 0.45);
+  }
+
+  /**
+   * A whole key going down. The loud version of the same thing.
+   *
+   * Leans into it, dents deep where it went in, and squashes on the swallow — the sequence a
+   * throw already uses, aimed rather than random. This one does count as interaction: the pet went
+   * and fetched it.
+   */
+  gulp(angle: number): void {
+    this.lastInteraction = this.clock;
+    this.blob.poke(angle, -330, 1.5);
+    this.blob.squash(0.2);
+    this.blob.pulse(44);
+    this.absorbFlash = 1;
+  }
 
   /**
    * Somewhere on the ground to go and get, or null to stop going anywhere in particular.
@@ -339,6 +375,7 @@ export class Slime {
       Math.abs(this.x - this.renderX) > 0.05 ||
       Math.abs(this.y - this.renderY) > 0.05 ||
       this.blinkPhase > 0.001 ||
+      this.absorbFlash > 0.01 ||
       this.blob.energy() > 0.08 ||
       // Against the target the eyes are actually easing toward, which is the cursor whenever there
       // is one. Comparing against the idle jitter target instead — as the first version did — is
@@ -359,6 +396,11 @@ export class Slime {
    */
   get hasSlowAnimation(): boolean {
     return this.mood === 'asleep';
+  }
+
+  /** The colour the body is currently wearing, for anything drawn as part of the same stuff. */
+  get bodyColour(): string {
+    return this.bodyLook.palette.core;
   }
 
   /** True while an alert is still standing, acknowledged or not. */
@@ -966,6 +1008,10 @@ export class Slime {
       this.blinkAt = 2.2 + Math.random() * 4;
     }
     this.blinkPhase = Math.max(0, this.blinkPhase - dt * 7);
+    // Fast enough to be a flicker rather than a glow. A slow decay here reads as the pet being
+    // permanently lit while someone types, which is the opposite of the intended "it just took
+    // something in".
+    this.absorbFlash = Math.max(0, this.absorbFlash - dt * 4.5);
   }
 
   draw(context: CanvasRenderingContext2D): void {
@@ -1042,6 +1088,20 @@ export class Slime {
     context.lineWidth = 2;
     context.strokeStyle = palette.rim;
     context.stroke();
+
+    // The swallow. Clipped to the body, so it lights the membrane from inside rather than washing
+    // a disc over the top of it.
+    if (this.absorbFlash > 0.01) {
+      context.save();
+      Blob.trace(context, this.points, this.blob.count);
+      context.clip();
+      context.globalAlpha = 0.5 * this.absorbFlash;
+      context.fillStyle = '#ffffff';
+      context.beginPath();
+      context.arc(0, 0, this.radius * 1.3, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    }
 
     // Specular blob, clipped to the body so it never leaks past a squashed silhouette.
     context.save();
