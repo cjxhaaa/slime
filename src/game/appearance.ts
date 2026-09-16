@@ -61,5 +61,6 @@ export function lookFor(cultivation: Cultivation): BodyLook {
     // Half an hour of visibly holding something, which is the whole reason the reward is a state
     // and not a lump of qi nobody can see.
     glow: nourished ? Math.max(NourishedGlow, glow) : glow,
+    aura: cultivation.ascensions,
   };
 }

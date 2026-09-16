@@ -83,7 +83,14 @@ export function spoilMinutes(load: number): number {
   return 20 + 30 * Math.min(1.6, load);
 }
 
-/** How many kills a day come with nourishment, by realm. */
-export function allowance(realm: number): number {
+/**
+ * How many kills a day come with nourishment.
+ *
+ * Grows with the realm, and **an ascended pet keeps the top tier through a rebirth**. Starting a
+ * fresh run back at one a day would make the second run meaner than the first, which is the wrong
+ * way round for something you only unlock by finishing.
+ */
+export function allowance(realm: number, ascensions = 0): number {
+  if (ascensions > 0) return 8;
   return Math.min(8, realm + 1);
 }

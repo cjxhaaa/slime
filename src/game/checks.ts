@@ -99,9 +99,9 @@ check('overflow carried into the next stage', c.qi, bottlenecked - FirstStage, 1
 
 // 8. Rebirths and modifiers both multiply into the same pipeline.
 c = new Cultivation(0);
-c.rebirths = 2;
+c.ascensions = 2;
 c.settle(10);
-check('two rebirths double the output', c.qi, 10 * IdleFactor * 2, 1e-9);
+check('two ascensions double the output', c.qi, 10 * IdleFactor * 2, 1e-9);
 
 c = new Cultivation(0);
 c.addModifier({ name: 'test', factor: () => 2 });
@@ -143,6 +143,50 @@ while (c.realm < Ascended && breakthroughs < 1000) {
 }
 check('breakthroughs to ascend', breakthroughs, Ascended * StagesPerRealm);
 checkTrue('nothing further is offered once ascended', !c.readyToBreakThrough);
+
+// ---------------------------------------------------------------- ascension and rebirth
+
+// 28. The top of the ladder counts, and stops.
+c = new Cultivation(0);
+let climbed = 0;
+let clockA = 0;
+while (!c.ascended && climbed < 200) {
+  clockA += requirement(c.realm, c.stage) / (baseRate(c.realm, c.stage) * IdleFactor) + 1e-6;
+  c.settle(clockA);
+  if (!c.breakThrough()) break;
+  climbed++;
+}
+checkTrue('the ladder ends in an ascension', c.ascended);
+check('which is counted', c.ascensions, 1);
+check('and it takes every rung to get there', climbed, Ascended * StagesPerRealm);
+
+// 29. Qi stops meaning anything past the top rather than climbing forever. Left alone it reached
+//     two billion in a simulated month and was written to disk every five minutes.
+c.settle(clockA + 3600 * 24 * 30);
+check('qi does not pile up after ascending', c.qi, 0, 1e-9);
+checkTrue('and nothing further is offered', !c.readyToBreakThrough);
+
+// 30. A rebirth returns to the bottom carrying what finishing was worth.
+const earned = c.ascensions;
+checkTrue('rebirth is available once ascended', c.rebirth());
+check('back to the first realm', c.realm, 0);
+check('and the first stage', c.stage, 0);
+check('ascensions survive it', c.ascensions, earned);
+c.settle(clockA + 3600 * 24 * 30 + 10);
+check('and the run is faster for them', c.qi, 10 * IdleFactor * (1 + 0.5 * earned), 1e-9);
+
+// 31. It cannot be reached early: four days of progress must not be wipeable mid-run.
+const midRun = new Cultivation(0);
+midRun.realm = 4;
+checkTrue('no rebirth before the top', !midRun.rebirth());
+check('and nothing was disturbed by asking', midRun.realm, 4);
+
+// 32. The daily allowance keeps its tier through a rebirth. Starting again at one a day would make
+//     the second run meaner than the first, which is backwards for something you unlock by finishing.
+check('a fresh pet gets one', allowance(0, 0), 1);
+check('a top-realm pet gets eight', allowance(7, 0), 8);
+check('and a reborn one keeps eight at the bottom', allowance(0, 1), 8);
+
 
 // ---------------------------------------------------------------- the fight
 

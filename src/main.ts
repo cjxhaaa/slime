@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime, type Bite, type DevourRect } from './slime/Slime';
@@ -296,7 +296,7 @@ async function runSwallow(hwnd: number): Promise<void> {
  */
 function claimSpoils(): void {
   cultivation.settle();
-  daily.roll(allowance(cultivation.realm));
+  daily.roll(allowance(cultivation.realm, cultivation.ascensions));
   if (!daily.take()) return;
   const prey = devourTarget;
   const load = prey
@@ -500,6 +500,7 @@ let restoredPoint: { x: number; y: number } | null = null;
  * breakthrough lands inside a minute and explains itself; this covers the minute before it.
  */
 let introUntil = 0;
+let ascendUntil = 0;
 let seenIntro = true;
 
 /** Everything worth keeping, assembled in one place so every writer stores the same shape. */
@@ -544,6 +545,8 @@ const HeartbeatMs = 5 * 60_000;
 const AlertPatienceMs = 3 * 60_000;
 /** How long the first-run line stays up. Long enough to read, short enough not to be furniture. */
 const IntroMs = 8_000;
+/** How long the one line after an ascension stays up. */
+const AscendBubbleMs = 12_000;
 
 let alertRaisedAt = 0;
 /**
@@ -574,7 +577,7 @@ function gatherReach(): number {
   return slime.blob.restRadius * (1.15 + 0.06 * cultivation.realm);
 }
 /** What `applyLook` last handed over, so an unchanged look costs nothing and forces no repaint. */
-let appliedLook = { scale: 0, core: '', glow: -1 };
+let appliedLook = { scale: 0, core: '', glow: -1, aura: -1 };
 
 /**
  * Pushes the realm onto the body: size, palette, and how close the stage is to full.
@@ -602,16 +605,35 @@ function hoverLines(): string {
   return lines.join('\n');
 }
 
+/** Tells the settings window what it is looking at. That window keeps no state of its own. */
+function emitPetState(): void {
+  void emit('pet-state', {
+    ascended: cultivation.ascended,
+    ascensions: cultivation.ascensions,
+    realm: cultivation.describe(),
+  }).catch(() => {});
+}
+
 function applyLook(): void {
   const look = lookFor(cultivation);
+  // Every field that can change has to be in here. `aura` was left out of the first version and
+  // the symptom was quiet: a pet that gained a band of light kept the one it had, because the look
+  // was judged unchanged and never handed over. It happened to work through an ascension only
+  // because the realm moves at the same moment and the palette comparison caught that instead.
   if (
     look.scale === appliedLook.scale &&
     look.palette.core === appliedLook.core &&
+    look.aura === appliedLook.aura &&
     Math.abs(look.glow - appliedLook.glow) <= 0.02
   ) {
     return;
   }
-  appliedLook = { scale: look.scale, core: look.palette.core, glow: look.glow };
+  appliedLook = {
+    scale: look.scale,
+    core: look.palette.core,
+    glow: look.glow,
+    aura: look.aura,
+  };
   slime.setLook(look);
   fullRepaint = true;
 }
@@ -622,9 +644,18 @@ function offerBreakThrough(): void {
   if (quiet || slime.hasLiveAlert) return;
   alertRaisedAt = performance.now();
   slime.raiseAlert(`${stageName(cultivation.realm, cultivation.stage)} · 可突破\n点击渡劫`, () => {
+    const wasAscended = cultivation.ascended;
     cultivation.breakThrough();
     bubble.hide();
     slime.clearAlert();
+    if (!wasAscended && cultivation.ascended) {
+      slime.ascend();
+      // Said once, on the one occasion someone has just finished the whole thing. Not an
+      // interruption — they pressed the button a second ago — and it is the only place the rebirth
+      // is mentioned at all, because the rebirth itself lives where a stray poke cannot reach it.
+      ascendUntil = performance.now() + AscendBubbleMs;
+      emitPetState();
+    }
     // Immediately, not on the next tick. The colour and the size changing *is* the reward, and a
     // reward that lands ten seconds after the click is not the same reward.
     applyLook();
@@ -743,6 +774,7 @@ function frame(now: number): void {
   } else {
     const text =
       devourText(now) ??
+      (now < ascendUntil ? '此身已证大道\n设置中可转生重历' : null) ??
       (now < introUntil ? '此物似有灵性\n正吞吐天地之气' : null) ??
       // Hovering is the only way any of the cultivation is legible, and even then it is a phrase
       // rather than a figure — no number ever reaches the screen.
@@ -1082,7 +1114,7 @@ async function main(): Promise<void> {
     cultivation.settle();
     // Rolled here rather than on hover: a render path is the wrong place for something that
     // changes state, even something this cheap and this idempotent.
-    daily.roll(allowance(cultivation.realm));
+    daily.roll(allowance(cultivation.realm, cultivation.ascensions));
     applyLook();
     if (cultivation.readyToBreakThrough) offerBreakThrough();
     if (
@@ -1171,13 +1203,17 @@ async function main(): Promise<void> {
 
   // Jumps the body to any point on the ladder and repaints it immediately. Tuning the palette
   // ramp and the size growth is otherwise gated on actually playing to 大乘, which is four days.
-  debugHooks.__setStage = (realm = 0, stage = 0, progress = 0) => {
+  debugHooks.__setStage = (realm = 0, stage = 0, progress = 0, ascensions = -1) => {
     cultivation.realm = realm;
     cultivation.stage = stage;
     cultivation.qi = requirement(realm, stage) * progress;
+    if (ascensions >= 0) cultivation.ascensions = ascensions;
     applyLook();
     return cultivation.describe();
   };
+
+  // The ordeal, without four days of climbing first.
+  debugHooks.__ascend = () => slime.ascend();
 
   // Engulfs a rectangle without needing a real window under the slime. The real path is gated on
   // Win32 calls that only exist inside Tauri, so in a plain browser - which is the only way to see
@@ -1199,6 +1235,17 @@ async function main(): Promise<void> {
   };
 
   await refreshGeometry();
+
+  // Settings has no state of its own: it asks, and this window — which owns the save — answers.
+  await listen('want-state', () => emitPetState());
+
+  await listen('rebirth', () => {
+    cultivation.settle();
+    if (!cultivation.rebirth()) return;
+    applyLook();
+    requestSave(currentSave());
+    emitPetState();
+  });
 
   // Settings changes it; this window is what writes it down, because this window owns the save.
   await listen<boolean>('quiet-changed', (event) => {

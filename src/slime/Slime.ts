@@ -41,6 +41,18 @@ export interface DevourRect {
  * anyone gets to change their mind.
  */
 const MinEngulfSeconds = 3;
+
+/**
+ * The ordeal at the top of the ladder.
+ *
+ * Seventy-one breakthroughs have used the same swell-and-hop, and the seventy-second must not. It
+ * gathers — held down, trembling faster and brighter — and then goes off: the body throws itself
+ * open and upward and comes down wearing a colour it has never worn.
+ *
+ * No chance of failing it. Losing four days to a dice roll on a desk toy buys drama with a refund.
+ */
+const AscendGatherSeconds = 1.7;
+const AscendBurstSeconds = 1.4;
 /** How long the slime spends hauling a buried window to the front before it starts eating. */
 const HeaveSeconds = 1;
 /** How long the body takes to peel back off, whether it ate or gave up. */
@@ -115,7 +127,25 @@ export interface BodyLook {
   palette: Palette;
   /** 0 to 1. A halo under the body, brightest when something is about to happen. */
   glow: number;
+  /**
+   * How many times this pet has ascended, and therefore how many bands of light it trails.
+   *
+   * Everything else here says where you are on *this* run. This is the only thing that says how
+   * many runs there have been, so it is the one piece of the body that a rebirth does not undo.
+   */
+  aura: number;
 }
+
+/**
+ * 七彩霞光 — one hue per ascension, in order.
+ *
+ * Seven, because that is what the phrase is: the seventh ascension is the full spread and there is
+ * nothing after it to wait for. Red through violet rather than a gradient of the realm colour,
+ * because these bands have to read as something separate from the body — the realm is what the pet
+ * *is* right now, and this is what it has already done.
+ */
+const AURA_HUES = ['#ff5f5a', '#ff9d3d', '#f5d63f', '#63dd77', '#45d6d0', '#5b8cf0', '#a86fe8'];
+export const MaxAura = AURA_HUES.length;
 
 const PALETTE: Record<string, Palette> = {
   calm: { core: '#8ff0d4', edge: '#33c6a6', rim: '#1d9c85' },
@@ -259,8 +289,9 @@ export class Slime {
     this.bodyLook = look;
   }
 
-  private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0 };
+  private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0 };
   private chaseX: number | null = null;
+  private ascension: { until: number; phase: 'gathering' | 'burst'; tremble: number } | null = null;
   /**
    * How lit up the membrane is from something just going into it, 0 to 1, decaying.
    *
@@ -270,6 +301,20 @@ export class Slime {
    * fake cheaply.
    */
   private absorbFlash = 0;
+
+  /** Starts the ordeal. The caller has already advanced the realm; this is the performance. */
+  ascend(): void {
+    this.lastInteraction = this.clock;
+    this.chaseX = null;
+    this.hopsLeft = 0;
+    this.ascension = { until: this.clock + AscendGatherSeconds, phase: 'gathering', tremble: 0 };
+    // Bracing. Everything after this is the body deciding it can take it.
+    this.blob.squash(0.34);
+  }
+
+  get isAscending(): boolean {
+    return this.ascension !== null;
+  }
 
   /**
    * A speck of dust going in. Small, frequent, and barely more than a ripple.
@@ -390,6 +435,7 @@ export class Slime {
       Math.abs(this.y - this.renderY) > 0.05 ||
       this.blinkPhase > 0.001 ||
       this.absorbFlash > 0.01 ||
+      this.ascension !== null ||
       this.blob.energy() > 0.08 ||
       // Against the target the eyes are actually easing toward, which is the cursor whenever there
       // is one. Comparing against the idle jitter target instead — as the first version did — is
@@ -409,7 +455,11 @@ export class Slime {
    * down without freezing the one thing on screen that is supposed to move.
    */
   get hasSlowAnimation(): boolean {
-    return this.mood === 'asleep';
+    // The bands turn whether or not anything else is happening, so a pet that has ascended never
+    // fully stands down. Twenty hertz is the same allowance sleep already gets and looks identical
+    // at this speed — but it is a real cost, and it is one nobody pays until they have finished a
+    // run, which makes it an earned one rather than a default.
+    return this.mood === 'asleep' || this.bodyLook.aura > 0;
   }
 
   /** The colour the body is currently wearing, for anything drawn as part of the same stuff. */
@@ -464,7 +514,9 @@ export class Slime {
     // antialiased past that.
     // A floor for what is drawn near the body but not out of the ring: the contact shadow, and the
     // sleep marks that drift up and to the right.
-    const decoration = this.radius * 2.2;
+    // The bands sit further out than anything else the body draws, so they set the floor when
+    // there are any. Measured off the same numbers `drawAura` uses rather than guessed at.
+    const decoration = this.radius * (this.bodyLook.aura > 0 ? 2.5 : 2.2);
     leftSpan = Math.max(leftSpan + 3, decoration);
     rightSpan = Math.max(rightSpan + 3, decoration);
     topSpan = Math.max(topSpan + 3, decoration);
@@ -939,6 +991,35 @@ export class Slime {
       return;
     }
 
+    if (this.ascension) {
+      const ordeal = this.ascension;
+      if (ordeal.phase === 'gathering') {
+        // The tremble quickens and deepens together, so the wait reads as pressure building rather
+        // than as a pause with a wobble in it — the same trick the heave uses, turned up.
+        const progress = 1 - Math.max(0, ordeal.until - this.clock) / AscendGatherSeconds;
+        ordeal.tremble -= dt;
+        if (ordeal.tremble <= 0) {
+          ordeal.tremble = 0.12 - progress * 0.092;
+          this.blob.poke(Math.random() * Math.PI * 2, 28 + progress * 96, 1.5);
+        }
+        this.absorbFlash = Math.max(this.absorbFlash, progress * 0.8);
+        if (this.clock >= ordeal.until) {
+          ordeal.phase = 'burst';
+          ordeal.until = this.clock + AscendBurstSeconds;
+          this.absorbFlash = 1;
+          // Outward, not inward: this is the body opening, not flinching.
+          this.blob.pulse(230);
+          this.blob.squash(-0.42);
+          this.vy = -HOP_SPEED * 1.15;
+        }
+      } else if (this.clock >= ordeal.until) {
+        this.ascension = null;
+        this.mood = 'happy';
+        this.moodUntil = this.clock + 2;
+      }
+      return;
+    }
+
     if (this.moodUntil > this.clock) return;
 
     if (env.cursor && this.hitTest(env.cursor.x, env.cursor.y)) {
@@ -1049,6 +1130,40 @@ export class Slime {
     this.absorbFlash = Math.max(0, this.absorbFlash - dt * 4.5);
   }
 
+  /**
+   * The bands of light an ascended pet trails, drawn behind everything else.
+   *
+   * Each is stroked twice — wide and faint, then narrow and brighter — because a single stroke
+   * reads as a wireframe ring and two read as light. Cheaper and more predictable than a shadow
+   * blur, which is the other way to get this and costs far more per frame.
+   *
+   * They turn at different speeds and alternate direction, so seven of them weave instead of
+   * sitting in a fixed rosette.
+   */
+  private drawAura(context: CanvasRenderingContext2D): void {
+    const layers = Math.min(MaxAura, Math.floor(this.bodyLook.aura));
+    if (layers <= 0 || this.devour) return;
+    context.save();
+    context.lineCap = 'round';
+    for (let i = 0; i < layers; i++) {
+      const radius = this.radius * (1.45 + i * 0.12);
+      const direction = i % 2 === 0 ? 1 : -1;
+      const start = this.clock * (0.24 + i * 0.06) * direction + i * 0.92;
+      context.strokeStyle = AURA_HUES[i];
+      for (const [width, alpha] of [
+        [9, 0.11],
+        [3, 0.36],
+      ]) {
+        context.lineWidth = width;
+        context.globalAlpha = alpha;
+        context.beginPath();
+        context.arc(this.renderX, this.renderY, radius, start, start + 2.15);
+        context.stroke();
+      }
+    }
+    context.restore();
+  }
+
   draw(context: CanvasRenderingContext2D): void {
     const ground = this.groundFor(this.envHeight);
     const airborne = Math.max(0, ground - this.renderY);
@@ -1061,6 +1176,8 @@ export class Slime {
         : this.mood === 'asleep' || this.mood === 'sleepy'
           ? PALETTE.sleep
           : this.bodyLook.palette;
+
+    this.drawAura(context);
 
     // The halo. Drawn under everything, and only when there is something to say — a body that is
     // barely into a stage has none at all, so this is not permanent glare around the pet. It stays

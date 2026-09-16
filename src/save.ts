@@ -9,7 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
  */
 export interface SaveState {
   slime: { x: number; y: number };
-  cultivation: { realm: number; stage: number; qi: number; rebirths: number; nourishUntil: number };
+  cultivation: { realm: number; stage: number; qi: number; ascensions: number; nourishUntil: number };
   /** The daily allowance of nourished kills: the local date it rolled, and what is left of it. */
   daily: { date: string; remaining: number };
   /** Unix seconds the qi above was last brought up to date. Offline progress is this and nothing else. */
@@ -66,7 +66,7 @@ export async function loadSave(): Promise<SaveState | null> {
     const parsed = JSON.parse(raw) as {
       version?: unknown;
       slime?: { x?: unknown; y?: unknown };
-      cultivation?: Partial<SaveState['cultivation']>;
+      cultivation?: Partial<SaveState['cultivation']> & { rebirths?: unknown };
       daily?: { date?: unknown; remaining?: unknown };
       settledAt?: unknown;
       seenIntro?: unknown;
@@ -87,7 +87,9 @@ export async function loadSave(): Promise<SaveState | null> {
         realm: numberOr(grown?.realm, 0),
         stage: numberOr(grown?.stage, 0),
         qi: numberOr(grown?.qi, 0),
-        rebirths: numberOr(grown?.rebirths, 0),
+        // `rebirths` is the name this field had when it was incremented on the rebirth rather than
+        // on the ascension before it. Read for anyone carrying a save from then.
+        ascensions: numberOr(grown?.ascensions, numberOr(grown?.rebirths, 0)),
         nourishUntil: numberOr(grown?.nourishUntil, 0),
       },
       daily: {

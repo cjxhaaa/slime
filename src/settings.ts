@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { emit } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 
 // A settings page that fails silently is indistinguishable from one that never loaded, which is
 // exactly the hole this fell into: a blank white window with no way to tell whether the document,
@@ -30,6 +30,57 @@ const el = <T extends HTMLElement>(id: string): T => document.getElementById(id)
 
 const quitButton = el<HTMLButtonElement>('quit');
 quitButton.addEventListener('click', () => void invoke('quit_app'));
+
+const rebirthBox = el<HTMLElement>('rebirth-box');
+const rebirthState = el<HTMLParagraphElement>('rebirth-state');
+const rebirthButton = el<HTMLButtonElement>('rebirth');
+const rebirthWarn = el<HTMLParagraphElement>('rebirth-warn');
+
+/**
+ * The pet window owns the save, so it owns the truth. This one asks on open and is told on change.
+ *
+ * The section stays hidden until there is something to do in it: a permanently greyed-out button
+ * for a thing you cannot do for four days is exactly the kind of furniture the rest of this app
+ * refuses to put on screen.
+ */
+void listen<{ ascended: boolean; ascensions: number; realm: string }>('pet-state', (event) => {
+  const state = event.payload;
+  rebirthBox.hidden = !state.ascended;
+  rebirthState.textContent = `${state.realm} · 已飞升 ${state.ascensions} 次 · 产出 ×${(1 + 0.5 * state.ascensions).toFixed(1)}`;
+  armed = false;
+  rebirthButton.textContent = '转生重历';
+  rebirthWarn.textContent = '';
+});
+void emit('want-state');
+
+/**
+ * Two clicks, because this is the one irreversible thing in the app.
+ *
+ * The same shape the force kill uses: the first press is the sentence, the second is the signature.
+ * It disarms itself so a confirmation cannot sit around waiting to be triggered by accident later.
+ */
+let armed = false;
+let armedTimer: number | null = null;
+
+rebirthButton.addEventListener('click', () => {
+  if (!armed) {
+    armed = true;
+    rebirthButton.textContent = '确定？再点一次';
+    rebirthWarn.textContent = '当前境界、层数与修为会清零，无法撤销。';
+    if (armedTimer !== null) window.clearTimeout(armedTimer);
+    armedTimer = window.setTimeout(() => {
+      armed = false;
+      rebirthButton.textContent = '转生重历';
+      rebirthWarn.textContent = '';
+    }, 5000);
+    return;
+  }
+  armed = false;
+  if (armedTimer !== null) window.clearTimeout(armedTimer);
+  rebirthButton.textContent = '转生重历';
+  rebirthWarn.textContent = '';
+  void emit('rebirth');
+});
 
 const quietBox = el<HTMLInputElement>('quiet');
 

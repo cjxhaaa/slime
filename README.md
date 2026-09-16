@@ -798,6 +798,42 @@ Two things about nourishment that are easy to get subtly wrong, and both are ass
   which is exactly backwards. The assertion that catches it is the same shape as the one for the
   bottleneck: one long settle and sixty short ones over the same stretch must agree.
 
+### Reaching the top, and what you keep
+
+The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held
+down, trembling faster and brighter — and then goes off, throwing the body open and upward to come
+down wearing a colour it has never worn. It cannot be failed: losing four days to a dice roll on a
+desk toy buys drama with a refund.
+
+**Every ascension adds a band of light, and the seventh makes seven.** Red, orange, yellow, green,
+cyan, blue, violet, turning at different speeds and alternating direction so they weave rather than
+sitting in a rosette. It is the only thing here a rebirth does not take back: everything else says
+where this run has got to, and the bands say how many runs there have been.
+
+They also fill the gap the pacing leaves. Nearly half the ladder is the final realm, which is
+roughly two days where no breakthrough lands and nothing changes — after a first ascension there is
+always something moving.
+
+The cost is honest and worth stating: a pet with bands never fully stands down. They turn, so it
+holds the same 20 Hz repaint that sleeping already gets, which the measurements put at about a
+third of the full-rate cost. Nobody pays it until they have finished a run.
+
+### Rebirth is in Settings, and that is deliberate
+
+Realm, stage and qi reset. Ascensions, the output multiplier, the bands and the daily allowance all
+survive — the allowance in particular stays at eight, because having to climb back from one a day
+would make a second run meaner than the first, which is backwards for something unlocked by
+finishing.
+
+It is the only irreversible action in the app, and it lives behind two clicks in a window you have
+to open on purpose. Clicking the pet is how you poke it; making that same gesture able to erase four
+days, with nothing between a misplaced click and the loss, would be indefensible. The force kill
+uses a two-click confirmation for the same reason, but its worst case is one window and this one's
+is the whole save, so it gets the extra distance as well.
+
+The one-time line after an ascension — `此身已证大道 · 设置中可转生重历` — is the only place it is
+advertised. That is not an interruption: the button was pressed a second earlier.
+
 ### Qi is a function of time, not a counter
 
 Nothing adds qi a frame at a time. It is rate times elapsed seconds, evaluated whenever anyone
@@ -918,8 +954,8 @@ the contact shadow shrinking away, speech bubble anchored to it.
 
 **It remembers where you left it and how far along it is**, the body shows the realm, it eats the
 keys you type, and swallowing a window is a fight whose difficulty and spoils move with the realm.
-Treasures — the one substantial system still on paper — are section twelve of the plan. See
-[Cultivating](#cultivating).
+Ascension, the seven bands and rebirth are in. Serendipity and treasures are the two systems still
+on paper — sections 4.4 and 12 of the plan. See [Cultivating](#cultivating).
 
 Not built yet:
 

@@ -72,7 +72,13 @@ export interface CultivationSnapshot {
   realm: number;
   stage: number;
   qi: number;
-  rebirths: number;
+  /**
+   * How many times this pet has reached the top of the ladder.
+   *
+   * Counted at the ascension rather than at the rebirth that follows it, because that is the moment
+   * something happened — and it is the only number here a rebirth does not reset.
+   */
+  ascensions: number;
   /** Unix seconds nourishment runs out. In the past, or zero, means none. */
   nourishUntil: number;
 }
@@ -81,7 +87,7 @@ export class Cultivation {
   realm = 0;
   stage = 0;
   qi = 0;
-  rebirths = 0;
+  ascensions = 0;
   nourishUntil = 0;
 
   private modifiers: RateModifier[] = [];
@@ -104,7 +110,7 @@ export class Cultivation {
     this.realm = snapshot.realm;
     this.stage = snapshot.stage;
     this.qi = snapshot.qi;
-    this.rebirths = snapshot.rebirths;
+    this.ascensions = snapshot.ascensions;
     this.nourishUntil = snapshot.nourishUntil;
     this.settledAt = settledAt;
   }
@@ -114,7 +120,7 @@ export class Cultivation {
       realm: this.realm,
       stage: this.stage,
       qi: this.qi,
-      rebirths: this.rebirths,
+      ascensions: this.ascensions,
       nourishUntil: this.nourishUntil,
     };
   }
@@ -148,7 +154,7 @@ export class Cultivation {
 
   /** Every multiplier except the bottleneck, which is time-dependent and handled in `settle`. */
   private unthrottledRate(): number {
-    let rate = baseRate(this.realm, this.stage) * (1 + 0.5 * this.rebirths);
+    let rate = baseRate(this.realm, this.stage) * (1 + 0.5 * this.ascensions);
     for (const modifier of this.modifiers) rate *= modifier.factor();
     // Not a registered modifier, for the same reason the bottleneck is not one: both depend on
     // *when* rather than on state, so both have to be resolved by whoever is integrating over an
@@ -195,6 +201,12 @@ export class Cultivation {
   /** Adds `seconds` of qi at the current rate, dropping to the bottleneck part way if it fills. */
   private accrue(seconds: number): void {
     if (seconds <= 0) return;
+    // Nothing left to buy. Without this qi keeps climbing at the 大乘 rate forever and is written
+    // to disk every five minutes — two billion of it after a month, meaning nothing to anyone.
+    if (this.realm >= Ascended) {
+      this.qi = 0;
+      return;
+    }
     const rate = this.unthrottledRate();
     if (!Number.isFinite(rate) || rate <= 0) return;
 
@@ -262,6 +274,30 @@ export class Cultivation {
       this.stage = 0;
       this.realm += 1;
     }
+    if (this.realm >= Ascended) {
+      // The seventy-second one is not like the other seventy-one.
+      this.ascensions += 1;
+      this.qi = 0;
+    }
+    return true;
+  }
+
+  get ascended(): boolean {
+    return this.realm >= Ascended;
+  }
+
+  /**
+   * Starts the ladder again, keeping what was earned by finishing it.
+   *
+   * Irreversible, which is why the only way to reach it is a button behind a confirmation in
+   * Settings rather than a click on the pet — the same gesture that pokes it must never be able to
+   * wipe four days by landing in the wrong place.
+   */
+  rebirth(): boolean {
+    if (!this.ascended) return false;
+    this.realm = 0;
+    this.stage = 0;
+    this.qi = 0;
     return true;
   }
 
