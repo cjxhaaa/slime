@@ -79,6 +79,22 @@ button.link.danger {
   color: var(--danger);
 }
 
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .muted {
   color: var(--muted);
 }

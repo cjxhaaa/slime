@@ -674,7 +674,46 @@ across the room. The ramp is deliberately back-loaded — the pacing spends five
 inside the first day, so the three that are left have to carry four days between them. Teal to
 green is a shade; purple to near-black is an event.
 
-What is not built yet is the gathering: no key glyphs, no daily window quota, no quiet switch.
+### It eats what you type
+
+A key you press turns up beside the slime a moment later, arcs, lands, and the pet goes and
+swallows it. That is where the difference between working and being away lives: the floor is 35%
+of the full rate and applies to being asleep, at lunch, and switched off alike, and the glyphs make
+up the rest. One rule instead of an offline system, an idle system and a cap — and no
+offline-earnings screen, because there is nothing for one to announce.
+
+**The letter is one you really pressed**, which is the whole point: a random character reads as
+decoration, and decoration is not worth a keyboard hook.
+
+### Which means reading the keyboard, so: about four percent of it, out of order
+
+Getting a real keystroke across applications means Raw Input with `RIDEV_INPUTSINK`, on a
+message-only window of our own. That is a keylogger-shaped API and an antivirus may say so; it is
+an accepted cost rather than a surprise, and it is the same one Bongo Cat pays.
+
+What is *not* accepted is a password drifting across a shared screen one letter at a time. The
+throttle is the defence, and it is arithmetic rather than good intentions: one glyph goes out every
+five and a half seconds against typing that runs at about five keys a second, so **roughly four
+percent of what you type is ever shown** — and the one that is shown is drawn at random from the
+buffer, which is then cleared. A password typed in two seconds contributes zero or one character,
+unlabelled, out of sequence, in a day of other letters. Punctuation never enters the pool at all:
+it is the most identifying part of a password, and an exclamation mark says more than a `K` does.
+
+Nothing is written down. A key is used to choose a glyph and dropped; the buffer holds a few
+seconds at most and is emptied on every read.
+
+### Seclusion is the master switch
+
+The checkbox in Settings does not filter anything. It hands the registration back with
+`RIDEV_REMOVE`, and Windows stops delivering keystrokes to this process. "I would rather it did not
+watch me type" deserves an answer that is true at the system level rather than one this code
+promises to honour.
+
+It also stops the pet asking for anything: no glyphs, and a full stage waits quietly instead of
+hopping. Clicking a pet that is ready still takes the breakthrough, so progress is never stuck
+behind a trip to Settings.
+
+What is not built yet is the daily window quota, and everything in section twelve of the plan.
 
 ### Qi is a function of time, not a counter
 
@@ -769,6 +808,8 @@ focus.
 Two handles are attached to `window` for use from a devtools console:
 
 - `__slime` — the live simulation object, for reading position, velocity and mood.
+- `__dropGlyph(char)` — drops a key beside the pet without anyone having typed one. The real path
+  needs Raw Input, which only exists inside Tauri.
 - `__setStage(realm, stage, progress)` — jumps the body anywhere on the ladder and repaints it.
   Tuning the palette ramp and the size growth is otherwise gated on playing to 大乘, which is four
   days.
@@ -790,9 +831,8 @@ builds, and the app runs at about 69 MB resident. The slime renders and simulate
 cursor, and the attention performance was confirmed visually — amber body, wide eyes, airborne with
 the contact shadow shrinking away, speech bubble anchored to it.
 
-**It remembers where you left it, and how far along it is**, and the body shows the realm — size,
-colour and a halo as a stage fills. Neither the key-glyph gathering nor the daily window quota
-exists yet. See [Cultivating](#cultivating).
+**It remembers where you left it and how far along it is**, the body shows the realm, and it eats
+the keys you type. The daily window quota is not built. See [Cultivating](#cultivating).
 
 Not built yet:
 

@@ -1,4 +1,5 @@
 mod devour;
+mod gather;
 mod save;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -238,6 +239,9 @@ pub fn run() {
             release_clicks,
             open_settings,
             quit_app,
+            gather::take_keystroke,
+            gather::set_quiet,
+            gather::quiet_state,
             save::load_save,
             save::write_save,
             devour::devour_supported,
@@ -346,6 +350,7 @@ pub fn run() {
                 }
             });
 
+            gather::start();
             Ok(())
         })
         .on_window_event(|window, event| {

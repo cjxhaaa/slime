@@ -23,6 +23,27 @@ export interface RateModifier {
  */
 const BottleneckFactor = 0.25;
 
+/**
+ * What the pet earns with nobody at the keyboard.
+ *
+ * The floor, and it applies to being asleep, locked, at lunch and switched off alike — one rule
+ * instead of an offline system, an idle system and a cap. It has to be well short of working (or
+ * the pet may as well be left alone) and well clear of nothing (or a weekend away means coming
+ * back to a week of no progress, which is the last time anyone comes back).
+ */
+export const IdleFactor = 0.35;
+
+/**
+ * How often a glyph is offered while someone is typing.
+ *
+ * This number is doing two unrelated jobs at once, which is why it is not simply "as often as
+ * looks nice". It sets the recurring render cost — a chase is about a second and a half of
+ * full-rate animation, so one every five seconds is roughly a quarter duty cycle against 38% of a
+ * core — and it sets how much of the keyboard ever reaches the screen, which at five keys a second
+ * is about four percent of it. Both want the same answer.
+ */
+export const GatherSeconds = 5.5;
+
 export interface CultivationSnapshot {
   realm: number;
   stage: number;
@@ -42,6 +63,10 @@ export class Cultivation {
 
   constructor(now = Date.now() / 1000) {
     this.settledAt = now;
+    // Registered rather than multiplied in, because it is exactly the kind of thing the pipeline
+    // exists for — and because a treasure that raises the floor later should be one more entry
+    // here, not a second special case beside this one.
+    this.addModifier({ name: 'idle', factor: () => IdleFactor });
   }
 
   addModifier(modifier: RateModifier): void {
@@ -109,6 +134,22 @@ export class Cultivation {
       elapsed -= secondsToFill;
     }
     this.qi += rate * BottleneckFactor * elapsed;
+  }
+
+  /**
+   * What one glyph is worth.
+   *
+   * Sized as the gap between idling and working, over one spawn interval, so that someone typing
+   * steadily earns the full rate and someone away from the desk earns the floor. The design states
+   * that split as 35% against 100%; this is the only place it turns into a number.
+   */
+  gatherValue(): number {
+    return this.rate() * (1 / IdleFactor - 1) * GatherSeconds;
+  }
+
+  /** Swallows a glyph. Safe between settles: qi is a plain total until the next one. */
+  gather(): void {
+    this.qi += this.gatherValue();
   }
 
   get readyToBreakThrough(): boolean {

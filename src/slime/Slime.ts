@@ -246,6 +246,19 @@ export class Slime {
   }
 
   private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0 };
+  private chaseX: number | null = null;
+
+  /**
+   * Somewhere on the ground to go and get, or null to stop going anywhere in particular.
+   *
+   * Being given a target counts as being interacted with, which is what wakes a sleeping pet when
+   * you start typing. It also means the pet will not doze off mid-errand, since the caller keeps
+   * handing it the same target until it arrives.
+   */
+  chaseTo(x: number | null): void {
+    if (x !== null) this.lastInteraction = this.clock;
+    this.chaseX = x;
+  }
 
   private bodyGradient(
     context: CanvasRenderingContext2D,
@@ -870,6 +883,22 @@ export class Slime {
     this.mood = 'idle';
 
     if (this.clock < this.nextDecisionAt) return;
+
+    // An errand outranks the idle scheduler entirely. Short hops rather than one long leap, and
+    // the speed is capped by how far there is left to go so the last hop does not sail past the
+    // thing it was aiming at and have to come back.
+    if (this.chaseX !== null) {
+      const dx = this.chaseX - this.x;
+      if (Math.abs(dx) > this.radius * 0.7 && this.y >= ground - 1) {
+        this.facing = dx > 0 ? 1 : -1;
+        this.vy = -HOP_SPEED * 0.46;
+        this.vx = this.facing * Math.min(WALK_SPEED * 1.5, Math.abs(dx) * 2.2);
+        this.blob.squash(-0.14);
+        this.nextDecisionAt = this.clock + 0.3;
+      }
+      this.hopsLeft = 0;
+      return;
+    }
 
     if (this.hopsLeft > 0 && this.y >= ground - 1) {
       this.hopsLeft -= 1;

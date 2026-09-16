@@ -10,13 +10,34 @@
       <h1>Slime</h1>
 
       <section>
+        <h2>Quiet</h2>
+        <label class="check">
+          <input id="quiet" type="checkbox" />
+          <span>Seclusion</span>
+        </label>
+        <p class="muted">
+          Stops the slime reading your keyboard, and stops it reacting to anything. It keeps
+          cultivating, slowly, and says nothing until you come back for it.
+        </p>
+        <p class="muted">
+          This is not a filter. While it is on, Windows is told to stop delivering keystrokes to
+          Slime at all.
+        </p>
+      </section>
+
+      <section>
         <h2>Behaviour</h2>
         <p class="muted">
           Drag the slime to move it, or throw it. Click it to poke it. Right-click it to open this
           window. It falls asleep when left alone, and wakes when you reach for it.
         </p>
         <p class="muted">
-          On Windows, holding it still over a window for two seconds makes it eat the window.
+          On Windows it also eats the keys you type: one turns up beside it every few seconds, it
+          hops over, and swallowing it is what makes it stronger. The letter is one you really
+          pressed, drawn at random from the last few seconds and shown out of order.
+        </p>
+        <p class="muted">
+          Holding it still over a window for two seconds makes it eat the window.
           Pulling it off before the body finishes wrapping calls the meal off.
         </p>
         <p class="muted">Ctrl+Alt+Shift+Q quits from anywhere, even if the overlay stops responding.</p>

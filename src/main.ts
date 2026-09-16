@@ -4,7 +4,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime, type Bite, type DevourRect } from './slime/Slime';
 import { lookFor } from './game/appearance';
-import { Cultivation } from './game/cultivation';
+import { Cultivation, GatherSeconds } from './game/cultivation';
+import { Glyphs } from './game/Glyphs';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -39,6 +40,7 @@ function petWindow(): ReturnType<typeof getCurrentWindow> {
 
 const slime = new Slime(0, 0);
 const cultivation = new Cultivation();
+const glyphs = new Glyphs();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -466,6 +468,7 @@ function currentSave(): SaveState {
     cultivation: cultivation.snapshot(),
     settledAt: cultivation.settledAtSeconds,
     seenIntro,
+    quiet,
   };
 }
 
@@ -499,6 +502,24 @@ const AlertPatienceMs = 3 * 60_000;
 const IntroMs = 8_000;
 
 let alertRaisedAt = 0;
+/**
+ * Where the pet was before it went after a glyph.
+ *
+ * Chasing is allowed to move it; wandering off is not. Wherever you put the slime is where it
+ * belongs, so an errand ends by walking back rather than by simply stopping wherever it finished.
+ */
+let homeX: number | null = null;
+let quiet = false;
+
+/**
+ * How far the pet can take a glyph from, and it grows with the realm.
+ *
+ * A second axis for a breakthrough to be felt on that is not a number going up: later on it picks
+ * things up without having to shuffle over to them.
+ */
+function gatherReach(): number {
+  return slime.blob.restRadius * (1.15 + 0.06 * cultivation.realm);
+}
 /** What `applyLook` last handed over, so an unchanged look costs nothing and forces no repaint. */
 let appliedLook = { scale: 0, core: '', glow: -1 };
 
@@ -524,7 +545,9 @@ function applyLook(): void {
 }
 
 function offerBreakThrough(): void {
-  if (slime.hasLiveAlert) return;
+  // Seclusion means nothing asks for anything. The breakthrough still waits, and hovering still
+  // says so — it just does not come and find you.
+  if (quiet || slime.hasLiveAlert) return;
   alertRaisedAt = performance.now();
   slime.raiseAlert(`${stageName(cultivation.realm, cultivation.stage)} · 可突破\n点击渡劫`, () => {
     cultivation.breakThrough();
@@ -585,6 +608,7 @@ function frame(now: number): void {
     showingPaw ||
     paw.hasRipples() ||
     bubble.isSettling ||
+    glyphs.busy ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
   if (!engaged && !slime.isAnimating && now - lastTick < IDLE_INTERVAL_MS) {
@@ -653,6 +677,30 @@ function frame(now: number): void {
     if (text) bubble.show(text);
     else bubble.hide();
   }
+  // The errand, resolved once per frame: go to the nearest landed glyph, or back to where the pet
+  // was standing before all this started.
+  const ground = height - 12 - slime.blob.restRadius;
+  glyphs.update(elapsed, ground, width);
+  const eaten = glyphs.eatNear(slime.x, slime.y, gatherReach());
+  for (let i = 0; i < eaten; i++) {
+    cultivation.gather();
+    slime.blob.pulse(34);
+  }
+  if (eaten > 0) applyLook();
+
+  const target = glyphs.nearest(slime.x);
+  if (target) {
+    homeX ??= slime.x;
+    slime.chaseTo(target.x);
+  } else if (homeX !== null) {
+    if (Math.abs(slime.x - homeX) < slime.blob.restRadius * 0.7) {
+      slime.chaseTo(null);
+      homeX = null;
+    } else {
+      slime.chaseTo(homeX);
+    }
+  }
+
   bubble.update(elapsed);
   paw.update(elapsed);
 
@@ -689,8 +737,11 @@ function frame(now: number): void {
   const painted = unionRect(
     slime.bounds(),
     unionRect(
-      bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
-      showPaw || paw.hasRipples() ? paw.bounds() : null,
+      glyphs.bounds(),
+      unionRect(
+        bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
+        showPaw || paw.hasRipples() ? paw.bounds() : null,
+      ),
     ),
   );
   // Two regions, not their union: what has to be erased (last frame) and what has to be drawn
@@ -720,6 +771,7 @@ function frame(now: number): void {
     paw.hasRipples() ||
     bubble.isSettling ||
     bubble.takeTextDirty() ||
+    glyphs.busy ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged);
   // The frame the body stops moving is the frame its resting place becomes final, so that is the
   // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
@@ -741,6 +793,7 @@ function frame(now: number): void {
     }
     context.clip(clip);
 
+    glyphs.draw(context);
     slime.draw(context);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     paw.draw(context);
@@ -866,6 +919,12 @@ function wirePointer(): void {
         slime.poke(event.clientX, event.clientY);
         paw.ping(event.clientX, event.clientY);
       } else if (slime.hitTest(event.clientX, event.clientY)) {
+        // In seclusion nothing hops to tell you a stage is full, so a poke on a pet that is ready
+        // takes the breakthrough. Otherwise progress would be stuck behind a trip to Settings.
+        if (quiet && cultivation.breakThrough()) {
+          applyLook();
+          requestSave(currentSave());
+        }
         // Only the body gets poked. Clicks land here from the hover bubble too, and denting the
         // slime from an inch away because the pointer was over its speech bubble looks like a bug.
         slime.poke(event.clientX, event.clientY);
@@ -894,6 +953,9 @@ async function main(): Promise<void> {
       if (saved) {
         cultivation.restore(saved.cultivation, saved.settledAt);
         seenIntro = saved.seenIntro;
+        quiet = saved.quiet;
+        // Rust starts out listening, so a save that says otherwise has to say so out loud.
+        if (quiet) void invoke('set_quiet', { quiet: true }).catch(() => {});
       } else {
         seenIntro = false;
       }
@@ -933,6 +995,18 @@ async function main(): Promise<void> {
       slime.acknowledgeAlert();
     }
   }, CultivationTickMs);
+
+  // Asking for a key is also how the pet finds out anyone is there: nothing typed means nothing
+  // comes back, which means no glyph, no chase, and no frame drawn. An idle machine costs nothing.
+  window.setInterval(() => {
+    if (quiet) return;
+    void invoke<string | null>('take_keystroke')
+      .then((key) => {
+        if (!key || quiet) return;
+        glyphs.spawn(key, slime.x, slime.y - slime.blob.restRadius * 0.4);
+      })
+      .catch(() => {});
+  }, GatherSeconds * 1000);
 
   // Qi is worth a write on its own schedule: it changes every tick, so waiting for the body to
   // come to rest would mean a session spent entirely still saves nothing at all.
@@ -977,6 +1051,14 @@ async function main(): Promise<void> {
     });
   };
 
+  // Drops a key beside the pet without anyone having typed one. The real path needs Raw Input,
+  // which only exists inside Tauri, and the overlay can only be *seen* in an ordinary browser —
+  // so without this the arc, the chase and the reach are all untunable.
+  debugHooks.__dropGlyph = (char = 'A') => {
+    glyphs.spawn(String(char).toUpperCase().slice(0, 1), slime.x, slime.y - slime.blob.restRadius * 0.4);
+    return glyphs.count;
+  };
+
   // Jumps the body to any point on the ladder and repaints it immediately. Tuning the palette
   // ramp and the size growth is otherwise gated on actually playing to 大乘, which is four days.
   debugHooks.__setStage = (realm = 0, stage = 0, progress = 0) => {
@@ -1007,6 +1089,13 @@ async function main(): Promise<void> {
   };
 
   await refreshGeometry();
+
+  // Settings changes it; this window is what writes it down, because this window owns the save.
+  await listen<boolean>('quiet-changed', (event) => {
+    quiet = event.payload;
+    if (quiet) slime.clearAlert();
+    requestSave(currentSave());
+  });
 
   await listen<{ x: number; y: number }>('cursor', (event) => {
     // Never while dragging: the DOM stream owns the gesture. Feeding both meant this 30Hz poll

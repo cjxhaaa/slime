@@ -14,6 +14,8 @@ export interface SaveState {
   settledAt: number;
   /** The one line said on a first run has been said. */
   seenIntro: boolean;
+  /** Seclusion: the keyboard is being left alone and nothing asks for attention. */
+  quiet: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export async function loadSave(): Promise<SaveState | null> {
       cultivation?: Partial<SaveState['cultivation']>;
       settledAt?: unknown;
       seenIntro?: unknown;
+      quiet?: unknown;
     };
     // A file from a future version is not something this build can reason about, and guessing at
     // it is how a save gets quietly mangled. Starting fresh is bad; corrupting is worse.
@@ -85,6 +88,7 @@ export async function loadSave(): Promise<SaveState | null> {
       },
       settledAt: numberOr(parsed.settledAt, Date.now() / 1000),
       seenIntro: parsed.seenIntro === true,
+      quiet: parsed.quiet === true,
     };
   } catch {
     return null;

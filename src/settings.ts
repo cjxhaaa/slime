@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
 
 // A settings page that fails silently is indistinguishable from one that never loaded, which is
 // exactly the hole this fell into: a blank white window with no way to tell whether the document,
@@ -29,3 +30,21 @@ const el = <T extends HTMLElement>(id: string): T => document.getElementById(id)
 
 const quitButton = el<HTMLButtonElement>('quit');
 quitButton.addEventListener('click', () => void invoke('quit_app'));
+
+const quietBox = el<HTMLInputElement>('quiet');
+
+// Rust owns whether the keyboard is being read, because it is the side that actually stops reading
+// it. This window renders that answer; it does not keep its own.
+void invoke<boolean>('quiet_state')
+  .then((quiet) => {
+    quietBox.checked = quiet;
+  })
+  .catch(() => {});
+
+quietBox.addEventListener('change', () => {
+  const quiet = quietBox.checked;
+  void invoke('set_quiet', { quiet }).catch(() => {});
+  // The overlay owns the save file — two windows writing it would take turns losing. So it is told
+  // rather than asked, and it is the one that writes the setting down.
+  void emit('quiet-changed', quiet);
+});
