@@ -9,6 +9,11 @@ import { invoke } from '@tauri-apps/api/core';
  */
 export interface SaveState {
   slime: { x: number; y: number };
+  cultivation: { realm: number; stage: number; qi: number; rebirths: number };
+  /** Unix seconds the qi above was last brought up to date. Offline progress is this and nothing else. */
+  settledAt: number;
+  /** The one line said on a first run has been said. */
+  seenIntro: boolean;
 }
 
 /**
@@ -54,16 +59,46 @@ export async function loadSave(): Promise<SaveState | null> {
   const raw = await invoke<string | null>('load_save');
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<SaveState> & { version?: unknown };
+    const parsed = JSON.parse(raw) as {
+      version?: unknown;
+      slime?: { x?: unknown; y?: unknown };
+      cultivation?: Partial<SaveState['cultivation']>;
+      settledAt?: unknown;
+      seenIntro?: unknown;
+    };
     // A file from a future version is not something this build can reason about, and guessing at
     // it is how a save gets quietly mangled. Starting fresh is bad; corrupting is worse.
     if (typeof parsed.version !== 'number' || parsed.version > Version) return null;
     const point = parsed.slime;
     if (typeof point?.x !== 'number' || typeof point?.y !== 'number') return null;
-    return { slime: { x: point.x, y: point.y } };
+    // Fields added after a save was written are filled in rather than rejected. Growing the shape
+    // is backwards compatible in both directions — an older build ignores what it does not know —
+    // so `version` stays put and is there for a change that genuinely breaks.
+    const grown = parsed.cultivation;
+    return {
+      slime: { x: point.x, y: point.y },
+      cultivation: {
+        realm: numberOr(grown?.realm, 0),
+        stage: numberOr(grown?.stage, 0),
+        qi: numberOr(grown?.qi, 0),
+        rebirths: numberOr(grown?.rebirths, 0),
+      },
+      settledAt: numberOr(parsed.settledAt, Date.now() / 1000),
+      seenIntro: parsed.seenIntro === true,
+    };
   } catch {
     return null;
   }
+}
+
+/**
+ * A finite number, or the fallback.
+ *
+ * Guards against a hand-edited or partially written save turning into `NaN` qi, which would poison
+ * every sum afterwards and look exactly like the game having stopped rather than like bad data.
+ */
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 /** Called once the load has settled, successfully or as a confirmed absence. */

@@ -3,7 +3,9 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime, type Bite, type DevourRect } from './slime/Slime';
-import { allowSaving, loadSave, requestSave } from './save';
+import { Cultivation } from './game/cultivation';
+import { stageName } from './game/realms';
+import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
 import { PawCursor } from './ui/PawCursor';
 import { VelocityTracker } from './ui/VelocityTracker';
@@ -35,6 +37,7 @@ function petWindow(): ReturnType<typeof getCurrentWindow> {
 }
 
 const slime = new Slime(0, 0);
+const cultivation = new Cultivation();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -443,6 +446,71 @@ let homed = false;
  */
 let restorePending = true;
 let restoredPoint: { x: number; y: number } | null = null;
+/**
+ * When the one line a first run is allowed to say stops being said.
+ *
+ * Nothing else here announces itself, which is the point — but it does mean someone who has never
+ * seen this can watch a slime sit there and never learn there is anything going on. The first
+ * breakthrough lands inside a minute and explains itself; this covers the minute before it.
+ */
+let introUntil = 0;
+let seenIntro = true;
+
+/** Everything worth keeping, assembled in one place so every writer stores the same shape. */
+function currentSave(): SaveState {
+  return {
+    // Rounded to whole pixels. Sub-pixel precision in a save file is noise, and rounding is what
+    // makes "this is the same position we already stored" an equality that actually holds.
+    slime: { x: Math.round(slime.x), y: Math.round(slime.y) },
+    cultivation: cultivation.snapshot(),
+    settledAt: cultivation.settledAtSeconds,
+    seenIntro,
+  };
+}
+
+/**
+ * Puts the breakthrough up as something to answer, reusing the machinery the calendar left behind.
+ *
+ * That machinery never knew what it was alerting about — `poke` runs whatever action came with it —
+ * so this needed no new animation at all: the swell, the beat, the quietening on hover and the
+ * clearing on click were all already here and already tuned.
+ */
+/**
+ * Seconds between "has anything changed" checks.
+ *
+ * The only periodic work cultivation adds, and deliberately not in the frame loop: qi is a function
+ * of elapsed time rather than a counter, so this is two multiplications and a comparison every ten
+ * seconds. The render loop's stand-down — 31% of a core down to 4% — is the thing a gameplay system
+ * wrecks most easily, so it does not get the chance.
+ */
+const CultivationTickMs = 10_000;
+/** How long the save sits between heartbeats, when nothing has happened worth writing on its own. */
+const HeartbeatMs = 5 * 60_000;
+/**
+ * How long a breakthrough hops before it settles down.
+ *
+ * An unanswered alert hops on a beat, and hopping is full-rate rendering. Left overnight that is
+ * the entire stand-down thrown away, plus a pet flailing at an empty chair. Quietening is the same
+ * state hovering produces, so the breakthrough is still waiting when you come back — just calm.
+ */
+const AlertPatienceMs = 3 * 60_000;
+/** How long the first-run line stays up. Long enough to read, short enough not to be furniture. */
+const IntroMs = 8_000;
+
+let alertRaisedAt = 0;
+
+function offerBreakThrough(): void {
+  if (slime.hasLiveAlert) return;
+  alertRaisedAt = performance.now();
+  slime.raiseAlert(`${stageName(cultivation.realm, cultivation.stage)} · 可突破\n点击渡劫`, () => {
+    cultivation.breakThrough();
+    bubble.hide();
+    slime.clearAlert();
+    // Straight to disk rather than on the next heartbeat. This is the one moment a player would
+    // genuinely mind losing, and it happens rarely enough to be worth a write of its own.
+    requestSave(currentSave());
+  });
+}
 
 function homeSlime(width: number, height: number): void {
   const margin = slime.blob.restRadius;
@@ -549,7 +617,12 @@ function frame(now: number): void {
     if (cursor !== null && slime.hitTest(cursor.x, cursor.y)) slime.acknowledgeAlert();
     bubble.show(slime.alertText);
   } else {
-    const text = devourText(now);
+    const text =
+      devourText(now) ??
+      (now < introUntil ? '此物似有灵性\n正吞吐天地之气' : null) ??
+      // Hovering is the only way any of the cultivation is legible, and even then it is a phrase
+      // rather than a figure — no number ever reaches the screen.
+      (overBody || grabbed ? cultivation.describe() : null);
     if (text) bubble.show(text);
     else bubble.hide();
   }
@@ -621,7 +694,7 @@ function frame(now: number): void {
   if (wasAnimating && !animating) {
     // Rounded to whole pixels. Sub-pixel precision in a save file is noise, and rounding is what
     // makes "this is the same position we already stored" an equality that actually holds.
-    requestSave({ slime: { x: Math.round(slime.x), y: Math.round(slime.y) } });
+    requestSave(currentSave());
   }
   const shouldPaint = animating || slime.hasSlowAnimation || wasAnimating || fullRepaint;
   wasAnimating = animating;
@@ -785,9 +858,23 @@ async function main(): Promise<void> {
   void loadSave()
     .then((saved) => {
       restoredPoint = saved?.slime ?? null;
+      if (saved) {
+        cultivation.restore(saved.cultivation, saved.settledAt);
+        seenIntro = saved.seenIntro;
+      } else {
+        seenIntro = false;
+      }
+      if (!seenIntro) {
+        introUntil = performance.now() + IntroMs;
+        seenIntro = true;
+      }
+      // Every second the machine was switched off is collected here, in one call. There is no
+      // offline-earnings screen in this design because there is nothing for one to announce.
+      cultivation.settle();
       // Only a load that actually finished earns the right to write. A fresh install comes back
       // null, which counts; a thrown read does not, and leaves saving off for the session.
       allowSaving();
+      requestSave(currentSave());
     })
     .catch((error) => {
       console.warn(`SAVE_LOAD_FAILED ${String(error)}`);
@@ -799,6 +886,25 @@ async function main(): Promise<void> {
   setTimeout(() => {
     restorePending = false;
   }, 1000);
+
+  window.setInterval(() => {
+    cultivation.settle();
+    if (cultivation.readyToBreakThrough) offerBreakThrough();
+    if (
+      slime.hasLiveAlert &&
+      !slime.isAlertAcknowledged &&
+      performance.now() - alertRaisedAt > AlertPatienceMs
+    ) {
+      slime.acknowledgeAlert();
+    }
+  }, CultivationTickMs);
+
+  // Qi is worth a write on its own schedule: it changes every tick, so waiting for the body to
+  // come to rest would mean a session spent entirely still saves nothing at all.
+  window.setInterval(() => {
+    cultivation.settle();
+    requestSave(currentSave());
+  }, HeartbeatMs);
 
   window.addEventListener('resize', () => {
     resize();

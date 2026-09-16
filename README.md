@@ -648,6 +648,55 @@ simulation has to be stepped by hand to see anything move.
 There is nothing to assert against a live desktop — what it is read for is the taskbar, the desktop
 or another virtual desktop's windows turning up, each of which is a filter above having failed.
 
+## Cultivating
+
+Left alone the slime accumulates qi, and when a stage fills it swells and hops until you click it.
+[CULTIVATION.md](CULTIVATION.md) has the whole design and the arguments behind it, including the
+four places the design was reversed while it was being written.
+
+What exists so far is the arithmetic and the breakthrough, not the look: eight realms of nine
+stages, a bottleneck that drops output to a quarter while a breakthrough waits to be taken, and a
+rate that is a pipeline rather than a chain of hardcoded multiplications. The realm shows up as a
+phrase on hover and nowhere else — body colour and size still say nothing about it.
+
+### Qi is a function of time, not a counter
+
+Nothing adds qi a frame at a time. It is rate times elapsed seconds, evaluated whenever anyone
+asks, so one call covers a tick, a lunch break, and a fortnight with the machine switched off.
+That is why there is no offline-earnings screen in this design and no way for one to be needed.
+
+The subtlety is that the rate is not constant across a long gap: a stage that fills part way
+through drops to the bottleneck for the remainder. Integrating in two pieces is the difference
+between that and being quietly *rewarded* for staying away, which is the wrong incentive to ship by
+accident. Both halves are asserted against, along with the property that matters more than either:
+one long settle and ten short ones over the same gap have to land in the same place.
+
+### The recurring cost is two multiplications every ten seconds
+
+Bolting a game onto something whose headline optimisation is "4% of a core to sit still" is the
+obvious way to throw that away. None of this is in the frame loop — a ten second timer brings the
+qi up to date and asks whether a stage has filled, and that is the entire recurring cost.
+
+The one thing that genuinely would have wrecked it is a breakthrough nobody answers. An alert hops
+on a beat, hopping is full-rate rendering, and left overnight that is the stand-down gone *and* a
+pet flailing at an empty chair. So an unanswered breakthrough quietens itself after three minutes,
+into the same slow pulse that hovering produces. It is still waiting when you come back.
+
+### The alert was already here
+
+The swell, the beat, the quietening on hover, the clearing on click — all of it was built for
+meeting reminders, and none of it ever knew what it was announcing, because `poke` runs whatever
+action arrived with the alert. Deleting the calendar deliberately left the mechanism behind. A
+breakthrough needed no new animation code at all.
+
+### `npm run check`
+
+The numbers in `realms.ts` will be re-tuned repeatedly, and `settle` is the piece most likely to be
+quietly wrong while still looking plausible. Sixteen assertions, no test framework, two seconds:
+accrual rate, the bottleneck split, one settle against ten over the same gap, a clock that jumps
+backwards, overflow carried across a breakthrough, and a full walk of the ladder that has to land
+on exactly 72 breakthroughs and about 3.8 days.
+
 ## The save
 
 One file, `save.json`, in the platform's app-data directory. Today it holds one thing — where you
@@ -721,8 +770,9 @@ builds, and the app runs at about 69 MB resident. The slime renders and simulate
 cursor, and the attention performance was confirmed visually — amber body, wide eyes, airborne with
 the contact shadow shrinking away, speech bubble anchored to it.
 
-**The slime comes back where you left it**, and that is the only thing that persists so far — see
-[The save](#the-save). Everything in [CULTIVATION.md](CULTIVATION.md) is designed and unbuilt.
+**It remembers where you left it, and how far along it is.** The cultivation arithmetic and the
+breakthrough are in; the body does not show any of it yet, and neither the key-glyph gathering nor
+the daily window quota exists. See [Cultivating](#cultivating).
 
 Not built yet:
 

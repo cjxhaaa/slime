@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "check": "tsc --ignoreConfig src/game/cultivation.check.ts --outDir .check --module esnext --target es2022 --moduleResolution bundler --skipLibCheck && node .check/cultivation.check.js",
     "tauri": "tauri"
   },
   "dependencies": {
