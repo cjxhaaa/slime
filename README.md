@@ -740,6 +740,64 @@ behind a trip to Settings.
 
 What is not built yet is the daily window quota, and everything in section twelve of the plan.
 
+### Eating a window is the fight
+
+There is no combat system and there is not going to be one — an opponent, a health bar and a damage
+readout are all panels, and a desk pet that needs a panel has stopped being a desk pet. But the
+question "what are the numbers *for*" deserved a better answer than "the slime is a different
+colour now", and it turned out the answer was already in the repo.
+
+Swallowing a window was always shaped like a fight. It latches on. The application resists — that
+is what `Resisting` means, it is asking you something. A frozen one escalates and needs a second
+click to say so. An elevated one cannot be taken at all. Pulling the pet off mid-way calls the whole
+thing off. What it lacked was stakes that moved: every window was the same amount of work, so the
+realm you had climbed to changed nothing about it.
+
+Now the window's share of the work area is how big an opponent it is, a hung one counts for 1.6× of
+it, and how hard that lands depends on the realm:
+
+| | small dialog | half the screen | maximised and frozen |
+|---|---|---|---|
+| 练气 | 3.0s | 7.0s, trembling | 8.0s, trembling |
+| 金丹 | 3.0s | 4.2s | 8.0s, trembling |
+| 化神 | 3.0s | 3.0s | 5.5s |
+| 大乘 | 3.0s | 3.0s | **3.0s, barely a shudder** |
+
+**Three seconds is a floor, not a starting point.** That interval is the entire safety margin of
+the feature — it is the window in which pulling the pet off aborts, and the commitment is spent on
+screen rather than behind a confirmation dialog. A stronger pet swallowing faster would be buying a
+flourish with the only chance anyone gets to change their mind, so progress is spent at the other
+end instead: a junior pet against a large window takes longer and visibly works for it. An assertion
+covers every realm against every size and fails if any combination comes out under three seconds.
+
+**The realm never decides whether you can.** Someone installed this to close an application that
+has stopped responding. Discovering that the pet is too junior to try would be a product mistake
+wearing difficulty as a costume. Effort and spoils scale; capability does not.
+
+### The spoils, and why there is an allowance
+
+A kill is worth a stretch of doubled output — twenty minutes plus thirty more scaled by how big the
+opponent was, so a frozen maximised window is worth about an hour and a small dialog about twenty
+minutes. The pet is visibly fuller and brighter for the duration, because a reward you cannot see is
+not one; that argument is the same one that made the reward a *state* rather than a lump of qi.
+
+The allowance — one nourished kill a day at 练气, rising to eight, banking up to three days — is
+what keeps this a bonus instead of the fastest route up the ladder. Without a cap the quickest way
+to progress would be to spend an afternoon closing things, and software that trains people to close
+windows they still need is not a difficulty curve.
+
+Past the allowance the window still closes and the pet still eats it. The cap is on the spoils,
+never on the capability, for the same reason as above.
+
+Two things about nourishment that are easy to get subtly wrong, and both are asserted:
+
+- **Two kills are twice as long, not four times as fast.** Stacking the multiplier would make a
+  burst of window-closing the fastest progression there is.
+- **A settle that spans the end of nourishment has to be integrated in two pieces.** Credit the
+  whole gap at the doubled rate and being away from the desk pays better than having been there,
+  which is exactly backwards. The assertion that catches it is the same shape as the one for the
+  bottleneck: one long settle and sixty short ones over the same stretch must agree.
+
 ### Qi is a function of time, not a counter
 
 Nothing adds qi a frame at a time. It is rate times elapsed seconds, evaluated whenever anyone
@@ -858,8 +916,10 @@ builds, and the app runs at about 69 MB resident. The slime renders and simulate
 cursor, and the attention performance was confirmed visually — amber body, wide eyes, airborne with
 the contact shadow shrinking away, speech bubble anchored to it.
 
-**It remembers where you left it and how far along it is**, the body shows the realm, and it eats
-the keys you type. The daily window quota is not built. See [Cultivating](#cultivating).
+**It remembers where you left it and how far along it is**, the body shows the realm, it eats the
+keys you type, and swallowing a window is a fight whose difficulty and spoils move with the realm.
+Treasures — the one substantial system still on paper — are section twelve of the plan. See
+[Cultivating](#cultivating).
 
 Not built yet:
 

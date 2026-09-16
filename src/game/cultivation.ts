@@ -43,6 +43,14 @@ export const IdleFactor = 0.35;
 export const ExpectedKeysPerSecond = 5;
 
 /**
+ * What nourishment multiplies output by, after swallowing a window.
+ *
+ * Doubling is the whole of it — the interest is in how long it lasts and how visible the pet is
+ * while it does, not in the size of the number.
+ */
+export const NourishMultiplier = 2;
+
+/**
  * How often the frontend asks what has been typed.
  *
  * Fast, because every key is supposed to knock a speck loose and a quarter-second lag on that would
@@ -65,6 +73,8 @@ export interface CultivationSnapshot {
   stage: number;
   qi: number;
   rebirths: number;
+  /** Unix seconds nourishment runs out. In the past, or zero, means none. */
+  nourishUntil: number;
 }
 
 export class Cultivation {
@@ -72,6 +82,7 @@ export class Cultivation {
   stage = 0;
   qi = 0;
   rebirths = 0;
+  nourishUntil = 0;
 
   private modifiers: RateModifier[] = [];
   /** Unix seconds. The only clock this class has; everything else is derived from it. */
@@ -94,11 +105,41 @@ export class Cultivation {
     this.stage = snapshot.stage;
     this.qi = snapshot.qi;
     this.rebirths = snapshot.rebirths;
+    this.nourishUntil = snapshot.nourishUntil;
     this.settledAt = settledAt;
   }
 
   snapshot(): CultivationSnapshot {
-    return { realm: this.realm, stage: this.stage, qi: this.qi, rebirths: this.rebirths };
+    return {
+      realm: this.realm,
+      stage: this.stage,
+      qi: this.qi,
+      rebirths: this.rebirths,
+      nourishUntil: this.nourishUntil,
+    };
+  }
+
+  /** True while a swallowed window is still paying out. */
+  get nourished(): boolean {
+    return this.settledAt < this.nourishUntil;
+  }
+
+  /** Seconds of nourishment left, for the one line the pet will say about it. */
+  get nourishSecondsLeft(): number {
+    return Math.max(0, this.nourishUntil - this.settledAt);
+  }
+
+  /**
+   * Adds to the nourishment already running rather than replacing or compounding it.
+   *
+   * Two windows swallowed together are an hour of double, not a quarter of an hour of quadruple.
+   * The daily allowance is the only cap this needs, and stacking the multiplier instead would make
+   * a burst of window-closing the fastest way to progress — which is the one thing the plan's
+   * guardrails forbid outright.
+   */
+  nourish(minutes: number): void {
+    const from = Math.max(this.nourishUntil, this.settledAt);
+    this.nourishUntil = from + minutes * 60;
   }
 
   get settledAtSeconds(): number {
@@ -109,6 +150,10 @@ export class Cultivation {
   private unthrottledRate(): number {
     let rate = baseRate(this.realm, this.stage) * (1 + 0.5 * this.rebirths);
     for (const modifier of this.modifiers) rate *= modifier.factor();
+    // Not a registered modifier, for the same reason the bottleneck is not one: both depend on
+    // *when* rather than on state, so both have to be resolved by whoever is integrating over an
+    // interval. See `settle`.
+    if (this.nourished) rate *= NourishMultiplier;
     return rate;
   }
 
@@ -130,26 +175,41 @@ export class Cultivation {
    * ship by accident.
    */
   settle(now = Date.now() / 1000): void {
-    let elapsed = now - this.settledAt;
-    this.settledAt = now;
     // The clock moved backwards — a timezone change, an NTP correction, or someone fishing. Give
     // nothing rather than negative qi, and carry on from here.
-    if (elapsed <= 0) return;
+    if (now <= this.settledAt) {
+      this.settledAt = now;
+      return;
+    }
+    // Split the gap where nourishment runs out. A settle that spans the end of it would otherwise
+    // credit the whole stretch at double — so coming back after lunch would pay better than having
+    // been there, which is precisely backwards. At most two pieces: one nourished, one not.
+    while (this.settledAt < now) {
+      const boundary =
+        this.nourishUntil > this.settledAt ? Math.min(this.nourishUntil, now) : now;
+      this.accrue(boundary - this.settledAt);
+      this.settledAt = boundary;
+    }
+  }
 
+  /** Adds `seconds` of qi at the current rate, dropping to the bottleneck part way if it fills. */
+  private accrue(seconds: number): void {
+    if (seconds <= 0) return;
     const rate = this.unthrottledRate();
     if (!Number.isFinite(rate) || rate <= 0) return;
 
+    let left = seconds;
     const need = requirement(this.realm, this.stage);
     if (this.qi < need) {
       const secondsToFill = (need - this.qi) / rate;
-      if (secondsToFill >= elapsed) {
-        this.qi += rate * elapsed;
+      if (secondsToFill >= left) {
+        this.qi += rate * left;
         return;
       }
       this.qi = need;
-      elapsed -= secondsToFill;
+      left -= secondsToFill;
     }
-    this.qi += rate * BottleneckFactor * elapsed;
+    this.qi += rate * BottleneckFactor * left;
   }
 
   /**

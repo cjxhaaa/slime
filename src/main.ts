@@ -4,6 +4,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime, type Bite, type DevourRect } from './slime/Slime';
 import { lookFor } from './game/appearance';
+import { allowance, burden, effort, engulfSeconds, spoilMinutes, strain } from './game/combat';
+import { Daily } from './game/daily';
 import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cultivation';
 import { Glyphs } from './game/Glyphs';
 import { Motes } from './game/Motes';
@@ -43,6 +45,7 @@ const slime = new Slime(0, 0);
 const cultivation = new Cultivation();
 const glyphs = new Glyphs();
 const motes = new Motes();
+const daily = new Daily();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -208,7 +211,19 @@ async function tryBeginDevour(): Promise<void> {
     };
     devourTarget = prey;
     devourNote = null;
-    slime.beginDevour(prey.hwnd, rect, prey.occlusion > BURIED_ENOUGH);
+    // How big an opponent this is, and how far past comfortable it is for the realm the pet has
+    // reached. A junior pet against a maximised window takes visibly longer and trembles doing it;
+    // a senior one swallows the same window in the floor time. What never changes is whether it
+    // *can* — see the note at the top of game/combat.ts.
+    const load = burden(rect, window.innerWidth, window.innerHeight, prey.hung);
+    const work = effort(load, cultivation.realm);
+    slime.beginDevour(
+      prey.hwnd,
+      rect,
+      prey.occlusion > BURIED_ENOUGH,
+      engulfSeconds(work),
+      strain(work),
+    );
   } catch (error) {
     console.warn('could not look for a window to eat', error);
   } finally {
@@ -269,6 +284,32 @@ async function runSwallow(hwnd: number): Promise<void> {
   }
   slime.finishDevour(outcome);
   reportBite(outcome);
+  if (outcome === 'closed' || outcome === 'killed') claimSpoils();
+}
+
+/**
+ * The reward for a kill: a stretch of doubled output, if the day's allowance covers it.
+ *
+ * Past the allowance the window still closes and the pet still eats it — the allowance caps the
+ * *spoils*, never the capability. That difference is the whole reason someone can buy this to deal
+ * with a frozen application and not discover a game standing in the way.
+ */
+function claimSpoils(): void {
+  cultivation.settle();
+  daily.roll(allowance(cultivation.realm));
+  if (!daily.take()) return;
+  const prey = devourTarget;
+  const load = prey
+    ? burden(
+        { width: prey.width / pixelsPerCssPx, height: prey.height / pixelsPerCssPx },
+        window.innerWidth,
+        window.innerHeight,
+        prey.hung,
+      )
+    : 0;
+  cultivation.nourish(spoilMinutes(load));
+  applyLook();
+  requestSave(currentSave());
 }
 
 /**
@@ -469,6 +510,7 @@ function currentSave(): SaveState {
     slime: { x: Math.round(slime.x), y: Math.round(slime.y) },
     cultivation: cultivation.snapshot(),
     settledAt: cultivation.settledAtSeconds,
+    daily: daily.snapshot(),
     seenIntro,
     quiet,
   };
@@ -541,6 +583,25 @@ let appliedLook = { scale: 0, core: '', glow: -1 };
  * coming up on a slime that has been sitting still for ten minutes is a change nothing else in the
  * frame would report — it would simply not appear until the next time the pet happened to twitch.
  */
+/**
+ * The only place any of this is legible, and even here it is phrases rather than figures.
+ *
+ * The allowance line is absent when there is none left, rather than reading zero. A zero is a
+ * deficit and this is not one — an unused allowance is nothing owed, and the plan is emphatic that
+ * the same numbers framed as a shortfall produce the opposite feeling.
+ */
+function hoverLines(): string {
+  const lines = [cultivation.describe()];
+  const nourishLeft = cultivation.nourishSecondsLeft;
+  if (nourishLeft > 0) {
+    lines.push(`温养中 · 还余 ${Math.max(1, Math.round(nourishLeft / 60))} 分钟`);
+  }
+  if (daily.left > 0) {
+    lines.push(`今日尚可炼化 ${daily.left} 次`);
+  }
+  return lines.join('\n');
+}
+
 function applyLook(): void {
   const look = lookFor(cultivation);
   if (
@@ -685,7 +746,7 @@ function frame(now: number): void {
       (now < introUntil ? '此物似有灵性\n正吞吐天地之气' : null) ??
       // Hovering is the only way any of the cultivation is legible, and even then it is a phrase
       // rather than a figure — no number ever reaches the screen.
-      (overBody || grabbed ? cultivation.describe() : null);
+      (overBody || grabbed ? hoverLines() : null);
     if (text) bubble.show(text);
     else bubble.hide();
   }
@@ -985,6 +1046,7 @@ async function main(): Promise<void> {
       restoredPoint = saved?.slime ?? null;
       if (saved) {
         cultivation.restore(saved.cultivation, saved.settledAt);
+        daily.restore(saved.daily);
         seenIntro = saved.seenIntro;
         quiet = saved.quiet;
         // Rust starts out listening, so a save that says otherwise has to say so out loud.
@@ -1018,6 +1080,9 @@ async function main(): Promise<void> {
 
   window.setInterval(() => {
     cultivation.settle();
+    // Rolled here rather than on hover: a render path is the wrong place for something that
+    // changes state, even something this cheap and this idempotent.
+    daily.roll(allowance(cultivation.realm));
     applyLook();
     if (cultivation.readyToBreakThrough) offerBreakThrough();
     if (

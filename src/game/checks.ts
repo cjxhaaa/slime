@@ -14,6 +14,8 @@ declare const process: { exit(code: number): never };
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
 import { Glyphs } from './Glyphs.js';
 import { Motes } from './Motes.js';
+import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
+import { Daily } from './daily.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
 
 let failures = 0;
@@ -141,6 +143,81 @@ while (c.realm < Ascended && breakthroughs < 1000) {
 }
 check('breakthroughs to ascend', breakthroughs, Ascended * StagesPerRealm);
 checkTrue('nothing further is offered once ascended', !c.readyToBreakThrough);
+
+// ---------------------------------------------------------------- the fight
+
+// 20. The floor on the wrap is a safety property, not a tuning value: it is the window in which
+//     pulling the pet off calls the meal off. No realm and no window size may shorten it.
+let shortest = Infinity;
+for (let realm = 0; realm <= 8; realm++) {
+  for (const load of [0, 0.01, 0.08, 0.3, 0.5, 1, 1.6, 4]) {
+    shortest = Math.min(shortest, engulfSeconds(effort(load, realm)));
+  }
+}
+check('the abort window is never shortened', shortest, 3, 1e-9);
+
+// 21. Progress is spent making hard things easy, not making easy things fast.
+checkTrue('a junior pet labours over a big window', engulfSeconds(effort(1, 0)) > 4);
+check('a senior one is back at the floor', engulfSeconds(effort(1, 7)), 3, 1e-9);
+checkTrue('and every realm in between is an improvement', engulfSeconds(effort(1, 2)) > engulfSeconds(effort(1, 4)));
+
+// 22. A window that has stopped responding is the harder opponent and the better prize.
+const plain = burden({ width: 800, height: 600 }, 1920, 1080, false);
+const frozen = burden({ width: 800, height: 600 }, 1920, 1080, true);
+checkTrue('a hung window is the heavier load', frozen > plain);
+checkTrue('and worth more', spoilMinutes(frozen) > spoilMinutes(plain));
+
+// 23. Capability is never gated. Whatever the realm, the effort is finite and the wrap completes —
+//     someone who bought this to close a frozen application must never meet a difficulty wall.
+checkTrue('even the worst case resolves', Number.isFinite(engulfSeconds(effort(4, 0))));
+
+// ---------------------------------------------------------------- nourishment
+
+// 24. It doubles output while it lasts.
+c = new Cultivation(0);
+const plainRate = c.rate();
+c.nourish(10);
+checkTrue('nourishment doubles the rate', Math.abs(c.rate() - plainRate * 2) < 1e-9);
+
+// 25. Two kills are twice as long, not four times as fast. Stacking the multiplier instead would
+//     make a burst of window-closing the quickest way up the ladder, which the guardrails forbid.
+c = new Cultivation(0);
+c.nourish(10);
+c.nourish(10);
+check('two windows make twenty minutes of double', c.nourishSecondsLeft, 20 * 60, 1e-9);
+checkTrue('and still only double', Math.abs(c.rate() - plainRate * 2) < 1e-9);
+
+// 26. THE one that would go wrong quietly: a settle spanning the end of nourishment must not
+//     credit the whole gap at the higher rate. Being away would then pay better than being there.
+const once = new Cultivation(0);
+once.nourish(1);
+once.settle(120);
+const stepped = new Cultivation(0);
+stepped.nourish(1);
+for (let t = 2; t <= 120; t += 2) stepped.settle(t);
+check('one settle across the boundary equals sixty', once.qi, stepped.qi, 1e-6);
+checkTrue('and it is not the whole gap at double', once.qi < 120 * IdleFactor * 2 * 0.9);
+
+// ---------------------------------------------------------------- the daily allowance
+
+// 27. Rolls once a local day, banks three, and runs out rather than going negative.
+const d = new Daily();
+d.roll(2, '2026-09-16');
+check('a fresh day hands out the allowance', d.left, 2);
+d.roll(2, '2026-09-16');
+check('rolling twice in a day changes nothing', d.left, 2);
+checkTrue('one can be spent', d.take());
+d.roll(2, '2026-09-17');
+check('tomorrow tops it up', d.left, 3);
+d.roll(2, '2026-09-18');
+d.roll(2, '2026-09-19');
+d.roll(2, '2026-09-20');
+check('but it never banks past three days', d.left, 6);
+while (d.take());
+checkTrue('an empty allowance says so rather than going negative', !d.take());
+check('allowance grows with the realm', allowance(0), 1);
+check('and is capped', allowance(20), 8);
+
 
 // ---------------------------------------------------------------- glyphs
 

@@ -41,12 +41,25 @@ const ScalePerRealm = 0.06;
  */
 const GlowFrom = 0.55;
 
+/**
+ * How much fuller a pet looks while it is digesting a window.
+ *
+ * Small, because the body's size is already carrying the realm and this must not be mistaken for
+ * one. What actually reads as "it is working on something" is the floor it puts under the glow.
+ */
+const NourishedScale = 1.05;
+const NourishedGlow = 0.4;
+
 export function lookFor(cultivation: Cultivation): BodyLook {
   const realm = Math.min(cultivation.realm, Ascended);
   const progress = Math.min(1, Math.max(0, cultivation.progress));
+  const nourished = cultivation.nourished;
+  const glow = progress <= GlowFrom ? 0 : (progress - GlowFrom) / (1 - GlowFrom);
   return {
-    scale: 1 + ScalePerRealm * realm,
+    scale: (1 + ScalePerRealm * realm) * (nourished ? NourishedScale : 1),
     palette: REALM_PALETTES[realm] ?? REALM_PALETTES[0],
-    glow: progress <= GlowFrom ? 0 : (progress - GlowFrom) / (1 - GlowFrom),
+    // Half an hour of visibly holding something, which is the whole reason the reward is a state
+    // and not a lump of qi nobody can see.
+    glow: nourished ? Math.max(NourishedGlow, glow) : glow,
   };
 }

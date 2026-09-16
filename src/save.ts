@@ -9,7 +9,9 @@ import { invoke } from '@tauri-apps/api/core';
  */
 export interface SaveState {
   slime: { x: number; y: number };
-  cultivation: { realm: number; stage: number; qi: number; rebirths: number };
+  cultivation: { realm: number; stage: number; qi: number; rebirths: number; nourishUntil: number };
+  /** The daily allowance of nourished kills: the local date it rolled, and what is left of it. */
+  daily: { date: string; remaining: number };
   /** Unix seconds the qi above was last brought up to date. Offline progress is this and nothing else. */
   settledAt: number;
   /** The one line said on a first run has been said. */
@@ -65,6 +67,7 @@ export async function loadSave(): Promise<SaveState | null> {
       version?: unknown;
       slime?: { x?: unknown; y?: unknown };
       cultivation?: Partial<SaveState['cultivation']>;
+      daily?: { date?: unknown; remaining?: unknown };
       settledAt?: unknown;
       seenIntro?: unknown;
       quiet?: unknown;
@@ -85,6 +88,11 @@ export async function loadSave(): Promise<SaveState | null> {
         stage: numberOr(grown?.stage, 0),
         qi: numberOr(grown?.qi, 0),
         rebirths: numberOr(grown?.rebirths, 0),
+        nourishUntil: numberOr(grown?.nourishUntil, 0),
+      },
+      daily: {
+        date: typeof parsed.daily?.date === 'string' ? parsed.daily.date : '',
+        remaining: numberOr(parsed.daily?.remaining, 0),
       },
       settledAt: numberOr(parsed.settledAt, Date.now() / 1000),
       seenIntro: parsed.seenIntro === true,

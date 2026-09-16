@@ -30,7 +30,17 @@ export interface DevourRect {
  * pulling it off at any point during them calls the whole thing off. Nothing about the commitment
  * is invisible, which is what makes a gesture this destructive safe to trigger by holding still.
  */
-const EngulfSeconds = 3;
+/**
+ * The floor on how long a wrap takes, and therefore the floor on the abort window.
+ *
+ * This is the whole safety margin of the feature, so it is spent on screen rather than on a
+ * confirmation: the membrane visibly creeps over the window, and grabbing the pet and pulling it
+ * off at any point calls the whole thing off. A bigger window against a junior pet takes *longer*
+ * than this — see `engulfSeconds` in `game/combat.ts` — but nothing ever makes it shorter, because
+ * a stronger pet earning a snappier animation would be buying a flourish with the only chance
+ * anyone gets to change their mind.
+ */
+const MinEngulfSeconds = 3;
 /** How long the slime spends hauling a buried window to the front before it starts eating. */
 const HeaveSeconds = 1;
 /** How long the body takes to peel back off, whether it ate or gave up. */
@@ -192,6 +202,10 @@ export class Slime {
     swallowPending: boolean;
     outcome: Bite | null;
     until: number;
+    /** How long the wrap takes for *this* window. Never under `MinEngulfSeconds`. */
+    engulfSeconds: number;
+    /** 0 to 1, how visibly it is working for it. Drives the tremble and nothing else. */
+    strain: number;
   } | null = null;
   private readonly devourShape: Float32Array;
   private heaveTremble = 0;
@@ -521,7 +535,13 @@ export class Slime {
    * `buried` sends it through a heave first: a window that is behind other windows has to be pulled
    * to the front before there is anything to see being eaten.
    */
-  beginDevour(hwnd: number, rect: DevourRect, buried: boolean): void {
+  beginDevour(
+    hwnd: number,
+    rect: DevourRect,
+    buried: boolean,
+    engulfSeconds = MinEngulfSeconds,
+    strain = 0,
+  ): void {
     this.grabbed = false;
     this.mood = 'devouring';
     this.vx = 0;
@@ -537,7 +557,9 @@ export class Slime {
       engulfPending: buried,
       swallowPending: false,
       outcome: null,
-      until: this.clock + (buried ? HeaveSeconds : EngulfSeconds),
+      engulfSeconds: Math.max(MinEngulfSeconds, engulfSeconds),
+      strain: Math.max(0, Math.min(1, strain)),
+      until: this.clock + (buried ? HeaveSeconds : Math.max(MinEngulfSeconds, engulfSeconds)),
     };
     if (buried) {
       // Bracing to take the weight.
@@ -566,7 +588,7 @@ export class Slime {
       Math.max(1, rect.x + rect.width - this.x),
       Math.max(1, rect.y + rect.height - this.y),
     );
-    this.blob.morphTo(this.devourShape, EngulfSeconds);
+    this.blob.morphTo(this.devourShape, this.devour.engulfSeconds);
   }
 
   /**
@@ -793,7 +815,7 @@ export class Slime {
         if (this.clock >= this.devour.until) {
           // It comes free. The recoil is the body letting go of the weight it was pulling against.
           this.devour.phase = 'engulfing';
-          this.devour.until = this.clock + EngulfSeconds;
+          this.devour.until = this.clock + this.devour.engulfSeconds;
           this.devour.raisePending = true;
           this.blob.squash(-0.36);
           this.blob.pulse(90);
@@ -802,9 +824,22 @@ export class Slime {
             this.startEngulf();
           }
         }
-      } else if (this.devour.phase === 'engulfing' && this.clock >= this.devour.until) {
-        this.devour.phase = 'straining';
-        this.devour.swallowPending = true;
+      } else if (this.devour.phase === 'engulfing') {
+        // Working for it. The same tremble the heave uses, but keyed to how far beyond comfortable
+        // this particular window is rather than to how far through the heave we are — so a small
+        // dialog goes down smoothly and a maximised one visibly costs something.
+        if (this.devour.strain > 0.02) {
+          this.heaveTremble -= dt;
+          if (this.heaveTremble <= 0) {
+            this.heaveTremble = 0.14 - this.devour.strain * 0.07;
+            const angle = Math.random() * Math.PI * 2;
+            this.blob.poke(angle, 12 + this.devour.strain * 38, 1.5);
+          }
+        }
+        if (this.clock >= this.devour.until) {
+          this.devour.phase = 'straining';
+          this.devour.swallowPending = true;
+        }
       }
 
       this.updateFace(dt, env);
