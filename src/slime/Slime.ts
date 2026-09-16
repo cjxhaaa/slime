@@ -85,7 +85,29 @@ const AlertBounceInterval = 1.5;
 const NudgeBreathInterval = 3.2;
 
 /** Body palette per mood. Colour is reserved for state — it is the one thing that must read instantly. */
-const PALETTE: Record<string, { core: string; edge: string; rim: string }> = {
+export interface Palette {
+  core: string;
+  edge: string;
+  rim: string;
+}
+
+/**
+ * What the body looks like when nothing is happening to it.
+ *
+ * Handed in from outside rather than derived here, because this class has no idea what a realm is
+ * and should not learn: it draws a soft body and runs an alert, and every feature so far has been
+ * cheaper for keeping it that way.
+ */
+export interface BodyLook {
+  /** Multiplier on the resting radius. 1 is the size it has always been. */
+  scale: number;
+  /** Stands in for the calm palette. Alert, sleep and devour still outrank it. */
+  palette: Palette;
+  /** 0 to 1. A halo under the body, brightest when something is about to happen. */
+  glow: number;
+}
+
+const PALETTE: Record<string, Palette> = {
   calm: { core: '#8ff0d4', edge: '#33c6a6', rim: '#1d9c85' },
   alert: { core: '#ffd48a', edge: '#f59b2c', rim: '#c9761a' },
   // Acknowledged but still pending: the same hue, drained of urgency. Still clearly not "calm",
@@ -111,7 +133,8 @@ export class Slime {
   alertAction: (() => void) | null = null;
 
   private readonly points: Float32Array;
-  private readonly radius: number;
+  private radius: number;
+  private readonly baseRadius: number;
 
   private blinkAt = 2;
   private blinkPhase = 0;
@@ -190,6 +213,7 @@ export class Slime {
     this.x = x;
     this.y = y;
     this.radius = radius;
+    this.baseRadius = radius;
     this.blob = new Blob(radius);
     this.points = new Float32Array(this.blob.count * 2);
     this.devourShape = new Float32Array(this.blob.count);
@@ -204,6 +228,24 @@ export class Slime {
   private groundFor(height: number): number {
     return height - GROUND_MARGIN - this.radius;
   }
+
+  /**
+   * The resting appearance, from whatever owns the progression.
+   *
+   * Cheap to call every tick: a scale that has not moved touches neither the ring nor the gradient
+   * cache. The cache has to go when it does, because the gradient's geometry is built from the
+   * radius and a stale one would paint the old size's falloff onto the new body.
+   */
+  setLook(look: BodyLook): void {
+    if (look.scale !== this.bodyLook.scale) {
+      this.radius = this.baseRadius * look.scale;
+      this.blob.resize(this.radius);
+      this.gradients.clear();
+    }
+    this.bodyLook = look;
+  }
+
+  private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0 };
 
   private bodyGradient(
     context: CanvasRenderingContext2D,
@@ -908,7 +950,31 @@ export class Slime {
         ? PALETTE.alert
         : this.mood === 'asleep' || this.mood === 'sleepy'
           ? PALETTE.sleep
-          : PALETTE.calm;
+          : this.bodyLook.palette;
+
+    // The halo. Drawn under everything, and only when there is something to say — a body that is
+    // barely into a stage has none at all, so this is not permanent glare around the pet. It stays
+    // well inside the decoration margin `bounds()` already reserves, so it costs no extra area.
+    if (this.bodyLook.glow > 0.01 && !this.devour) {
+      const reach = this.radius * 1.5;
+      const halo = context.createRadialGradient(
+        this.renderX,
+        this.renderY,
+        this.radius * 0.7,
+        this.renderX,
+        this.renderY,
+        reach,
+      );
+      halo.addColorStop(0, this.bodyLook.palette.core);
+      halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      context.save();
+      context.globalAlpha = 0.34 * this.bodyLook.glow;
+      context.fillStyle = halo;
+      context.beginPath();
+      context.arc(this.renderX, this.renderY, reach, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    }
 
     // Contact shadow. It shrinks and fades with height, which is most of what sells the jump -
     // and means nothing for a body latched onto a window halfway up the screen, where it would be

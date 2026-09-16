@@ -107,6 +107,18 @@ export class Blob {
   }
 
   /**
+   * Changes the radius the ring settles back to.
+   *
+   * Mid-morph the ring is on its way to a window's outline, and overwriting `rest` there would
+   * snap it out of a three-second animation the user is still allowed to call off. Setting the
+   * radius alone is enough in that case: the unwind reads it when it goes back to being a circle.
+   */
+  resize(radius: number): void {
+    this.restRadius = radius;
+    if (this.conformTo === null) this.rest.fill(radius);
+  }
+
+  /**
    * Morphs the ring onto an arbitrary shape over a fixed duration, or back to a circle with `null`.
    *
    * Paced, not eased: an exponential approach never actually arrives, and here the duration *is*

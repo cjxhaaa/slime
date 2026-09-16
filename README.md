@@ -197,6 +197,19 @@ array that is about to be drawn. `Blob.maxReach` is gone rather than fixed: any 
 Measuring per axis rather than as a radius also stopped the rect being a square built from a
 window's half-diagonal, which cut the area cleared during an engulf by about a fifth.
 
+### A repaint request that could not request a repaint
+
+`fullRepaint` is read twice: once to widen the damaged region to the whole canvas, and once as part
+of deciding whether to paint at all. It was being cleared between those two reads, so the second
+one was always false. Anything that asked for a repaint *without* also setting the slime in motion
+got the full-screen clip and then no paint inside it.
+
+Nothing noticed for a long time because almost everything that wants a repaint is already moving.
+Resizing the window while the pet sat still left the canvas blank until it happened to twitch, and
+that is rare enough to read as a compositor hiccup. It surfaced properly when the body started
+changing colour on a ten second timer: a slime that had been asleep for an hour simply kept its old
+realm's colour until something nudged it.
+
 ## Rendering cost
 
 The backing store is sized to the window's real device pixels — 3840x2088 on this display, eight
@@ -654,10 +667,14 @@ Left alone the slime accumulates qi, and when a stage fills it swells and hops u
 [CULTIVATION.md](CULTIVATION.md) has the whole design and the arguments behind it, including the
 four places the design was reversed while it was being written.
 
-What exists so far is the arithmetic and the breakthrough, not the look: eight realms of nine
-stages, a bottleneck that drops output to a quarter while a breakthrough waits to be taken, and a
-rate that is a pipeline rather than a chain of hardcoded multiplications. The realm shows up as a
-phrase on hover and nowhere else — body colour and size still say nothing about it.
+The realm is on the body, which is the whole reason for building this on a desk pet rather than in
+a window: 青 → 碧 → 金 → 橙 → 赤 → 紫 → 靛 → 玄, about six percent larger each time, and a halo
+that comes up over the last half of a stage so that "something is about to happen" is readable
+across the room. The ramp is deliberately back-loaded — the pacing spends five of the eight realms
+inside the first day, so the three that are left have to carry four days between them. Teal to
+green is a shade; purple to near-black is an event.
+
+What is not built yet is the gathering: no key glyphs, no daily window quota, no quiet switch.
 
 ### Qi is a function of time, not a counter
 
@@ -752,6 +769,9 @@ focus.
 Two handles are attached to `window` for use from a devtools console:
 
 - `__slime` — the live simulation object, for reading position, velocity and mood.
+- `__setStage(realm, stage, progress)` — jumps the body anywhere on the ladder and repaints it.
+  Tuning the palette ramp and the size growth is otherwise gated on playing to 大乘, which is four
+  days.
 - `__raiseAlert(text)` — fires the whole attention performance immediately: swell, hop on a beat,
   quieten on hover, clear on click. Nothing raises an alert on its own yet, so this is the only way
   to see it.
@@ -770,9 +790,9 @@ builds, and the app runs at about 69 MB resident. The slime renders and simulate
 cursor, and the attention performance was confirmed visually — amber body, wide eyes, airborne with
 the contact shadow shrinking away, speech bubble anchored to it.
 
-**It remembers where you left it, and how far along it is.** The cultivation arithmetic and the
-breakthrough are in; the body does not show any of it yet, and neither the key-glyph gathering nor
-the daily window quota exists. See [Cultivating](#cultivating).
+**It remembers where you left it, and how far along it is**, and the body shows the realm — size,
+colour and a halo as a stage fills. Neither the key-glyph gathering nor the daily window quota
+exists yet. See [Cultivating](#cultivating).
 
 Not built yet:
 

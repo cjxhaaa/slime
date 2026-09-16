@@ -3,8 +3,9 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime, type Bite, type DevourRect } from './slime/Slime';
+import { lookFor } from './game/appearance';
 import { Cultivation } from './game/cultivation';
-import { stageName } from './game/realms';
+import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
 import { PawCursor } from './ui/PawCursor';
@@ -498,6 +499,29 @@ const AlertPatienceMs = 3 * 60_000;
 const IntroMs = 8_000;
 
 let alertRaisedAt = 0;
+/** What `applyLook` last handed over, so an unchanged look costs nothing and forces no repaint. */
+let appliedLook = { scale: 0, core: '', glow: -1 };
+
+/**
+ * Pushes the realm onto the body: size, palette, and how close the stage is to full.
+ *
+ * Has to ask for a repaint itself. The loop only paints while something is moving, and a halo
+ * coming up on a slime that has been sitting still for ten minutes is a change nothing else in the
+ * frame would report — it would simply not appear until the next time the pet happened to twitch.
+ */
+function applyLook(): void {
+  const look = lookFor(cultivation);
+  if (
+    look.scale === appliedLook.scale &&
+    look.palette.core === appliedLook.core &&
+    Math.abs(look.glow - appliedLook.glow) <= 0.02
+  ) {
+    return;
+  }
+  appliedLook = { scale: look.scale, core: look.palette.core, glow: look.glow };
+  slime.setLook(look);
+  fullRepaint = true;
+}
 
 function offerBreakThrough(): void {
   if (slime.hasLiveAlert) return;
@@ -506,6 +530,9 @@ function offerBreakThrough(): void {
     cultivation.breakThrough();
     bubble.hide();
     slime.clearAlert();
+    // Immediately, not on the next tick. The colour and the size changing *is* the reward, and a
+    // reward that lands ten seconds after the click is not the same reward.
+    applyLook();
     // Straight to disk rather than on the next heartbeat. This is the one moment a player would
     // genuinely mind losing, and it happens rarely enough to be worth a write of its own.
     requestSave(currentSave());
@@ -670,7 +697,13 @@ function frame(now: number): void {
   // (this frame). Unioning them is only cheaper when they overlap. Once the slime is moving faster
   // than its own width per frame — which a throw does immediately — the union is mostly empty
   // space between the two, several times the area actually touched.
-  const regions: Rect[] = fullRepaint
+  // Read before it is cleared below, and used twice: once to widen the region to the whole canvas,
+  // and again to force the paint itself. Those were the same flag read either side of the reset,
+  // which meant the second read was always false — so anything that asked for a repaint without
+  // also moving the slime got the full-screen clip and then no paint at all. Resizing the window
+  // while the pet sat still left the canvas blank until it happened to twitch.
+  const forced = fullRepaint;
+  const regions: Rect[] = forced
     ? [{ x: 0, y: 0, width, height }]
     : rectsOverlap(previousDirty, painted)
       ? [unionRect(previousDirty, painted)!]
@@ -696,7 +729,7 @@ function frame(now: number): void {
     // makes "this is the same position we already stored" an equality that actually holds.
     requestSave(currentSave());
   }
-  const shouldPaint = animating || slime.hasSlowAnimation || wasAnimating || fullRepaint;
+  const shouldPaint = animating || slime.hasSlowAnimation || wasAnimating || forced;
   wasAnimating = animating;
 
   if (shouldPaint && regions.length > 0) {
@@ -871,6 +904,7 @@ async function main(): Promise<void> {
       // Every second the machine was switched off is collected here, in one call. There is no
       // offline-earnings screen in this design because there is nothing for one to announce.
       cultivation.settle();
+      applyLook();
       // Only a load that actually finished earns the right to write. A fresh install comes back
       // null, which counts; a thrown read does not, and leaves saving off for the session.
       allowSaving();
@@ -889,6 +923,7 @@ async function main(): Promise<void> {
 
   window.setInterval(() => {
     cultivation.settle();
+    applyLook();
     if (cultivation.readyToBreakThrough) offerBreakThrough();
     if (
       slime.hasLiveAlert &&
@@ -940,6 +975,16 @@ async function main(): Promise<void> {
       bubble.hide();
       slime.clearAlert();
     });
+  };
+
+  // Jumps the body to any point on the ladder and repaints it immediately. Tuning the palette
+  // ramp and the size growth is otherwise gated on actually playing to 大乘, which is four days.
+  debugHooks.__setStage = (realm = 0, stage = 0, progress = 0) => {
+    cultivation.realm = realm;
+    cultivation.stage = stage;
+    cultivation.qi = requirement(realm, stage) * progress;
+    applyLook();
+    return cultivation.describe();
   };
 
   // Engulfs a rectangle without needing a real window under the slime. The real path is gated on
