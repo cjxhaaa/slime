@@ -176,6 +176,16 @@ checkTrue('not eaten from across the room', g.eatNear(800, 560, Reach) === 0);
 check('eaten from beside it', g.eatNear(landed ? landed.x : 0, Ground, Reach), 1);
 check('and it is gone', g.count, 0);
 
+// 13b. Distance is not a reason to give up on a charm. Going across the screen for one is the
+//      behaviour; what was wrong was where it went afterwards, which is main.ts's business.
+g = new Glyphs();
+g.spawn('F', 800, 560);
+for (let i = 0; i < 120 && g.nearest(800) === null; i++) g.update(1 / 60, Ground, Width);
+const charm = g.nearest(800);
+checkTrue('there is a charm on the ground', charm !== null);
+checkTrue('and it is still worth fetching from across the screen', g.nearest(1500) !== null);
+
+
 // 14. One left alone fades rather than sitting there forever.
 g = new Glyphs();
 g.spawn('Q', 800, 560);

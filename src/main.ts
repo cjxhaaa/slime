@@ -505,12 +505,21 @@ const IntroMs = 8_000;
 
 let alertRaisedAt = 0;
 /**
- * Where the pet was before it went after a glyph.
+ * Where the pet belongs: the last place it came to rest of its own accord.
  *
- * Chasing is allowed to move it; wandering off is not. Wherever you put the slime is where it
- * belongs, so an errand ends by walking back rather than by simply stopping wherever it finished.
+ * Updated every time the body settles while it is not on an errand, which covers all three ways it
+ * can end up somewhere — thrown there, dragged there, or wandered there. Frozen for the duration of
+ * an errand, so fetching a charm never overwrites it.
+ *
+ * The first version folded this together with "is there an errand" into one nullable, and captured
+ * it when a charm appeared. Nothing invalidated it afterwards, so throwing the pet across the
+ * screen and waiting had it walk all the way back to where it had been standing when the charm
+ * dropped — which from the outside is indistinguishable from a pet still chasing a charm that
+ * expired minutes ago.
  */
-let homeX: number | null = null;
+let restX: number | null = null;
+/** True while the pet is fetching a charm or walking back from one. */
+let onErrand = false;
 let quiet = false;
 
 /**
@@ -702,14 +711,15 @@ function frame(now: number): void {
 
   const target = glyphs.nearest(slime.x);
   if (target) {
-    homeX ??= slime.x;
+    onErrand = true;
     slime.chaseTo(target.x);
-  } else if (homeX !== null) {
-    if (Math.abs(slime.x - homeX) < slime.blob.restRadius * 0.7) {
+  } else if (onErrand) {
+    // Nothing left to fetch. Walk back to where it was left, and only then call the errand done.
+    if (restX === null || Math.abs(slime.x - restX) < slime.blob.restRadius * 0.7) {
       slime.chaseTo(null);
-      homeX = null;
+      onErrand = false;
     } else {
-      slime.chaseTo(homeX);
+      slime.chaseTo(restX);
     }
   }
 
@@ -790,6 +800,9 @@ function frame(now: number): void {
   // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
   // and two numbers — because the write itself is debounced well outside it.
   if (wasAnimating && !animating) {
+    // Coming to rest anywhere that was not an errand *is* the placement. Throwing it, dragging it
+    // and letting it wander all end here, which is why this needs no separate case for each.
+    if (!onErrand) restX = Math.round(slime.x);
     // Rounded to whole pixels. Sub-pixel precision in a save file is noise, and rounding is what
     // makes "this is the same position we already stored" an equality that actually holds.
     requestSave(currentSave());
@@ -839,6 +852,10 @@ function wirePointer(): void {
       }
       grabbed = true;
       slime.grab(event.clientX, event.clientY);
+      // Picking it up calls the errand off. Wherever it is put down becomes the new home when it
+      // settles there — a deliberate placement outranks an errand every time.
+      onErrand = false;
+      slime.chaseTo(null);
       stillSince = performance.now();
       stillPoint = { x: event.clientX, y: event.clientY };
       dragVelocity.reset();
@@ -866,6 +883,8 @@ function wirePointer(): void {
       pullPending = false;
       grabbed = true;
       slime.grab(event.clientX, event.clientY);
+      onErrand = false;
+      slime.chaseTo(null);
       stillSince = performance.now();
       stillPoint = { x: event.clientX, y: event.clientY };
       dragVelocity.reset();

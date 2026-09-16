@@ -115,14 +115,20 @@ export class Glyphs {
     this.items = this.items.filter((glyph) => glyph.life > -FadeSeconds);
   }
 
-  /** The closest glyph that has landed, or null. Ones still in the air are not worth chasing. */
+  /**
+   * The closest landed charm, or null. No distance limit: a charm is worth going for wherever it
+   * is, and the pet crossing the screen to fetch one is the behaviour, not a bug in it.
+   *
+   * Ones still in the air are skipped because they have nowhere to be walked to yet, and ones
+   * already fading are skipped because arriving to watch something vanish is worse than not going.
+   */
   nearest(x: number): Glyph | null {
     let best: Glyph | null = null;
     let bestDistance = Infinity;
     for (const glyph of this.items) {
       if (!glyph.landed || glyph.life <= 0) continue;
       const distance = Math.abs(glyph.x - x);
-      if (distance < bestDistance) {
+      if (distance <= bestDistance) {
         bestDistance = distance;
         best = glyph;
       }
