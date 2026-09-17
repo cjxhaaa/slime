@@ -403,6 +403,14 @@ shadow shrinks with altitude — which is most of what actually sells the jump.
 dragged. Colour is reserved for state — amber means something wants you — because that is the one
 thing that has to read instantly from the corner of your eye.
 
+**Two of those states are derived from the realm rather than fixed, and one of them had to be
+fixed twice.** Eating a window used to substitute a hard-coded teal, and teal is the 练气 family, so
+a 金丹 pet turning to eat something reverted to the colour it had on day one. The intent behind that
+constant was "deeper and more saturated than calm" — which is a *relationship*, not a colour, and a
+relationship has to be computed. It steps each stop one place down its own palette now: core halfway
+to edge, edge most of the way to rim, rim unchanged. That needs no colour maths and cannot go muddy,
+because every value it can produce is one already chosen for that realm.
+
 **Sleep is reached by a fade, not by a substitution.** It used to cut straight to the sleeping
 colour on the frame the mood changed, which is the one transition in the app where a cut is wrong:
 everything else the pet does is an event, and dozing off is a drift. Just over a second on the way

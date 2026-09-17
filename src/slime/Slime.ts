@@ -235,9 +235,6 @@ const PALETTE: Record<string, Palette> = {
   // Acknowledged but still pending: the same hue, drained of urgency. Still clearly not "calm",
   // because whatever raised it has not gone away.
   nudge: { core: '#ffe9c4', edge: '#e8b978', rim: '#b58a4e' },
-  // Eating. Deeper and more saturated than calm - the same creature, visibly committed to
-  // something, and distinct at a glance from both "fine" and "something wants you".
-  devour: { core: '#7ae0bb', edge: '#18a383', rim: '#0d6f5b' },
   // One colour for every realm, arrived at by a fade rather than by a substitution. Deriving a
   // dimmed version of each realm's own palette was tried — see the note in `colour.ts` — and nine
   // dim colours turned out to be more of a palette than the pet wanted.
@@ -440,6 +437,28 @@ export class Slime {
    * cache. The cache has to go when it does, because the gradient's geometry is built from the
    * radius and a stale one would paint the old size's falloff onto the new body.
    */
+  /**
+   * The current realm, one shade deeper. What the body wears while it is eating something.
+   *
+   * Derived rather than fixed, which is the whole of this fix. It used to be one hard-coded teal —
+   * and a teal is the *练气* family, so a 金丹 pet turning to eat a window reverted to the colour
+   * it had on day one. The intent behind that constant was "deeper and more saturated than calm",
+   * which is a relationship rather than a colour, and a relationship has to be computed.
+   *
+   * Computed by stepping each stop towards the next one down its own palette: the core moves
+   * halfway to the edge, the edge most of the way to the rim, the rim stays. That needs no colour
+   * maths and cannot go muddy, because every value it can produce is one already chosen for this
+   * realm — which is more than could be said for the HSL version of this trick that turned 金丹
+   * into khaki when the sleeping colours were derived the same way.
+   */
+  private deeper(palette: Palette): Palette {
+    return {
+      core: mix(palette.core, palette.edge, 0.5),
+      edge: mix(palette.edge, palette.rim, 0.45),
+      rim: palette.rim,
+    };
+  }
+
   setLook(look: BodyLook): void {
     if (look.scale !== this.bodyLook.scale) {
       this.radius = this.baseRadius * look.scale;
@@ -1852,7 +1871,7 @@ export class Slime {
     // otherwise have been. Which also means an alert that fires on a sleeping pet slides from blue
     // to amber instead of cutting, and that is the right behaviour for free.
     const awake = this.devour
-      ? PALETTE.devour
+      ? this.deeper(this.bodyLook.palette)
       : this.mood === 'nudge'
         ? PALETTE.nudge
         : this.mood === 'alert'
