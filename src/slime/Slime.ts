@@ -70,9 +70,23 @@ const AscendBurstSeconds = 1.4;
  * it. That is a repaint, not a transformation — what makes this read as becoming something else is
  * that the old form **goes away** inside the column and a different one comes out of it.
  */
-const RealmGatherSeconds = 1;
-const RealmKindleSeconds = 0.45;
-const RealmRevealSeconds = 0.85;
+/**
+ * Nearly twice what it first was, and the length is the point.
+ *
+ * At 2.3 seconds the whole thing was over before it had been read: the dust arrived, the light went
+ * up and the new form was standing there, and what you took away was that something had flashed.
+ * Eight of these happen in a run — they can afford four seconds each, and the middle beat is the
+ * only one that still wants to be quick.
+ *
+ * It is now marginally longer than the ascension, which the plan said it must not out-do. That rule
+ * is still intact, it is just no longer carried by the clock: the ascension is the only thing in the
+ * app that leaves something permanent behind, and no realm change does.
+ */
+const RealmGatherSeconds = 2;
+const RealmKindleSeconds = 0.55;
+const RealmRevealSeconds = 1.35;
+/** Seconds between waves of dust while the qi is being drawn in. */
+const RealmWaveSeconds = 0.13;
 /**
  * How far the column reaches, as a multiple of the body radius. Also what `bounds` reserves.
  *
@@ -339,6 +353,8 @@ export class Slime {
     phase: 'gathering' | 'kindling' | 'revealing';
     until: number;
     tremble: number;
+    /** Seconds until the next wave of dust is asked for. */
+    wave: number;
     /** 0 to 1: how solid the column is. Peaks while the body is inside it. */
     pillar: number;
     /** 0 to 1: how completely the body is hidden. Drops before the column does. */
@@ -380,9 +396,19 @@ export class Slime {
       phase: 'gathering',
       until: this.clock + RealmGatherSeconds,
       tremble: 0,
+      wave: RealmWaveSeconds,
       pillar: 0,
       veil: 0,
     };
+    // An opening handful, and then `takeDustRequest` keeps it coming for the whole two seconds.
+    // One burst at the start was all there was before, and with the beat this long the cloud had
+    // arrived and gone by the time a third of it had played.
+    this.dustRequest = 14;
+    // Not a smile. `clearAlert` sets one — it is the right reply to answering a full stage — and
+    // for eight frames out of the year that reply is being hauled into a column of light, where a
+    // pleased face is the wrong thing on screen and the first thing anybody notices.
+    this.mood = 'surprised';
+    this.moodUntil = Infinity;
     this.blob.squash(0.32);
   }
 
@@ -398,12 +424,32 @@ export class Slime {
     return true;
   }
 
+  private dustRequest = 0;
+
+  /**
+   * How many specks to knock loose this frame, and zero the rest of the time.
+   *
+   * The beats live here and the particles live in the caller, so the timing has to cross over
+   * somehow; this is the same hand-off shape as the look request above and the devour's raise and
+   * swallow requests. The alternative was exposing the phase and letting the caller run its own
+   * timer off it, which puts half of one animation in two files.
+   */
+  takeDustRequest(): number {
+    const count = this.dustRequest;
+    this.dustRequest = 0;
+    return count;
+  }
+
   /** Starts the ordeal. The caller has already advanced the realm; this is the performance. */
   ascend(): void {
     this.lastInteraction = this.clock;
     this.chaseX = null;
     this.hopsLeft = 0;
     this.ascension = { until: this.clock + AscendGatherSeconds, phase: 'gathering', tremble: 0 };
+    // Same reason as `breakRealm`: `clearAlert` leaves a pleased face behind, and an ordeal that
+    // opens with one has no arc left to play.
+    this.mood = 'surprised';
+    this.moodUntil = Infinity;
     // Bracing. Everything after this is the body deciding it can take it.
     this.blob.squash(0.34);
   }
@@ -1118,10 +1164,20 @@ export class Slime {
         // Qi being pulled in. The caller has already thrown a cloud of dust at the body; all this
         // has to do is look like it is holding on against the pull.
         const progress = 1 - left / RealmGatherSeconds;
+        // Set every frame rather than once, so being picked up and put down mid-sequence cannot
+        // leave the dragged face on for the rest of it.
+        this.mood = 'surprised';
+        this.moodUntil = Infinity;
         beat.tremble -= dt;
         if (beat.tremble <= 0) {
           beat.tremble = 0.11 - progress * 0.07;
           this.blob.poke(Math.random() * Math.PI * 2, 26 + progress * 74, 1.5);
+        }
+        beat.wave -= dt;
+        if (beat.wave <= 0) {
+          beat.wave = RealmWaveSeconds;
+          // Thickening as it goes, so the inrush builds instead of running at one density.
+          this.dustRequest += 3 + Math.round(progress * 10);
         }
         this.absorbFlash = Math.max(this.absorbFlash, progress * 0.6);
         if (this.clock >= beat.until) {

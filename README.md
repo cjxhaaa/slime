@@ -810,9 +810,39 @@ So now it goes away. Three beats:
 
 | | | |
 |---|---|---|
-| **Drawn in** | 1.0s | Dust arrives from much further out than typing ever throws it, and much more of it, while the body trembles and brightens |
-| **Taken** | 0.45s | A thick column comes up and swallows it whole |
-| **Revealed** | 0.85s | A figure surfaces inside the column, and the column thins out around it |
+| **Drawn in** | 2.0s | Dust arrives from much further out than typing ever throws it, and much more of it, while the body trembles and brightens |
+| **Taken** | 0.55s | A thick column comes up and swallows it whole |
+| **Revealed** | 1.35s | A figure surfaces inside the column, and the column thins out around it |
+
+Just under four seconds, up from 2.3. At the shorter length it was over before it had been read —
+the dust arrived, the light went up, the new form was standing there, and what you took away was
+that something had flashed. There are eight of these in a run; they can afford the time. It does now
+run marginally longer than the ascension, which the plan said it must not out-do, and that rule is
+still intact — it is just no longer carried by the clock. The ascension is the only thing in the app
+that leaves something permanent behind.
+
+**The frame you click on has to be the first beat.** `clearAlert` leaves a pleased face behind,
+which is the right reply to answering a full stage and the wrong one to being hauled into a column
+of light — so the whole two-second gather played with the pet smiling, and that was the first thing
+anyone noticed. It holds a braced face now, reasserted every frame rather than set once, so that
+being picked up and put down mid-sequence cannot leave the dragged face on for the rest of it. The
+ascension had the identical defect: 1.7 seconds of smiling through the ordeal.
+
+**A longer beat cannot be fed by one burst at the start.** The original single handful of dust had
+all arrived by the first third, leaving most of the gather empty. It is a wave every 0.13s now,
+thickening as it goes, with about seventy specks in the air at the peak. The beats live in `Slime`
+and the particles live in `main`, so the two meet at `takeDustRequest()` — the same hand-off shape
+as the look request.
+
+And the dust is drawn as **streaks rather than dots**. Seventy specks converging from across a
+desktop are a scattering of pinpricks with no direction in them: the pull was in the physics and
+nowhere on screen. The tail comes off each mote's **velocity** rather than off where it was last
+frame — the remembered position looks like the obvious way to do it and is a frame-rate bug, since
+the streak would be three times as long on the 20 Hz tier the loop drops to.
+
+The spread came down from 3.2 body radii to 2.2 at the same time. At 3.2 the cloud started five
+hundred pixels out, and seventy specks over that much desktop is a light dusting of the whole screen
+rather than something arriving at the pet.
 
 The column is drawn **in front of** the body rather than behind it. That is the entire mechanism:
 the old form is hidden, the new size and colour are put on while nothing can be seen, and what the

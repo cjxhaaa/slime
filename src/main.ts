@@ -8,7 +8,7 @@ import { allowance, burden, effort, engulfSeconds, spoilMinutes, strain } from '
 import { Daily } from './game/daily';
 import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cultivation';
 import { Glyphs } from './game/Glyphs';
-import { Motes } from './game/Motes';
+import { BreakthroughSpread, Motes } from './game/Motes';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -664,8 +664,6 @@ function offerBreakThrough(): void {
       // form when it goes into the column, or the reveal has nothing to reveal — the slime asks for
       // the change itself, at the instant nothing can be seen of it. See `takeLookRequest`.
       slime.breakRealm();
-      // Qi pulled in from well outside the body, using the same dust the keyboard produces.
-      motes.spawn(30, slime.x, slime.y, slime.blob.restRadius, 3.2);
     } else {
       applyLook();
     }
@@ -774,6 +772,10 @@ function frame(now: number): void {
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
   // The new form goes on when the slime says so, which is when it is hidden inside the column.
   if (slime.takeLookRequest()) applyLook();
+  // Qi drawn in from well outside the body, using the same dust the keyboard produces — spread
+  // wide, because the first beat only reads as an inrush if it has somewhere to rush in from.
+  const drawnIn = slime.takeDustRequest();
+  if (drawnIn > 0) motes.spawn(drawnIn, slime.x, slime.y, slime.blob.restRadius, BreakthroughSpread);
 
   // What the bubble says, in priority order. An alert outranks everything: it is the one thing
   // on screen asking for an answer, and it must not be displaced by an idle greeting.

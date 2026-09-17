@@ -13,7 +13,7 @@ declare const process: { exit(code: number): never };
 
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
 import { Glyphs } from './Glyphs.js';
-import { Motes } from './Motes.js';
+import { BreakthroughSpread, Motes } from './Motes.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
@@ -334,7 +334,7 @@ check('and none are left drifting', m.count, 0);
 // 18. Leaning on a key is not typing. The pile is bounded however hard it is pushed.
 const flood = new Motes();
 flood.spawn(500, 500, 400, 46);
-checkTrue('the snowstorm is bounded', flood.count <= 64);
+checkTrue('the snowstorm is bounded', flood.count <= 96);
 
 // 18b. A breakthrough's cloud has to come from further out than a keystroke's speck.
 //
@@ -347,7 +347,10 @@ function spawnDistance(spread?: number): number {
   const box = set.bounds()!;
   return Math.hypot(box.x + box.width / 2 - 500, box.y + box.height / 2 - 400);
 }
-checkTrue('a breakthrough draws from further out', spawnDistance(3.2) > spawnDistance() * 3);
+checkTrue(
+  'a breakthrough draws from further out',
+  spawnDistance(BreakthroughSpread) > spawnDistance() * 2,
+);
 // And still outside the body either way: a speck must never appear on top of the pet.
 checkTrue('no dust starts inside the pet', spawnDistance() > 46);
 

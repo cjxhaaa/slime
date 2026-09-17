@@ -31,10 +31,31 @@ const SpawnFar = 3.4;
  * The most that can exist at once.
  *
  * Someone leaning on a key is not typing, and should not be able to turn the desktop into a
- * snowstorm or the frame budget into a problem. The headroom above what typing can produce is for
- * the cloud a realm breakthrough pulls in all at once.
+ * snowstorm or the frame budget into a problem. Typing cannot get anywhere near this — the input
+ * poll only ever asks for two at a time — so the whole number is headroom for a realm
+ * breakthrough, which spends two seconds pulling a wave in every 160ms from up to five hundred
+ * pixels out and has about sixty in the air at the peak.
  */
-const MaxMotes = 64;
+const MaxMotes = 96;
+/**
+ * How much of a mote's travel is drawn behind it, in seconds.
+ *
+ * Off the velocity rather than off where it was last frame. A remembered position looks like the
+ * obvious way to do this and is a frame-rate bug: the streak would be three times as long on the
+ * 20Hz tier the loop drops to, which is the one place nothing should suddenly change length.
+ */
+const TailSeconds = 0.05;
+
+/**
+ * How much wider a realm breakthrough's inrush is than a keystroke's speck.
+ *
+ * Exported rather than written at the call site because the checks assert against it, and a spread
+ * that drifted apart from the one being tested would be a test of nothing.
+ *
+ * It was 3.2 first, which put the cloud up to five hundred pixels out. Seventy specks over that
+ * much desktop is a light dusting of the whole screen, not something arriving at the pet.
+ */
+export const BreakthroughSpread = 2.2;
 
 export interface Rect {
   x: number;
@@ -69,7 +90,9 @@ export class Motes {
         vx: -Math.sin(angle) * (30 + Math.random() * 70),
         vy: Math.cos(angle) * (30 + Math.random() * 70),
         life: LifeSeconds,
-        size: 2 + Math.random() * 2.4,
+        // Bigger the further out they start. A speck that has to cross most of a screen and still
+        // read as part of a stream cannot be the same three pixels as one dropped next to the body.
+        size: (2 + Math.random() * 2.4) * (0.9 + 0.22 * spread),
       });
     }
   }
@@ -116,25 +139,40 @@ export class Motes {
     let right = -Infinity;
     let bottom = -Infinity;
     for (const mote of this.items) {
-      left = Math.min(left, mote.x - mote.size - 2);
-      top = Math.min(top, mote.y - mote.size - 2);
-      right = Math.max(right, mote.x + mote.size + 2);
-      bottom = Math.max(bottom, mote.y + mote.size + 2);
+      // Both ends of the streak, not just the head, or the tail is left uncleared behind it.
+      const tailX = mote.x - mote.vx * TailSeconds;
+      const tailY = mote.y - mote.vy * TailSeconds;
+      left = Math.min(left, Math.min(mote.x, tailX) - mote.size - 2);
+      top = Math.min(top, Math.min(mote.y, tailY) - mote.size - 2);
+      right = Math.max(right, Math.max(mote.x, tailX) + mote.size + 2);
+      bottom = Math.max(bottom, Math.max(mote.y, tailY) + mote.size + 2);
     }
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
 
-  /** Painted in the body's own colour, because it is the same stuff going back in. */
+  /**
+   * Painted in the body's own colour, because it is the same stuff going back in.
+   *
+   * Streaks rather than dots. Seventy specks converging from half a screen away were a scattering
+   * of pinpricks with no direction in them — the pull was in the physics and nowhere on screen.
+   * Dragging a short tail behind each one along its own velocity puts the direction back.
+   *
+   * A round-capped line of zero length draws as a circle, so a mote that has come to rest needs no
+   * separate case.
+   */
   draw(context: CanvasRenderingContext2D, colour: string): void {
     context.save();
-    context.fillStyle = colour;
+    context.strokeStyle = colour;
+    context.lineCap = 'round';
     for (const mote of this.items) {
       // Brightest on the way in, so the stream reads as being drawn rather than as scattering.
       const fade = Math.min(1, mote.life / (LifeSeconds * 0.6));
-      context.globalAlpha = 0.75 * fade;
+      context.globalAlpha = 0.85 * fade;
+      context.lineWidth = mote.size * 2;
       context.beginPath();
-      context.arc(mote.x, mote.y, mote.size, 0, Math.PI * 2);
-      context.fill();
+      context.moveTo(mote.x - mote.vx * TailSeconds, mote.y - mote.vy * TailSeconds);
+      context.lineTo(mote.x, mote.y);
+      context.stroke();
     }
     context.restore();
   }
