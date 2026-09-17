@@ -14,7 +14,7 @@ declare const process: { exit(code: number): never };
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
 import { Glyphs } from './Glyphs.js';
 import { BreakthroughSpread, Motes } from './Motes.js';
-import { clear } from '../slime/colour.js';
+import { clear, drowsy, fromHsl, toHsl } from '../slime/colour.js';
 import { resolveErrand } from './errand.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
@@ -418,6 +418,73 @@ checkTrue(
   'fed while held and thrown, it goes nowhere stale',
   errand({ onErrand: true, home: null, x: 1300 }).chase === null,
 );
+
+// 22. Asleep is the same colour, darker. Not a different colour.
+//
+// It used to be one fixed pale blue that replaced the realm palette outright, so every realm dozed
+// off looking identical — and a desk pet is asleep for most of its life, which made the thing you
+// spent four days climbing invisible most of the time.
+//
+// The first fix darkened in RGB by blending towards a cool dark, which worked for the greens and
+// purples and turned gold into khaki and orange into brown. Hue is the thing that must not move, so
+// hue is what these assert.
+const REALM_CORES = [
+  '#8ff0d4', // 练气
+  '#a8f0c0', // 筑基
+  '#ffe9a8', // 金丹
+  '#ffd0a0', // 元婴
+  '#ffb8b8', // 化神
+  '#d9bcff', // 炼虚
+  '#8b9ce8', // 合体
+  '#9f96d8', // 大乘
+  '#fffdf0', // 飞升
+];
+let hueDrift = 0;
+let allDarker = true;
+let allDistinct = true;
+const asleep = new Set<string>();
+for (const core of REALM_CORES) {
+  const awake = toHsl(core);
+  const dozing = toHsl(drowsy(core));
+  // Near-white has no meaningful hue to keep, so it is exempt from the hue check and nothing else.
+  if (awake.s > 0.15) {
+    let apart = Math.abs(dozing.h - awake.h) % 360;
+    if (apart > 180) apart = 360 - apart;
+    hueDrift = Math.max(hueDrift, apart);
+  }
+  if (dozing.l >= awake.l - 0.08) allDarker = false;
+  asleep.add(drowsy(core));
+}
+// Every realm still has to be told apart from every other one while it sleeps, which is the whole
+// reason this exists.
+allDistinct = asleep.size === REALM_CORES.length;
+// And the shading has to survive it: a body whose rim ends up lighter than its core is lit from
+// below. This is the one that pulling towards a target lightness gets right and multiplying does
+// not — 大乘's near-black rim has to come *up* into the band, not down out of it.
+const REALM_RIMS = [
+  '#1d9c85',
+  '#26955a',
+  '#b8861c',
+  '#bd5f18',
+  '#b32d2d',
+  '#6d33ad',
+  '#141c4e',
+  '#0d0a1a',
+  '#d19b1f',
+];
+let stillLitFromAbove = true;
+for (let i = 0; i < REALM_CORES.length; i++) {
+  if (toHsl(drowsy(REALM_CORES[i])).l <= toHsl(drowsy(REALM_RIMS[i])).l) stillLitFromAbove = false;
+}
+checkTrue('a dozing body is still lit from above', stillLitFromAbove);
+check('sleep never moves the hue', hueDrift, 0, 0.75);
+checkTrue('sleep is meaningfully darker', allDarker);
+checkTrue('and every realm still sleeps in its own colour', allDistinct);
+// The mud case, named: dark gold has to stay gold rather than sliding towards grey-green.
+checkTrue('dozing gold is still gold', toHsl(drowsy('#ffe9a8')).s > 0.4);
+checkTrue('and dozing orange is still orange', toHsl(drowsy('#ffd0a0')).s > 0.4);
+// Round-tripping, since everything above rests on it.
+checkTrue('hsl survives a round trip', fromHsl(toHsl('#8ff0d4')) === '#8ff0d4');
 
 Math.random = realRandom;
 

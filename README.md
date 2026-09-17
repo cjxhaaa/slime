@@ -400,8 +400,24 @@ shadow shrinks with altitude — which is most of what actually sells the jump.
 ## Behaviour
 
 `src/slime/Slime.ts` holds the state machine: idle, happy, sleepy, asleep, surprised, alert,
-dragged. Colour is reserved for state (calm teal, alert amber, sleeping blue) because that is the
-one thing that has to read instantly from the corner of your eye.
+dragged. Colour is reserved for state — amber means something wants you — because that is the one
+thing that has to read instantly from the corner of your eye.
+
+**Sleep is the exception, and it took a bug report to see why.** It used to be one fixed pale blue
+that replaced the realm palette outright, so a 大乘 pet and a 练气 pet dozed off looking identical.
+A desk pet is asleep for most of its life, which made the thing you spent four days climbing
+invisible most of the time — and the whole design rests on the body *being* the progress bar. So
+sleep now keeps the hue and takes the lightness: depth, not a different colour.
+
+Doing that correctly needed HSL, which is the part worth writing down. The first attempt darkened in
+RGB — drain towards grey, then blend towards a cool dark — and it worked for the greens and purples
+and turned 金丹 into khaki and 元婴 into brown. Nothing expressed as a blend between two RGB colours
+can darken all nine palettes without dragging some of their hues somewhere else. Two things fall out
+of working in the right axis: saturation has to be *held up* rather than trimmed, because a pale
+colour is pale by having little chroma at high lightness and taking the lightness away without
+giving chroma back just leaves grey; and pulling towards a target lightness rather than multiplying
+closes the band from both ends, so 练气's pale rim comes down while 大乘's near-black rim comes
+**up** and the late realms keep an outline instead of going to a silhouette.
 
 The idle scheduler mostly decides to do nothing. That is deliberate — a pet that fidgets constantly
 is exhausting to have on screen, so stillness is the common case and movement is the exception. It

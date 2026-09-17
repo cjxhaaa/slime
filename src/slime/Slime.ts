@@ -16,7 +16,7 @@ import {
   stepShards,
 } from './Breakthrough';
 import { HaloReach } from '../game/Glyphs';
-import { clear } from './colour';
+import { clear, drowsy } from './colour';
 
 export type Mood =
   | 'idle'
@@ -230,7 +230,6 @@ const PALETTE: Record<string, Palette> = {
   // Eating. Deeper and more saturated than calm - the same creature, visibly committed to
   // something, and distinct at a glance from both "fine" and "something wants you".
   devour: { core: '#7ae0bb', edge: '#18a383', rim: '#0d6f5b' },
-  sleep: { core: '#b9d8ee', edge: '#6fa8cd', rim: '#4d86ab' },
 };
 
 export class Slime {
@@ -361,7 +360,21 @@ export class Slime {
       this.gradients.clear();
     }
     this.bodyLook = look;
+    // Derived once here rather than per frame in `draw`. Nine string builds and a gradient cache
+    // entry are nothing on a realm change and would be silly sixty times a second.
+    this.sleepPalette = {
+      core: drowsy(look.palette.core),
+      edge: drowsy(look.palette.edge),
+      rim: drowsy(look.palette.rim),
+    };
   }
+
+  /** The current realm's palette, asleep. See `drowsy`. */
+  private sleepPalette: Palette = {
+    core: drowsy(PALETTE.calm.core),
+    edge: drowsy(PALETTE.calm.edge),
+    rim: drowsy(PALETTE.calm.rim),
+  };
 
   private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0 };
   private chaseX: number | null = null;
@@ -1618,7 +1631,7 @@ export class Slime {
         : this.mood === 'alert'
         ? PALETTE.alert
         : this.mood === 'asleep' || this.mood === 'sleepy'
-          ? PALETTE.sleep
+          ? this.sleepPalette
           : this.bodyLook.palette;
 
     this.drawRing(context);
@@ -1638,8 +1651,11 @@ export class Slime {
         this.renderY,
         reach,
       );
-      halo.addColorStop(0, this.bodyLook.palette.core);
-      halo.addColorStop(1, clear(this.bodyLook.palette.core));
+      // The mood's palette, not the raw realm one. A dimmed sleeping body with a full-brightness
+      // halo around it looks like two different pets overlaid — and the same mismatch was already
+      // there awake, with a gold alert body inside a realm-coloured glow.
+      halo.addColorStop(0, palette.core);
+      halo.addColorStop(1, clear(palette.core));
       context.save();
       context.globalAlpha = 0.34 * this.bodyLook.glow;
       context.fillStyle = halo;
@@ -1876,7 +1892,11 @@ export class Slime {
 
   private drawSleepMarks(context: CanvasRenderingContext2D): void {
     context.save();
-    context.fillStyle = '#4d86ab';
+    // The body's own sleeping colour, so the marks belong to this pet rather than to a fixed blue.
+    // Its core rather than its rim: `drowsy` lands every palette's core in the same mid-dim band,
+    // which is what small text needs to survive both a black wallpaper and a white one. The rims
+    // of the late realms are near enough to black to vanish on half of them.
+    context.fillStyle = this.sleepPalette.core;
     context.font = '600 14px system-ui, sans-serif';
     for (let i = 0; i < 3; i++) {
       // Each z rises and fades on its own offset phase, so they read as a drift rather than a blink.
