@@ -639,38 +639,59 @@ function applyLook(): void {
   fullRepaint = true;
 }
 
+/**
+ * Takes the breakthrough and plays whichever of the three it turned out to be.
+ *
+ * One function because there are two ways in — answering the alert, and poking a ready pet while in
+ * seclusion — and they had drifted. The seclusion path called `breakThrough` and `applyLook` and
+ * nothing else, so taking a *realm* in seclusion changed the colour and skipped the array, the
+ * charms, the shell and the cocoon entirely, and finishing the ladder in seclusion skipped the
+ * ordeal. Nobody would have reported that; they would have assumed there was nothing there.
+ *
+ * False when there was nothing to take.
+ */
+function takeBreakThrough(): boolean {
+  const wasAscended = cultivation.ascended;
+  const fromRealm = cultivation.realm;
+  if (!cultivation.breakThrough()) return false;
+
+  if (!wasAscended && cultivation.ascended) {
+    applyLook();
+    slime.ascend();
+    // Said once, on the one occasion someone has just finished the whole thing. Not an
+    // interruption — they pressed the button a second ago — and it is the only place the rebirth
+    // is mentioned at all, because the rebirth itself lives where a stray poke cannot reach it.
+    ascendUntil = performance.now() + AscendBubbleMs;
+    emitPetState();
+  } else if (cultivation.realm !== fromRealm) {
+    // Eight of these in a run against seventy-two stages, and until now they looked identical.
+    //
+    // The new look is deliberately *not* applied here. The pet has to still be wearing the old
+    // form when it goes into the cocoon, or the reveal has nothing to reveal — the slime asks for
+    // the change itself, at the instant nothing can be seen of it. See `takeLookRequest`.
+    slime.breakRealm();
+  } else {
+    applyLook();
+    // The small one. Seventy-two of these in a run, so it stays under a second — but it is no
+    // longer *nothing*, which is what it was: the same pleased face a poke produces, on the one
+    // occasion that is supposed to mean something happened.
+    slime.breakStage();
+  }
+  // Straight to disk rather than on the next heartbeat. This is the one moment a player would
+  // genuinely mind losing, and it happens rarely enough to be worth a write of its own.
+  requestSave(currentSave());
+  return true;
+}
+
 function offerBreakThrough(): void {
   // Seclusion means nothing asks for anything. The breakthrough still waits, and hovering still
   // says so — it just does not come and find you.
   if (quiet || slime.hasLiveAlert) return;
   alertRaisedAt = performance.now();
   slime.raiseAlert(`${stageName(cultivation.realm, cultivation.stage)} · 可突破\n点击渡劫`, () => {
-    const wasAscended = cultivation.ascended;
-    const fromRealm = cultivation.realm;
-    cultivation.breakThrough();
     bubble.hide();
     slime.clearAlert();
-    if (!wasAscended && cultivation.ascended) {
-      applyLook();
-      slime.ascend();
-      // Said once, on the one occasion someone has just finished the whole thing. Not an
-      // interruption — they pressed the button a second ago — and it is the only place the rebirth
-      // is mentioned at all, because the rebirth itself lives where a stray poke cannot reach it.
-      ascendUntil = performance.now() + AscendBubbleMs;
-      emitPetState();
-    } else if (cultivation.realm !== fromRealm) {
-      // Eight of these in a run against seventy-two stages, and until now they looked identical.
-      //
-      // The new look is deliberately *not* applied here. The pet has to still be wearing the old
-      // form when it goes into the column, or the reveal has nothing to reveal — the slime asks for
-      // the change itself, at the instant nothing can be seen of it. See `takeLookRequest`.
-      slime.breakRealm();
-    } else {
-      applyLook();
-    }
-    // Straight to disk rather than on the next heartbeat. This is the one moment a player would
-    // genuinely mind losing, and it happens rarely enough to be worth a write of its own.
-    requestSave(currentSave());
+    takeBreakThrough();
   });
 }
 
@@ -1075,13 +1096,15 @@ function wirePointer(): void {
       } else if (slime.hitTest(event.clientX, event.clientY)) {
         // In seclusion nothing hops to tell you a stage is full, so a poke on a pet that is ready
         // takes the breakthrough. Otherwise progress would be stuck behind a trip to Settings.
-        if (quiet && cultivation.breakThrough()) {
-          applyLook();
-          requestSave(currentSave());
-        }
+        // In seclusion nothing hops to say a stage is full, so the poke has to be able to take it.
+        const took = quiet && takeBreakThrough();
         // Only the body gets poked. Clicks land here from the hover bubble too, and denting the
         // slime from an inch away because the pointer was over its speech bubble looks like a bug.
-        slime.poke(event.clientX, event.clientY);
+        //
+        // And no dent at all when the poke *was* the breakthrough. `poke` sets the pleased face,
+        // which is the first thing every one of the three sequences overwrites, and a dent on top
+        // of a breakthrough's own opening beat is two replies to one click.
+        if (!took) slime.poke(event.clientX, event.clientY);
         paw.ping(event.clientX, event.clientY);
       }
     }

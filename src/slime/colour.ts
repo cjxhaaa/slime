@@ -44,14 +44,3 @@ export function mix(a: string, b: string, t: number): string {
       .padStart(2, '0');
   return `#${at(0)}${at(1)}${at(2)}`;
 }
-
-/**
- * Ease in and out, with exact endpoints.
- *
- * The endpoints matter more than the curve here: the sleep fade builds a gradient per frame while it
- * is in progress and uses a cached one when it is not, so "in progress" has to be able to end.
- */
-export function smooth(t: number): number {
-  const clamped = Math.min(1, Math.max(0, t));
-  return clamped * clamped * (3 - 2 * clamped);
-}

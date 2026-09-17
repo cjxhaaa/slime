@@ -7,6 +7,7 @@ import {
   drawCharms,
   drawShards,
   drawShell,
+  drawWisp,
   drawWisps,
   makeCracks,
   makeShards,
@@ -16,7 +17,8 @@ import {
   stepShards,
 } from './Breakthrough';
 import { HaloReach } from '../game/Glyphs';
-import { clear, mix, smooth } from './colour';
+import { clear, mix } from './colour';
+import { smooth, wispFade } from './ease';
 
 export type Mood =
   | 'idle'
@@ -246,6 +248,26 @@ const PALETTE: Record<string, Palette> = {
 const SleepFadeSeconds = 1.1;
 const WakeFadeSeconds = 0.4;
 
+/**
+ * A stage breakthrough: the small one, seventy-two times a run.
+ *
+ * It had no animation at all — `clearAlert` left a pleased face and that was the whole event, which
+ * meant **advancing a stage looked exactly like being poked**, since a poke leaves the same face.
+ * The one moment that is supposed to say "that worked" was indistinguishable from the most casual
+ * thing anyone does to this pet.
+ *
+ * It has to stay small, though, and the plan is emphatic about why: at seventy-two a run, anything
+ * with weight to it becomes something to sit through. So it is under a second, it is one flash and
+ * two clouds, and it is deliberately the *same kind* of thing as a realm change at a fraction of
+ * the size — a realm change sends up five of the same clouds and brings an array, eight charms and
+ * a shell with them.
+ */
+const StageSeconds = 0.85;
+/** How many clouds go up. Two, against the realm breakthrough's five. */
+const StageWisps = 2;
+/** How far they rise, as a multiple of the body radius. Also what `bounds` reserves. */
+const StageRise = 2.3;
+
 export class Slime {
   x: number;
   y: number;
@@ -383,6 +405,29 @@ export class Slime {
    * without the timing meaning something different.
    */
   private sleepFade = 0;
+
+  /** 0 to 1 through a stage breakthrough, or null when there is not one. */
+  private stageBreak: number | null = null;
+
+  /**
+   * The small breakthrough. One flash, a stretch, and a couple of clouds going up.
+   *
+   * Unlike `breakRealm` this does not hide anything and the caller has already applied the new
+   * look — there is nothing to reveal, because a stage does not change the colour or the size. What
+   * it changes is that something visibly happened.
+   */
+  breakStage(): void {
+    this.lastInteraction = this.clock;
+    this.stageBreak = 0;
+    // Negative squash is a stretch. The body pulls up and lets go, which is the cheapest motion
+    // that reads as rising rather than as being hit.
+    this.blob.squash(-0.26);
+    this.blob.pulse(70);
+    // Short of the full flash a swallowed charm gets. This happens seventy-two times a run, and a
+    // body that whites out completely that often stops being a flourish and becomes a flicker.
+    this.absorbFlash = 0.8;
+    this.vy = -HOP_SPEED * 0.32;
+  }
 
   /** How much of the sleeping colour is showing, eased. */
   private get sleepTint(): number {
@@ -680,6 +725,7 @@ export class Slime {
       // A fade is the one thing here that changes the screen without moving anything, so nothing
       // else in this list would catch it.
       this.sleepFading ||
+      this.stageBreak !== null ||
       this.ascension !== null ||
       this.realmBreak !== null ||
       this.ring !== null ||
@@ -794,6 +840,10 @@ export class Slime {
       this.renderY - topSpan,
       this.renderY - this.radius * 0.7 - 60,
       this.renderY - pillar,
+      // A stage breakthrough's clouds go higher than anything the body itself draws, and they are
+      // the one thing here small enough that forgetting to reserve for them would look like a
+      // smear rather than like a missing effect.
+      this.stageBreak !== null ? this.renderY - this.radius * (StageRise + 0.9) : Infinity,
     );
     const bottom = Math.max(
       this.renderY + bottomSpan,
@@ -1247,6 +1297,11 @@ export class Slime {
     const sleeping = this.mood === 'asleep' || this.mood === 'sleepy';
     const step = dt / (sleeping ? SleepFadeSeconds : WakeFadeSeconds);
     this.sleepFade = Math.min(1, Math.max(0, this.sleepFade + (sleeping ? step : -step)));
+
+    if (this.stageBreak !== null) {
+      this.stageBreak += dt / StageSeconds;
+      if (this.stageBreak >= 1) this.stageBreak = null;
+    }
 
     const idleFor = this.clock - this.lastInteraction;
 
@@ -1818,6 +1873,7 @@ export class Slime {
     context.restore();
 
     this.drawOrdealFront(context);
+    this.drawStageWisps(context, palette);
     if (this.mood === 'asleep') this.drawSleepMarks(context);
   }
 
@@ -1939,6 +1995,44 @@ export class Slime {
     } else {
       context.arc(lookX, mouthY - this.radius * 0.04, this.radius * 0.1, 0.2 * Math.PI, 0.8 * Math.PI);
       context.stroke();
+    }
+  }
+
+  /**
+   * The couple of clouds a stage breakthrough sends up.
+   *
+   * Stateless beyond the one progress number: two clouds on fixed opposite paths is enough at this
+   * size, and a list of particles for something that happens for under a second would be machinery
+   * for its own sake. They share `drawWisp` with the realm breakthrough on purpose — the small
+   * event has to read as the same kind of thing as the big one.
+   */
+  private drawStageWisps(context: CanvasRenderingContext2D, palette: Palette): void {
+    const progress = this.stageBreak;
+    if (progress === null) return;
+    for (let i = 0; i < StageWisps; i++) {
+      // Staggered, so the second one is still on its way up as the first fades.
+      const rise = Math.min(1, Math.max(0, progress * 1.35 - i * 0.28));
+      if (rise <= 0 || rise >= 1) continue;
+      const side: -1 | 1 = i % 2 === 0 ? 1 : -1;
+      const x = this.renderX + side * this.radius * (0.35 + rise * 0.7);
+      const y = this.renderY - this.radius * (0.35 + rise * StageRise);
+      // Swells and then shrinks again, rather than growing the whole way.
+      //
+      // Eight pixels was the first guess and too small to read as a cloud at all — a cloud that
+      // cannot be read as one is a speck of dirt, and two specks of dirt is worse than nothing. But
+      // growing it all the way out was also wrong, because low alpha over a dark desktop
+      // desaturates whatever you put there and there is no arithmetic that avoids it. Something
+      // getting *smaller* as it fades reads as dissipating; something getting bigger as it fades
+      // reads as smoke spreading out, which is the one thing these are here instead of.
+      const size = this.radius * (0.2 + 0.2 * Math.sin(rise * Math.PI));
+      // Shared with the realm breakthrough's clouds, and the shape of the curve is the point —
+      // see `wispFade`.
+      const alpha = wispFade(rise) * 0.85;
+      context.save();
+      context.translate(x, y);
+      context.rotate(side * (0.25 - rise * 0.6));
+      drawWisp(context, 0, 0, size, side, alpha, palette.core);
+      context.restore();
     }
   }
 

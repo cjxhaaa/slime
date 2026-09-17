@@ -28,6 +28,7 @@
 import { drawTalisman } from '../game/Glyphs';
 import type { Palette } from './Slime';
 import { clear } from './colour';
+import { wispFade } from './ease';
 
 /**
  * How wide the array lies, as a multiple of the body radius.
@@ -645,67 +646,90 @@ export function drawWisps(
     const y = shape.y - shape.radius * (0.3 + rise * 3.4);
     const size = shape.radius * (0.26 + rise * 0.3);
     // In and out over its travel, so a wisp is never seen appearing or being cut off.
-    const alpha = Math.sin(rise * Math.PI) * 0.72 * weight;
+    const alpha = wispFade(rise) * 0.72 * weight;
     if (alpha <= 0.02) continue;
 
-    // save/restore per wisp, not `setTransform(1,0,0,1,0,0)` to undo it. Resetting the matrix
-    // throws away the *caller's* transform as well, and everything after the first wisp lands in
-    // raw canvas coordinates — which is exactly what it looked like.
     context.save();
     context.translate(x, y);
     context.rotate(side * (0.3 - rise * 0.7));
-    context.scale(side, 1);
-
-    // Filled, not stroked.
-    //
-    // The first pass drew a chain of tangent arcs, which is the right *construction* for 祥云 and
-    // came out as a caterpillar: an unfilled scalloped line has no body to it, so at thirty pixels
-    // it is a squiggle. What reads as cloud at this size is mass — three overlapping lobes — with
-    // one curled tail to say which motif it is.
-    const lobes: [number, number, number][] = [
-      [-size * 0.55, size * 0.1, size * 0.44],
-      [0, -size * 0.08, size * 0.58],
-      [size * 0.62, size * 0.06, size * 0.4],
-    ];
-    // The lobes span about one `size` from the centre, so the colour has to still be at full
-    // strength two thirds of the way out or their edges come back half-transparent and the cloud
-    // reads as a smudge.
-    const body = context.createRadialGradient(0, -size * 0.2, 0, 0, 0, size * 1.5);
-    body.addColorStop(0, '#ffffff');
-    body.addColorStop(0.66, shape.palette.core);
-    body.addColorStop(1, clear(shape.palette.core));
-    context.globalAlpha = alpha;
-    context.fillStyle = body;
-    context.beginPath();
-    for (const [lx, ly, lr] of lobes) {
-      context.moveTo(lx + lr, ly);
-      context.arc(lx, ly, lr, 0, Math.PI * 2);
-    }
-    context.fill();
-
-    // The curl. One spiral of a little over a turn, tapering, which is the part of the motif
-    // everyone actually recognises.
-    context.globalAlpha = alpha * 1.15;
-    context.lineCap = 'round';
-    for (const [pen, width] of [
-      [shape.palette.core, size * 0.3],
-      ['#ffffff', size * 0.12],
-    ] as [string, number][]) {
-      context.strokeStyle = pen;
-      context.lineWidth = width;
-      context.beginPath();
-      for (let step = 0; step <= 14; step++) {
-        const t = step / 14;
-        const turn = -Math.PI * 0.4 + t * Math.PI * 1.5;
-        const r = size * (0.62 - t * 0.44);
-        const px = -size * 0.55 + Math.cos(turn) * r;
-        const py = size * 0.1 + Math.sin(turn) * r;
-        if (step === 0) context.moveTo(px, py);
-        else context.lineTo(px, py);
-      }
-      context.stroke();
-    }
+    drawWisp(context, 0, 0, size, side, alpha, shape.palette.core);
     context.restore();
+  }
+  context.restore();
+}
+
+/**
+ * One auspicious cloud, centred on (x, y). `side` of -1 mirrors it.
+ *
+ * Extracted so a stage breakthrough can send up one or two of these without owning a second,
+ * slightly different cloud. Seventy-two stages against eight realms, so the small event needs to be
+ * visibly the same *kind* of thing as the large one and a fraction of the size — which is what a
+ * shared painter gets you and two similar painters do not.
+ */
+export function drawWisp(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  side: -1 | 1,
+  alpha: number,
+  colour: string,
+): void {
+  // save/restore per wisp, not `setTransform(1,0,0,1,0,0)` to undo it. Resetting the matrix
+  // throws away the *caller's* transform as well, and everything after the first wisp lands in
+  // raw canvas coordinates — which is exactly what it looked like.
+  context.save();
+  context.translate(x, y);
+  context.scale(side, 1);
+
+  // Filled, not stroked.
+  //
+  // The first pass drew a chain of tangent arcs, which is the right *construction* for 祥云 and
+  // came out as a caterpillar: an unfilled scalloped line has no body to it, so at thirty pixels
+  // it is a squiggle. What reads as cloud at this size is mass — three overlapping lobes — with
+  // one curled tail to say which motif it is.
+  const lobes: [number, number, number][] = [
+    [-size * 0.55, size * 0.1, size * 0.44],
+    [0, -size * 0.08, size * 0.58],
+    [size * 0.62, size * 0.06, size * 0.4],
+  ];
+  // The lobes span about one `size` from the centre, so the colour has to still be at full
+  // strength two thirds of the way out or their edges come back half-transparent and the cloud
+  // reads as a smudge.
+  const body = context.createRadialGradient(0, -size * 0.2, 0, 0, 0, size * 1.5);
+  body.addColorStop(0, '#ffffff');
+  body.addColorStop(0.66, colour);
+  body.addColorStop(1, clear(colour));
+  context.globalAlpha = alpha;
+  context.fillStyle = body;
+  context.beginPath();
+  for (const [lx, ly, lr] of lobes) {
+    context.moveTo(lx + lr, ly);
+    context.arc(lx, ly, lr, 0, Math.PI * 2);
+  }
+  context.fill();
+
+  // The curl. One spiral of a little over a turn, tapering, which is the part of the motif
+  // everyone actually recognises.
+  context.globalAlpha = alpha * 1.15;
+  context.lineCap = 'round';
+  for (const [pen, width] of [
+    [colour, size * 0.3],
+    ['#ffffff', size * 0.12],
+  ] as [string, number][]) {
+    context.strokeStyle = pen;
+    context.lineWidth = width;
+    context.beginPath();
+    for (let step = 0; step <= 14; step++) {
+      const t = step / 14;
+      const turn = -Math.PI * 0.4 + t * Math.PI * 1.5;
+      const r = size * (0.62 - t * 0.44);
+      const px = -size * 0.55 + Math.cos(turn) * r;
+      const py = size * 0.1 + Math.sin(turn) * r;
+      if (step === 0) context.moveTo(px, py);
+      else context.lineTo(px, py);
+    }
+    context.stroke();
   }
   context.restore();
 }

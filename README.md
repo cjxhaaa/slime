@@ -877,6 +877,34 @@ entire mechanism: the old form is hidden, the new size and colour are put on whi
 seen, and what the light uncovers is already different. No cross-dissolve, no two bodies at some
 blend.
 
+#### The small one, seventy-two times
+
+A stage breakthrough had no animation at all. `clearAlert` left a pleased face and that was the
+entire event — which meant **advancing a stage looked exactly like being poked**, since a poke
+leaves the same face. The one moment that is supposed to say "that worked" was indistinguishable
+from the most casual thing anyone does to this pet.
+
+It is one flash, an upward stretch and two clouds now, in 0.85 seconds. It has to stay small at
+seventy-two a run, so what matters is that it is visibly the *same kind* of thing as a realm change
+at a fraction of the size: the same `drawWisp`, two of them instead of five, and none of the array,
+charms, shell or cocoon. The hierarchy reads as different amounts of one thing rather than as three
+unrelated effects.
+
+Two details. The flash stops short of the full white-out a swallowed charm gets — a body that whites
+out completely seventy-two times a run stops being a flourish and becomes a flicker. And the clouds
+**shrink** as they fade rather than growing: low alpha over a dark desktop desaturates whatever you
+put there and no arithmetic avoids it, so something getting smaller as it goes reads as dissipating
+while something getting bigger reads as smoke spreading out, which is the one thing these exist
+instead of. The fade curve is shared with the realm breakthrough's clouds and holds full strength
+for most of the travel before leaving quickly, for the same reason: better gone than grey.
+
+Taking a breakthrough is also one function now rather than two. Answering the alert and poking a
+ready pet in seclusion had drifted apart, and the seclusion path called `breakThrough` and
+`applyLook` and nothing else — so taking a *realm* in seclusion changed the colour and skipped the
+array, the charms, the shell and the cocoon entirely, and finishing the whole ladder in seclusion
+skipped the ordeal. Nobody would have reported that; they would have assumed there was nothing
+there.
+
 #### Why the column went
 
 The first three passes at this all landed somewhere in the visual language of science fiction, and

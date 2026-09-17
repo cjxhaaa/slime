@@ -14,7 +14,8 @@ declare const process: { exit(code: number): never };
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
 import { Glyphs } from './Glyphs.js';
 import { BreakthroughSpread, Motes } from './Motes.js';
-import { clear, mix, smooth } from '../slime/colour.js';
+import { clear, mix } from '../slime/colour.js';
+import { smooth, wispFade } from '../slime/ease.js';
 import { resolveErrand } from './errand.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
@@ -431,6 +432,16 @@ check('half way is half way', smooth(0.5), 0.5);
 // And the blend itself, since it is now what the visible body colour is made of.
 checkTrue('a blend of nothing is the original', mix('#b9d8ee', '#4d86ab', 0) === '#b9d8ee');
 checkTrue('and a blend of everything is the other one', mix('#b9d8ee', '#4d86ab', 1) === '#4d86ab');
+
+// 23. A cloud would rather be gone than grey.
+//
+// The obvious fade is `sin(rise * PI)`: symmetric, and it spends a long stretch at low alpha. A
+// light colour at low alpha over a dark desktop is grey — that is just what alpha compositing does
+// — so a long soft tail turns every auspicious cloud into a puff of smoke on the way out, which is
+// the exact reading the breakthrough was rebuilt to get away from.
+checkTrue('a cloud arrives and leaves at nothing', wispFade(0) === 0 && wispFade(1) === 0);
+checkTrue('it is at full strength for most of the way', wispFade(0.25) === 1 && wispFade(0.7) === 1);
+checkTrue('and it leaves faster than it arrives', wispFade(0.06) > wispFade(0.94));
 
 Math.random = realRandom;
 
