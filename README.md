@@ -898,15 +898,26 @@ So now the body sheds a skin, which is **subtractive and physical**:
 
 | | | |
 |---|---|---|
-| **Swell** | 0–0.25s | A rim of light presses outward from just inside the membrane, brightening — pressure from within |
-| **Split** | 0.25s | The skin gives. The body flinches in and what is underneath glosses over |
-| **Shed** | 0.25–1.15s | A tapered crescent of membrane peels off the outline, slides clear, curls as it goes, and falls |
+| **Swell** | 0–0.64s | A rim of light presses outward from just inside the membrane, brightening — pressure from within |
+| **Split** | 0.64s | The skin gives. The body flinches in and what is underneath glosses over |
+| **Shed** | 0.64–2.14s | A tapered crescent of membrane peels off the outline, slides clear, curls and sways as it goes, and flutters down |
 
 蜕皮 is the genre's own image for advancing, and the qi veins stay: the husk is the **event** and the
 veins are the **referent**, and those are two different problems. One vein per stage, one to nine,
 and the new one draws itself in once the skin is off. The spark and the ripple both went — a husk
 coming off is already the event, and light going out beside it is one more additive thing standing
 next to the thing that actually happened.
+
+The first cut of this ran 1.15 seconds and was too fast, the swell worst of all: a quarter second of
+pressure building is the same as no pressure building, and that beat is what the split is a payoff
+for. It is a 2 second sequence now with the husk outliving it slightly, about 2.1s in total — still
+under half a realm breakthrough, so the hierarchy holds.
+
+Lengthening it meant changing the physics with it. The husk's gravity came down from 340 to 190, its
+initial shove came down, and it gained air drag and a sideways sway. That is not a trick to keep it
+in frame: a scrap of membrane with almost no mass falling at the same rate as the creature it came
+off reads as a dropped coin. **It should flutter.** As it is, it falls about 102px over its
+second-and-a-half — roughly two body radii.
 
 Two details decide whether it works:
 

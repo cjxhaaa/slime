@@ -285,7 +285,7 @@ const WakeFadeSeconds = 0.4;
  * So: something arrives, the body takes it in, it lands, and it leaves a mark that stays. Four
  * beats, and the last one is the point.
  */
-const StageSeconds = 1.15;
+const StageSeconds = 2;
 /**
  * Where the skin splits, as a fraction of the sequence.
  *
@@ -293,11 +293,20 @@ const StageSeconds = 1.15;
  * coming off. There is no third thing — the previous version had a spark falling in, a flash, a
  * ripple going out *and* a vein arriving, which is four effects standing in for one event.
  */
-const SplitBeat = 0.22;
+const SplitBeat = 0.32;
 /** How long the new vein takes to draw itself in, in seconds. Starts on the split. */
-const VeinGrowSeconds = 0.75;
+const VeinGrowSeconds = 1;
 /** How long a shed husk lasts after it comes off, in seconds. */
-const HuskSeconds = 0.95;
+const HuskSeconds = 1.5;
+/**
+ * What the husk falls at, in pixels per second squared, and how much the air holds it back.
+ *
+ * Well under the body's own gravity, and that is not a cheat to keep it on screen — a husk is a
+ * scrap of membrane, and something with almost no mass falling at the same rate as the creature it
+ * came off reads as a dropped coin. It should flutter.
+ */
+const HuskGravity = 190;
+const HuskDrag = 1.1;
 /** How much of the outline comes away, as a fraction of the ring. */
 const HuskSpan = 0.6;
 
@@ -530,8 +539,8 @@ export class Slime {
       y: 0,
       // Enough sideways to clear the body before gravity takes it. At half this it barely left the
       // outline before dropping, which reads as a piece falling off rather than as one sliding off.
-      vx: away * (120 + Math.random() * 60),
-      vy: -46 - Math.random() * 26,
+      vx: away * (85 + Math.random() * 45),
+      vy: -34 - Math.random() * 20,
       spin: away * (0.6 + Math.random() * 0.6),
     };
     this.blob.squash(0.2);
@@ -1438,10 +1447,8 @@ export class Slime {
     if (this.husk !== null) {
       const husk = this.husk;
       husk.life += dt / HuskSeconds;
-      // Lighter than the body and slowed by the air, because a husk is a scrap of membrane rather
-      // than a thing with mass. Full gravity threw it off screen like a dropped coin.
-      husk.vy += 340 * dt;
-      const drag = Math.exp(-1.5 * dt);
+      husk.vy += HuskGravity * dt;
+      const drag = Math.exp(-HuskDrag * dt);
       husk.vx *= drag;
       husk.x += husk.vx * dt;
       husk.y += husk.vy * dt;
@@ -2290,7 +2297,9 @@ export class Slime {
 
     context.save();
     context.translate(this.renderX + husk.x, this.renderY + husk.y);
-    context.rotate(husk.spin * husk.life);
+    // Turning as it goes, plus a slow sway across that. The turn alone is a scrap on a spit; the
+    // sway is what makes it read as falling through air.
+    context.rotate(husk.spin * husk.life + Math.sin(husk.life * 5.5) * 0.11);
     context.lineCap = 'round';
     context.lineJoin = 'round';
 
