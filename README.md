@@ -892,7 +892,8 @@ for the reason I expected going in.
    faintly alarming image for something that is meant to be good news.
 
 What it is now is the **first beat of a realm breakthrough at a smaller scale**. Qi dust arrives from
-outside and is taken in, the body brightens as it absorbs, and that is the event. 0.9 seconds.
+outside and is taken in, and the body shines — up over two thirds of a second, **held at full for
+half a second**, then out. 1.6 seconds in total.
 
 **That looks like mistake 2 and is not, and the difference is the whole lesson.** The clouds were a
 *decoration* of the big sequence scaled down — the part of it with no mechanism behind it. The dust
@@ -904,10 +905,24 @@ The three tiers are told apart by **how far the dust comes from**: one body radi
 1.5 for a stage, 2.2 for a realm. Those three numbers carry the sense of scale between the three
 events and they live in two different files, so there is an assertion holding them in order.
 
-The brightening needed no code of its own — arriving dust lights the membrane already, which is what
-`absorb` does. All that was added is a *floor* under it, because the specks land at whatever rate
-the physics delivers them and the glow could otherwise dip on a thin frame when it should be
-climbing.
+**The hold in the middle is the part that matters.** The first cut of this put a spike on the
+brightness and called that a brightening — but a spike is a flicker, and a body that flickers has
+not done anything. What reads as a breakthrough is the body becoming a lantern and *staying* one
+long enough to be looked at.
+
+That light is its own quantity rather than a louder `absorbFlash`. That one is shared with typing
+and with eating and decays in a fifth of a second by design, and a sustained light cannot be built
+out of something whose whole purpose is to be brief. The per-speck flicker `absorb` produces is kept
+on top of the steady glow, though, because it is what ties the light to the dust rather than letting
+the two look like separate things happening at once.
+
+**And the light has to leave the body.** Washing the body pale on its own reads as the colour being
+turned down, not as light coming out — "发强光" is about what leaves, not about what the body looks
+like. So the existing halo rises with it and stretches from 1.5 body radii to 2.1, which is still
+inside the 2.2 that `bounds()` already reserves for decoration, so a breakthrough costs no extra
+repaint area. Inside the membrane it is a radial gradient rather than flat white: white at the
+middle, the realm's colour at the rim, so a shining body is still visibly *this* body. Flat white at
+the strength this needs washes it to a white ball.
 
 The qi veins stay: one per stage, one to nine, clipped to the body outline, fading in under the
 brightening. The dust is the **event** and the veins are the **referent** — a stage still has to

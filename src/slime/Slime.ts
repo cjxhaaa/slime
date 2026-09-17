@@ -287,9 +287,19 @@ const WakeFadeSeconds = 0.4;
  * mechanism reads as the same event at a smaller size; borrowing the flourish reads as a cheap
  * copy of a better one.
  */
-const StageSeconds = 0.9;
+const StageSeconds = 1.6;
 /** Seconds between waves of dust while it comes in. */
 const StageWaveSeconds = 0.16;
+/**
+ * When the glow reaches full, and when it starts going out, as fractions of the sequence.
+ *
+ * There is a **hold** in the middle, and that is the whole of this revision. The first cut of it
+ * put a spike on the brightness and called that "亮一下" — but a spike is a flicker, and a body
+ * that flickers has not done anything. What reads as a breakthrough is the body becoming a lantern
+ * and *staying* one for long enough to be looked at.
+ */
+const StageGlowFull = 0.4;
+const StageGlowUntil = 0.72;
 /** How long the new vein takes to fade in. Short: it arrives under the brightening. */
 const VeinGrowSeconds = 0.4;
 
@@ -608,6 +618,21 @@ export class Slime {
   private dustSpread = BreakthroughSpread;
   /** Seconds until the next wave of a stage breakthrough's dust. */
   private stageWave = 0;
+
+  /**
+   * How hard the body is shining, 0 to 1: up, held, and out.
+   *
+   * Its own quantity rather than a bigger `absorbFlash`, because that one is shared with typing and
+   * with eating and decays in a fifth of a second by design — a sustained light cannot be built out
+   * of something whose whole purpose is to be brief.
+   */
+  private get stageGlow(): number {
+    const beat = this.stageBreak;
+    if (beat === null) return 0;
+    if (beat < StageGlowFull) return smooth(beat / StageGlowFull);
+    if (beat < StageGlowUntil) return 1;
+    return smooth(1 - (beat - StageGlowUntil) / (1 - StageGlowUntil));
+  }
 
   /**
    * How many specks to knock loose this frame, and zero the rest of the time.
@@ -1357,20 +1382,16 @@ export class Slime {
       const progress = this.stageBreak;
       this.stageBreak += dt / StageSeconds;
       this.stageWave -= dt;
-      // Stops asking before the beat ends, so the last specks have time to arrive rather than
-      // being spawned and then abandoned mid-flight.
-      if (this.stageWave <= 0 && this.stageBreak < 0.7) {
+      // Stops asking well before the beat ends, so the last specks have time to arrive and the
+      // light has the back half of the sequence to itself.
+      if (this.stageWave <= 0 && this.stageBreak < 0.5) {
         this.stageWave = StageWaveSeconds;
         this.dustRequest += 2 + Math.round((1 - progress) * 3);
         this.dustSpread = StageSpread;
       }
-      // A floor under the brightening.
-      //
-      // Arriving dust lights the membrane on its own — `absorb` does that, which is why this needs
-      // no separate flash — but the specks land at whatever rate the physics delivers them, so the
-      // glow can dip on a thin frame when it should be climbing. This makes the rise and fall
-      // monotonic without taking the flicker out of the individual hits.
-      this.absorbFlash = Math.max(this.absorbFlash, Math.sin(progress * Math.PI) * 0.55);
+      // Arriving dust still lights the membrane on its own — `absorb` does that — and that flicker
+      // is worth keeping on top of the steady light, because it is what ties the glow to the specks
+      // rather than making the two look like separate things happening at the same time.
       if (this.stageBreak >= 1) this.stageBreak = null;
     }
     // Runs whether or not the beat is still going: the vein has to finish even if something
@@ -1806,6 +1827,8 @@ export class Slime {
         : this.mood === 'alert'
           ? PALETTE.alert
           : this.bodyLook.palette;
+    // Hoisted above the halo, which is drawn before the body and needs it too.
+    const shining = this.stageGlow;
     const tint = this.sleepTint;
     const palette =
       tint <= 0
@@ -1823,8 +1846,15 @@ export class Slime {
     // The halo. Drawn under everything, and only when there is something to say — a body that is
     // barely into a stage has none at all, so this is not permanent glare around the pet. It stays
     // well inside the decoration margin `bounds()` already reserves, so it costs no extra area.
-    if (this.bodyLook.glow > 0.01 && !this.devour) {
-      const reach = this.radius * 1.5;
+    // A body that is shining has to light what is around it. Without this the pet goes pale and
+    // nothing else changes, which reads as the colour being turned down rather than as light coming
+    // out of it — and "发强光" is about what leaves the body, not about what the body looks like.
+    //
+    // The reach stays inside the 2.2 radii `bounds()` already reserves for decoration, so a
+    // breakthrough costs no extra repaint area.
+    const glowing = Math.max(this.bodyLook.glow * 0.34, shining * 0.58);
+    if (glowing > 0.004 && !this.devour) {
+      const reach = this.radius * (1.5 + 0.6 * shining);
       const halo = context.createRadialGradient(
         this.renderX,
         this.renderY,
@@ -1839,7 +1869,7 @@ export class Slime {
       halo.addColorStop(0, palette.core);
       halo.addColorStop(1, clear(palette.core));
       context.save();
-      context.globalAlpha = 0.34 * this.bodyLook.glow;
+      context.globalAlpha = glowing;
       context.fillStyle = halo;
       context.beginPath();
       context.arc(this.renderX, this.renderY, reach, 0, Math.PI * 2);
@@ -1932,6 +1962,25 @@ export class Slime {
 
     // Under the face, over the body's own shading: they are *in* the membrane.
     this.drawVeins(context, palette);
+
+    // And the light, over the veins and under the face. A radial rather than a flat white fill:
+    // white at the middle and the realm's own colour at the rim, so a shining body is still visibly
+    // *this* body. A flat fill at the strength this needs washes it to a white ball.
+    if (shining > 0.01) {
+      context.save();
+      Blob.trace(context, this.points, this.blob.count);
+      context.clip();
+      const lit = context.createRadialGradient(0, 0, 0, 0, 0, this.radius * 1.15);
+      lit.addColorStop(0, '#ffffff');
+      lit.addColorStop(0.55, '#ffffff');
+      lit.addColorStop(1, clear(palette.core));
+      context.globalAlpha = 0.78 * shining;
+      context.fillStyle = lit;
+      context.beginPath();
+      context.arc(0, 0, this.radius * 1.15, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+    }
 
     this.drawFace(context);
     // The crust, over everything the body draws including the face. Covering the face is most of
