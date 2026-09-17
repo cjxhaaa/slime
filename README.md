@@ -879,54 +879,46 @@ blend.
 
 #### The small one, seventy-two times
 
-A stage breakthrough had no animation at all. `clearAlert` left a pleased face and that was the
-entire event — which meant **advancing a stage looked exactly like being poked**, since a poke
-leaves the same face.
+A stage breakthrough had no animation at all to begin with. `clearAlert` left a pleased face and
+that was the entire event — and a poke leaves the same face, so **advancing a stage looked exactly
+like being prodded**.
 
-The first attempt at fixing that was a scaled-down realm breakthrough: two of the same auspicious
-clouds, drifting off the shoulder. It failed, and the failure was in the design rather than in the
-numbers, which is the useful part:
+It then went through three attempts that all failed for the same reason, which is the useful part:
 
-**A diluted version of an impressive thing reads as weak, not as small.** A small event needs its
-own gesture, not a fraction of somebody else's.
+1. **Two auspicious clouds drifting off the shoulder** — a scaled-down realm breakthrough. A diluted
+   version of an impressive thing reads as weak rather than small, and it happened beside the body
+   instead of to it, which contradicts the whole thesis that the slime *is* the progress bar.
+2. **A spark falling in, a breath, a ripple, and a vein** — four effects standing in for one event.
+3. Tuning.
 
-**It happened beside the body instead of to it.** Clouds drifting off the shoulder are peripheral
-vision, and this project's whole thesis is that the slime *is* the progress bar.
+All three were **additive light**. A flash, a cloud, a spark, a ring. Light effects do not
+accumulate into an event however many you stack, because nothing in them has a before and an after.
 
-**And it had nothing to refer to.** 金丹五层 to 金丹六层 changed nothing that stayed changed. The
-palette and the size both move once every nine stages and say nothing in between, so any one-off
-flourish over a state that does not move is a flicker however well drawn.
-
-So there are four beats now, and the last one is the point:
+So now the body sheds a skin, which is **subtractive and physical**:
 
 | | | |
 |---|---|---|
-| **Spark** | 0–0.31s | A point of white light condenses overhead and falls, trailing |
-| **Breath** | 0.34s | The body pulls up tall and a flash goes through the membrane — on the frame the spark lands, not a moment after |
-| **Ripple** | 0.60s | One thin ring out to 1.7 body radii, at the top of the rise |
-| **Vein** | 0.34–1.2s | A new qi vein draws itself in inside the body, **and stays there** |
+| **Swell** | 0–0.25s | A rim of light presses outward from just inside the membrane, brightening — pressure from within |
+| **Split** | 0.25s | The skin gives. The body flinches in and what is underneath glosses over |
+| **Shed** | 0.25–1.15s | A tapered crescent of membrane peels off the outline, slides clear, curls as it goes, and falls |
 
-**The veins are the referent.** One per stage, one to nine, clipped to the body outline. They say
-where in a realm you are without a number anywhere, and they turn the breakthrough into the moment
-that count goes up. A realm change drops all nine back to one in the new colour — inside the cocoon,
-where nothing can be seen of it. It also pays off the flowing veins that section five of the plan
-has owed since it was written.
+蜕皮 is the genre's own image for advancing, and the qi veins stay: the husk is the **event** and the
+veins are the **referent**, and those are two different problems. One vein per stage, one to nine,
+and the new one draws itself in once the skin is off. The spark and the ripple both went — a husk
+coming off is already the event, and light going out beside it is one more additive thing standing
+next to the thing that actually happened.
 
-Three things learned on the way:
+Two details decide whether it works:
 
-**The veins had to run tangentially, not radially.** The first pass drew them as spokes from the
-centre outward and they read as **cracks** — which is not a near miss, it is precisely what a realm
-breakthrough's jade shell draws, so the two would have been telling opposite stories with the same
-marks. Qi circulating in a membrane goes around.
+**It has to be an open arc, not a closed outline.** A closed copy of the body is a copy of the body
+however you tint it — it reads as a second slime sliding out from behind the first. A crescent with
+two ends is a scrap of something that used to wrap around.
 
-**The ripple had to be smaller than the realm breakthrough's ring.** Half the reach, a third of the
-width, and one wave instead of two. The ring is the big event's gesture, and a stage borrowing it at
-full size does not read as a smaller event, it reads as the same event.
-
-**The breath had to land on the same frame as the spark.** The first arrangement had the spark
-arrive and the body react two tenths of a second later, and that gap broke the causal chain the
-whole sequence is built on: the body has to look like it is reacting to the thing rather than like
-it happens to do something shortly afterwards.
+**And stroking that arc is not enough.** A stroked arc is a wire, and a wire is not a piece of skin.
+It walks the arc twice — out along the outer edge and back along the inner — to close a band with
+real width, tapered to nothing at both ends so it reads as torn off rather than cut to length. The
+band is filled with a translucent gradient and edged twice, once dark and once white, for the same
+reason the formation array is engraved twice: this draws onto a desktop it has never seen.
 
 Taking a breakthrough is also one function now rather than two. Answering the alert and poking a
 ready pet in seclusion had drifted apart, and the seclusion path called `breakThrough` and

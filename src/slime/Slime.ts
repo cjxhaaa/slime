@@ -129,13 +129,11 @@ const RingSeconds = 0.85;
 /** Where the ring stops, as a multiple of the body radius. Also what `bounds` has to reserve. */
 const RingReach = 3.2;
 /**
- * And where a stage breakthrough's ring stops.
- *
- * Half as far and a third as thick. The ring is the realm breakthrough's gesture and a stage
- * borrowing it at full size does not read as a smaller event, it reads as the same event — which
- * would flatten the hierarchy the three tiers exist to express. It is a ripple, not a shockwave.
+ * A stage breakthrough briefly had a small one of these too, at half the reach and a third of the
+ * width. It went with the spark when the shed skin replaced them both: a husk coming off is already
+ * the event, and a ring going out on top of it is one more piece of additive light standing next to
+ * the thing that actually happened. The ring stays what it has always been — the realm's.
  */
-const StageRingReach = 1.7;
 /** How long the slime spends hauling a buried window to the front before it starts eating. */
 const HeaveSeconds = 1;
 /** How long the body takes to peel back off, whether it ate or gave up. */
@@ -287,22 +285,21 @@ const WakeFadeSeconds = 0.4;
  * So: something arrives, the body takes it in, it lands, and it leaves a mark that stays. Four
  * beats, and the last one is the point.
  */
-const StageSeconds = 1.2;
+const StageSeconds = 1.15;
 /**
- * Where each beat sits inside that, as a fraction.
+ * Where the skin splits, as a fraction of the sequence.
  *
- * The breath lands the instant the spark does. The first arrangement had the spark arrive at 0.26
- * and the body react at 0.46, and those two tenths of a second of nothing in between broke the
- * causal chain the whole sequence is built on — the body has to look like it is reacting to the
- * thing, not like it happens to do something shortly afterwards.
+ * Everything before it is pressure building under the surface; everything after it is the husk
+ * coming off. There is no third thing — the previous version had a spark falling in, a flash, a
+ * ripple going out *and* a vein arriving, which is four effects standing in for one event.
  */
-const SparkBeat = 0.26;
-const BreathBeat = 0.28;
-const RippleBeat = 0.5;
-/** How long the new vein takes to draw itself in, in seconds. Starts on the breath. */
-const VeinGrowSeconds = 0.8;
-/** How far above the body the spark condenses, as a multiple of the radius. `bounds` reserves it. */
-const SparkHeight = 2.6;
+const SplitBeat = 0.22;
+/** How long the new vein takes to draw itself in, in seconds. Starts on the split. */
+const VeinGrowSeconds = 0.75;
+/** How long a shed husk lasts after it comes off, in seconds. */
+const HuskSeconds = 0.95;
+/** How much of the outline comes away, as a fraction of the ring. */
+const HuskSpan = 0.6;
 
 /**
  * How many veins the body can hold, and how they are drawn.
@@ -462,6 +459,29 @@ export class Slime {
    * loaded an hour after the breakthrough happened.
    */
   private veinGrow = 1;
+  /**
+   * The layer that came off, in body-local coordinates, or null.
+   *
+   * A copy of the outline taken at the instant it split, so the husk keeps the shape the body had
+   * at that moment and stops following it — which is the entire difference between a shed skin and
+   * a second slime drawn at an offset.
+   */
+  private husk: {
+    points: Float32Array;
+    count: number;
+    /** Which stretch of the ring came away, as an index and a length. */
+    from: number;
+    span: number;
+    /** 0 at the split, 1 when it is gone. */
+    life: number;
+    /** Where it has slid to, and how far it has curled. */
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    spin: number;
+  } | null = null;
+
   /** Vein paths in body-local units, regenerated when the realm changes. */
   private veins: number[][] = [];
   /** What `veins` was generated for, so it is not rebuilt every frame. */
@@ -474,15 +494,50 @@ export class Slime {
    * look — there is nothing to reveal, because a stage does not change the colour or the size. What
    * it changes is that something visibly happened.
    */
+  /**
+   * A stage breakthrough: the body sheds a layer.
+   *
+   * Pressure builds under the surface, the skin splits, and an outer layer slides off and falls
+   * away while what is underneath settles. 蜕皮 is the genre's own image for advancing, and it does
+   * something none of the three attempts before it managed: it is **subtractive and physical**.
+   * Those were all additive light — a flash, a cloud, a spark, a ripple — and light effects do not
+   * accumulate into an event however many you stack, because nothing in them has a before and an
+   * after. Something detaching from the body and dropping does.
+   */
   breakStage(): void {
     this.lastInteraction = this.clock;
     this.stageBreak = 0;
-    // The newest vein starts empty and draws itself in over the last two beats. The caller has
-    // already applied the new look, so `bodyLook.veins` is the number it is growing towards.
+    // The newest vein starts empty and draws itself in once the skin is off. The caller has already
+    // applied the new look, so `bodyLook.veins` is the number it is growing towards.
     this.veinGrow = 0;
-    // Bracing, ahead of the spark arriving. Positive squash is a settle, not a stretch — the
-    // stretch comes on the breath beat.
-    this.blob.squash(0.14);
+    // Swelling, not settling. The skin has to look like it is being pushed from inside before it
+    // gives, or it reads as peeling off something slack.
+    this.blob.pulse(58);
+  }
+
+  /** Takes the copy of the outline that the husk keeps, and throws it. */
+  private splitSkin(): void {
+    const count = this.blob.count;
+    const away = Math.random() < 0.5 ? -1 : 1;
+    this.husk = {
+      points: this.points.slice(0, count * 2),
+      count,
+      // Starts somewhere on the side it is leaving towards, so it peels away rather than across.
+      from: Math.floor((away > 0 ? 0.62 : 0.12) * count + Math.random() * 0.12 * count),
+      span: HuskSpan,
+      life: 0,
+      x: 0,
+      y: 0,
+      // Enough sideways to clear the body before gravity takes it. At half this it barely left the
+      // outline before dropping, which reads as a piece falling off rather than as one sliding off.
+      vx: away * (120 + Math.random() * 60),
+      vy: -46 - Math.random() * 26,
+      spin: away * (0.6 + Math.random() * 0.6),
+    };
+    this.blob.squash(0.2);
+    this.blob.pulse(-46);
+    // A gloss on what is underneath, for the frame the skin comes off it.
+    this.absorbFlash = Math.max(this.absorbFlash, 0.6);
   }
 
 
@@ -540,8 +595,6 @@ export class Slime {
 
   /** 0 to 1 while a shockwave is travelling outward, null when there is none. */
   private ring: number | null = null;
-  /** Which event fired it, since a stage's ripple and a realm's shockwave are different sizes. */
-  private ringSmall = false;
   /**
    * How lit up the membrane is from something just going into it, 0 to 1, decaying.
    *
@@ -785,6 +838,7 @@ export class Slime {
       // else in this list would catch it.
       this.sleepFading ||
       this.stageBreak !== null ||
+      this.husk !== null ||
       this.ascension !== null ||
       this.realmBreak !== null ||
       this.ring !== null ||
@@ -875,7 +929,7 @@ export class Slime {
       this.realmBreak ? this.radius * (ArrayReach + 0.2) + HaloReach : 0,
       this.radius *
         (this.ring !== null
-          ? (this.ringSmall ? StageRingReach : RingReach) + 0.2
+          ? RingReach + 0.2
           : this.bodyLook.aura > 0
             ? 2.5
             : 2.2),
@@ -887,6 +941,16 @@ export class Slime {
     rightSpan = Math.max(rightSpan + 3, decoration);
     topSpan = Math.max(topSpan + 3, decoration);
     bottomSpan = Math.max(bottomSpan + 3, decoration);
+
+    // A shed skin drifts wherever its own physics takes it, so it is measured rather than reserved.
+    // Its own extent is roughly the body's, offset by how far it has slid.
+    if (this.husk !== null) {
+      const slide = this.radius * 1.25;
+      leftSpan = Math.max(leftSpan, slide - this.husk.x);
+      rightSpan = Math.max(rightSpan, this.husk.x + slide);
+      topSpan = Math.max(topSpan, slide - this.husk.y);
+      bottomSpan = Math.max(bottomSpan, this.husk.y + slide);
+    }
 
     // The crust's pieces are the one thing here whose reach cannot be written down as a multiple of
     // the body radius: they are thrown at a range of speeds and they keep going. So they are
@@ -904,9 +968,7 @@ export class Slime {
       this.renderY - topSpan,
       this.renderY - this.radius * 0.7 - 60,
       this.renderY - pillar,
-      // The spark condenses above everything else the body draws, and it is small enough that
-      // forgetting to reserve for it would read as a smear rather than as a missing effect.
-      this.stageBreak !== null ? this.renderY - this.radius * (SparkHeight + 0.6) : Infinity,
+      Infinity,
     );
     const bottom = Math.max(
       this.renderY + bottomSpan,
@@ -1364,31 +1426,29 @@ export class Slime {
     if (this.stageBreak !== null) {
       const before = this.stageBreak;
       this.stageBreak += dt / StageSeconds;
-
-      // The breath. Pulls up tall and narrow, and the flash goes with it — the one moment in the
-      // sequence where the body itself does something.
-      if (before < BreathBeat && this.stageBreak >= BreathBeat) {
-        this.blob.squash(-0.34);
-        this.blob.pulse(84);
-        this.vy = -HOP_SPEED * 0.3;
-        // Short of the full flash a swallowed charm gets. This happens seventy-two times a run, and
-        // a body that whites out completely that often stops being a flourish and becomes a
-        // flicker.
-        this.absorbFlash = Math.max(this.absorbFlash, 0.72);
-      }
-      // And the ring, at the top of the rise. One thin one, against the realm breakthrough's.
-      if (before < RippleBeat && this.stageBreak >= RippleBeat) {
-        this.ring = 0;
-        this.ringSmall = true;
-      }
-
+      if (before < SplitBeat && this.stageBreak >= SplitBeat) this.splitSkin();
       if (this.stageBreak >= 1) this.stageBreak = null;
     }
-    // Held until the breath, then runs whether or not the beat is still going — the vein has to
-    // finish even if something interrupts the sequence, because it is the part that stays.
-    const growing = this.stageBreak === null || this.stageBreak >= BreathBeat;
+    // Held until the skin is off, then runs whether or not the beat is still going — the vein has
+    // to finish even if something interrupts the sequence, because it is the part that stays.
+    const growing = this.stageBreak === null || this.stageBreak >= SplitBeat;
     if (this.veinGrow < 1 && growing) {
       this.veinGrow = Math.min(1, this.veinGrow + dt / VeinGrowSeconds);
+    }
+    if (this.husk !== null) {
+      const husk = this.husk;
+      husk.life += dt / HuskSeconds;
+      // Lighter than the body and slowed by the air, because a husk is a scrap of membrane rather
+      // than a thing with mass. Full gravity threw it off screen like a dropped coin.
+      husk.vy += 340 * dt;
+      const drag = Math.exp(-1.5 * dt);
+      husk.vx *= drag;
+      husk.x += husk.vx * dt;
+      husk.y += husk.vy * dt;
+      // Curling as it goes: less of the ring, further round. This is what turns a crescent sliding
+      // away into something shrivelling up.
+      husk.span = HuskSpan * (1 - husk.life * 0.55);
+      if (husk.life >= 1) this.husk = null;
     }
 
     const idleFor = this.clock - this.lastInteraction;
@@ -1480,7 +1540,6 @@ export class Slime {
           // Now, while nothing can be seen of it. The new form is put on inside the light.
           this.lookPending = true;
           this.ring = 0;
-          this.ringSmall = false;
         }
       } else {
         // The figure coming back first, the column going second.
@@ -1754,23 +1813,17 @@ export class Slime {
     // Two waves, the second lagging. One ring reads as a circle being animated; two read as
     // something having gone off. The lag is small enough that they are one gesture rather than a
     // pulse and an echo.
-    const reach = this.ringSmall ? StageRingReach : RingReach;
-    // One wave for a ripple, two for a shockwave. Two rings read as something having gone off,
-    // which is the wrong claim to make about a stage.
-    const waves = this.ringSmall
-      ? [[0, 1]]
-      : [
-          [0, 1],
-          [0.2, 0.55],
-        ];
-    for (const [lag, weight] of waves) {
+    for (const [lag, weight] of [
+      [0, 1],
+      [0.2, 0.55],
+    ]) {
       const t = this.ring - lag;
       if (t <= 0 || t >= 1) continue;
-      const radius = this.radius * (0.9 + (reach - 0.9) * t);
+      const radius = this.radius * (0.9 + (RingReach - 0.9) * t);
       // Linear, not eased. The first version fell off as (1-t)^1.4, which left the wave visible
       // for under half its travel — it read as a blink at the body rather than as a wave leaving.
       context.globalAlpha = 0.58 * (1 - t) * weight;
-      context.lineWidth = (this.ringSmall ? 2.4 : 7) * (1 - t) + 1.2;
+      context.lineWidth = 7 * (1 - t) + 1.2;
       context.strokeStyle = this.bodyLook.palette.edge;
       context.beginPath();
       context.arc(this.renderX, this.renderY, radius, 0, Math.PI * 2);
@@ -1952,6 +2005,7 @@ export class Slime {
 
     // Under the face, over the body's own shading: they are *in* the membrane.
     this.drawVeins(context, palette);
+    this.drawStageStrain(context, palette);
 
     this.drawFace(context);
     // The crust, over everything the body draws including the face. Covering the face is most of
@@ -1971,7 +2025,7 @@ export class Slime {
     context.restore();
 
     this.drawOrdealFront(context);
-    this.drawStageSpark(context, palette);
+    this.drawHusk(context, palette);
     if (this.mood === 'asleep') this.drawSleepMarks(context);
   }
 
@@ -2213,45 +2267,117 @@ export class Slime {
   }
 
   /**
-   * The spark, on the first beat: a point of light condensing above the pet and dropping into it.
+   * The layer that came off.
    *
-   * Deliberately nothing like the dust a keystroke knocks loose, because that is the one thing it
-   * could be mistaken for — and "small thing flies into body" happens several times a second while
-   * anybody is typing. So this one is much bigger, it has a halo and a tail, it comes from directly
-   * overhead rather than from a random angle on a ring, and it is white rather than realm-coloured.
+   * Drawn as an **open** stretch of the outline rather than the whole ring, which is the one detail
+   * that decides whether this reads as a shed skin or as a second slime sliding out from behind the
+   * first. A closed copy of the body is a copy of the body however you tint it; a crescent with two
+   * ends is a scrap of something that used to wrap around.
+   *
+   * The points are a snapshot taken at the split, so the husk keeps the shape the body had at the
+   * moment it gave and does not go on following the simulation afterwards.
    */
-  private drawStageSpark(context: CanvasRenderingContext2D, palette: Palette): void {
-    const beat = this.stageBreak;
-    if (beat === null || beat > SparkBeat) return;
-    const t = beat / SparkBeat;
-    // Eases in, so it appears rather than being flicked on, then accelerates down.
-    const fall = t * t;
-    const y = this.renderY - this.radius * SparkHeight * (1 - fall);
-    const size = this.radius * (0.1 + 0.05 * t);
-    const alpha = Math.min(1, t * 4);
+  private drawHusk(context: CanvasRenderingContext2D, palette: Palette): void {
+    const husk = this.husk;
+    if (husk === null || this.devour) return;
+    const fade = 1 - husk.life;
+    if (fade <= 0.01) return;
+
+    const steps = Math.max(4, Math.round(husk.count * Math.max(0.06, husk.span)));
+    // Bright for most of its travel, then gone quickly. A long dim tail on a light colour over a
+    // dark desktop is grey, for the same reason the auspicious clouds are shaped that way.
+    const show = Math.min(1, fade / 0.3);
 
     context.save();
-    // The tail, pointing back up the way it came. Short at the top, long as it accelerates.
-    context.globalAlpha = alpha * 0.5;
+    context.translate(this.renderX + husk.x, this.renderY + husk.y);
+    context.rotate(husk.spin * husk.life);
     context.lineCap = 'round';
-    context.lineWidth = size * 1.1;
-    const tail = context.createLinearGradient(0, y, 0, y - this.radius * 1.3 * fall);
-    tail.addColorStop(0, '#ffffff');
-    tail.addColorStop(1, clear(palette.core));
-    context.strokeStyle = tail;
+    context.lineJoin = 'round';
+
+    // A tapered band rather than a line.
+    //
+    // Stroking the outline arc gave a wire, and a wire is not a piece of skin. This walks the arc
+    // twice — out along the outer edge and back along the inner one — to close a crescent with real
+    // width, and tapers that width to nothing at both ends so it reads as torn off rather than cut
+    // to length.
+    const half = this.radius * 0.115;
+    const edge: [number, number][] = [];
+    const inner: [number, number][] = [];
+    for (let step = 0; step <= steps; step++) {
+      const i = (husk.from + step) % husk.count;
+      const px = husk.points[i * 2];
+      const py = husk.points[i * 2 + 1];
+      const length = Math.hypot(px, py) || 1;
+      const taper = Math.sin((step / steps) * Math.PI);
+      // Sat on the outside of the body, so it rides just outside the outline it came from. On the
+      // old line exactly, it is inside the *new* one — and a skin that peels off from under the
+      // surface is not a skin.
+      const nx = px / length;
+      const ny = py / length;
+      const mid = 1.04;
+      edge.push([px * mid + nx * half * taper, py * mid + ny * half * taper]);
+      inner.push([px * mid - nx * half * 0.8 * taper, py * mid - ny * half * 0.8 * taper]);
+    }
+
     context.beginPath();
-    context.moveTo(this.renderX, y);
-    context.lineTo(this.renderX, y - this.radius * 1.3 * fall);
+    edge.forEach(([x, y], i) => (i === 0 ? context.moveTo(x, y) : context.lineTo(x, y)));
+    for (let i = inner.length - 1; i >= 0; i--) context.lineTo(inner[i][0], inner[i][1]);
+    context.closePath();
+
+    // Translucent membrane, lit across its width: bright where it has curled towards the light and
+    // dim at the inner edge. A flat fill reads as a paper cut-out.
+    const skin = context.createLinearGradient(
+      -this.radius * 1.2,
+      -this.radius * 1.2,
+      this.radius * 1.2,
+      this.radius * 1.2,
+    );
+    skin.addColorStop(0, '#ffffff');
+    skin.addColorStop(0.55, palette.core);
+    skin.addColorStop(1, palette.edge);
+    context.globalAlpha = 0.5 * show;
+    context.fillStyle = skin;
+    context.fill();
+
+    // Two edges, one dark and one light — the same reason the formation array is engraved twice.
+    // The dark one survives a pale desktop and the light one survives a dark one, and together they
+    // give the scrap a lip.
+    context.globalAlpha = 0.55 * show;
+    context.lineWidth = 1.4;
+    context.strokeStyle = palette.rim;
     context.stroke();
 
-    const glow = context.createRadialGradient(this.renderX, y, 0, this.renderX, y, size * 3.4);
-    glow.addColorStop(0, '#ffffff');
-    glow.addColorStop(0.3, palette.core);
-    glow.addColorStop(1, clear(palette.core));
-    context.globalAlpha = alpha;
-    context.fillStyle = glow;
+    context.globalAlpha = 0.8 * show;
+    context.lineWidth = 1.6;
+    context.strokeStyle = '#ffffff';
     context.beginPath();
-    context.arc(this.renderX, y, size * 3.4, 0, Math.PI * 2);
+    edge.forEach(([x, y], i) => (i === 0 ? context.moveTo(x, y) : context.lineTo(x, y)));
+    context.stroke();
+
+    context.restore();
+  }
+
+  /**
+   * The gloss on what is underneath, over the beat before the skin gives.
+   *
+   * Pressure building, and it has to be *inside* the outline rather than a halo around it — a glow
+   * outside the body says something is arriving, and nothing is arriving here.
+   */
+  private drawStageStrain(context: CanvasRenderingContext2D, palette: Palette): void {
+    const beat = this.stageBreak;
+    if (beat === null || beat >= SplitBeat || this.devour) return;
+    const t = beat / SplitBeat;
+    context.save();
+    Blob.trace(context, this.points, this.blob.count);
+    context.clip();
+    // A rim of light pressing outward from just inside the edge, brightest right before it gives.
+    const rim = context.createRadialGradient(0, 0, this.radius * 0.45, 0, 0, this.radius * 1.02);
+    rim.addColorStop(0, clear(palette.core));
+    rim.addColorStop(1, '#ffffff');
+    context.globalAlpha = 0.5 * t * t;
+    context.fillStyle = rim;
+    context.beginPath();
+    context.arc(0, 0, this.radius * 1.02, 0, Math.PI * 2);
     context.fill();
     context.restore();
   }
