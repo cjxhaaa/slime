@@ -216,13 +216,6 @@ export interface BodyLook {
    * many runs there have been, so it is the one piece of the body that a rebirth does not undo.
    */
   aura: number;
-  /**
-   * How many qi veins run through the body: one per stage within the current realm, 1 to 9.
-   *
-   * The realm is carried by the palette and the size, and both of those move once every nine
-   * stages. This is what carries the nine.
-   */
-  veins: number;
 }
 
 /**
@@ -286,6 +279,13 @@ const WakeFadeSeconds = 0.4;
  * keyboard knocks loose, and a stage filling up is exactly that having happened. Borrowing the
  * mechanism reads as the same event at a smaller size; borrowing the flourish reads as a cheap
  * copy of a better one.
+ *
+ * **There were also qi veins, one per stage, and they are gone too.** They existed to give a stage
+ * something that stayed changed, on the argument that a one-off flourish over a state that does not
+ * move is a flicker. That argument was sound while a stage was a *click* — something you did and
+ * wanted a receipt for. Stages advance by themselves now, so the beat is ambient rather than
+ * transactional, and ambient progress does not need a receipt. They went on looks in the end, and
+ * the looks verdict is easier to accept knowing the mechanical case for them had already weakened.
  */
 const StageSeconds = 1.6;
 /** Seconds between waves of dust while it comes in. */
@@ -318,18 +318,6 @@ const FailSeconds = 1.5;
 /** How far the colour drains towards grey at the worst of it. */
 const FailDrain = 0.55;
 const FailGrey = '#8d9195';
-/** How long the new vein takes to fade in. Short: it arrives under the brightening. */
-const VeinGrowSeconds = 0.4;
-
-/**
- * How many veins the body can hold, and how they are drawn.
- *
- * One per stage, so nine at 九层. They are deliberately faint: this is texture that tells you where
- * in a realm you are at a glance, not decoration, and nine bright lines on a forty-six pixel body
- * would be a diagram.
- */
-const MaxVeins = 9;
-const VeinReach = 0.82;
 
 export class Slime {
   x: number;
@@ -471,33 +459,12 @@ export class Slime {
 
   /** 0 to 1 through a stage breakthrough, or null when there is not one. */
   private stageBreak: number | null = null;
-  /**
-   * The newest vein's own progress, 0 to 1, drawn separately from the beat above.
-   *
-   * Separate because the vein has to be *finished* and stay finished: it outlives the sequence, and
-   * on a restore from disk it has to start at 1 rather than draw itself in for a save file that was
-   * loaded an hour after the breakthrough happened.
-   */
-  private veinGrow = 1;
-  /** Vein paths in body-local units, regenerated when the realm changes. */
-  private veins: number[][] = [];
-  /** What `veins` was generated for, so it is not rebuilt every frame. */
-  private veinsKey = '';
 
-  /**
-   * The small breakthrough. One flash, a stretch, and a couple of clouds going up.
-   *
-   * Unlike `breakRealm` this does not hide anything and the caller has already applied the new
-   * look — there is nothing to reveal, because a stage does not change the colour or the size. What
-   * it changes is that something visibly happened.
-   */
   /** Draws qi in from outside and takes it up. Nothing else — see the note on `StageSeconds`. */
   breakStage(): void {
     this.lastInteraction = this.clock;
     this.stageBreak = 0;
     this.stageWave = StageWaveSeconds;
-    // The newest vein starts empty and fades in under the brightening.
-    this.veinGrow = 0;
     // An opening handful, so there is dust on screen from the first frame rather than a beat of
     // nothing while the first wave is waited for.
     this.dustRequest = 5;
@@ -521,7 +488,7 @@ export class Slime {
     return this.sleepFade > 0 && this.sleepFade < 1;
   }
 
-  private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0, veins: 1 };
+  private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0 };
   private chaseX: number | null = null;
   private ascension: { until: number; phase: 'gathering' | 'burst'; tremble: number } | null = null;
   private realmBreak: {
@@ -1461,9 +1428,6 @@ export class Slime {
       // rather than making the two look like separate things happening at the same time.
       if (this.stageBreak >= 1) this.stageBreak = null;
     }
-    // Runs whether or not the beat is still going: the vein has to finish even if something
-    // interrupts, because it is the part that stays.
-    if (this.veinGrow < 1) this.veinGrow = Math.min(1, this.veinGrow + dt / VeinGrowSeconds);
 
     const idleFor = this.clock - this.lastInteraction;
 
@@ -2038,10 +2002,8 @@ export class Slime {
     context.fill();
     context.restore();
 
-    // Under the face, over the body's own shading: they are *in* the membrane.
-    this.drawVeins(context, palette);
-
-    // And the light, over the veins and under the face. A radial rather than a flat white fill:
+    // The light, over the body's own shading and under the face. A radial rather than a flat
+    // white fill:
     // white at the middle and the realm's own colour at the rim, so a shining body is still visibly
     // *this* body. A flat fill at the strength this needs washes it to a white ball.
     if (shining > 0.01) {
@@ -2200,122 +2162,6 @@ export class Slime {
       context.arc(lookX, mouthY - this.radius * 0.04, this.radius * 0.1, 0.2 * Math.PI, 0.8 * Math.PI);
       context.stroke();
     }
-  }
-
-  /**
-   * The qi veins, laid out once per realm.
-   *
-   * Nine curved strokes running outward from just off centre, each one bending as it goes so that
-   * nine of them read as a grain in the body rather than as a starburst. Seeded off the realm, so
-   * the pattern is stable for the whole nine stages it is being built up over and different for the
-   * next realm — which matters, because the newest one draws itself in and a pattern that moved
-   * between frames would make that impossible to see.
-   */
-  private veinsFor(key: string): number[][] {
-    if (this.veinsKey === key) return this.veins;
-    let state = 0;
-    for (let i = 0; i < key.length; i++) state = (state * 31 + key.charCodeAt(i)) % 2147483647;
-    const random = () => {
-      state = (state * 48271) % 2147483647;
-      return state / 2147483647;
-    };
-    const built: number[][] = [];
-    for (let i = 0; i < MaxVeins; i++) {
-      // `[radius, start, sweep, drift]`: an arc that wanders outward or inward as it goes.
-      //
-      // Tangential, not radial. The first pass drew them as spokes from the middle outward and they
-      // read as **cracks** — which is not a near miss, it is the exact thing the jade shell of a
-      // realm breakthrough draws, so the two would have been telling contradictory stories with the
-      // same marks. Qi circulating inside a membrane goes *around*.
-      const radius = 0.3 + (i / MaxVeins) * 0.42 + (random() - 0.5) * 0.1;
-      built.push([
-        Math.min(VeinReach, radius),
-        random() * Math.PI * 2,
-        (1.1 + random() * 1.5) * (random() < 0.5 ? -1 : 1),
-        (random() - 0.5) * 0.22,
-      ]);
-    }
-    this.veins = built;
-    this.veinsKey = key;
-    return built;
-  }
-
-  /**
-   * The veins, clipped to the body.
-   *
-   * Drawn in the body's local space, so they travel and squash with it without having to be
-   * deformed by the soft-body simulation themselves — and clipped to the real outline, so they
-   * never leak past a wobble.
-   *
-   * The newest one grows. That is the entire point of the feature: it is the only thing a stage
-   * breakthrough changes that is still there afterwards.
-   */
-  private drawVeins(context: CanvasRenderingContext2D, palette: Palette): void {
-    const count = Math.min(MaxVeins, Math.max(0, Math.round(this.bodyLook.veins)));
-    if (count <= 0 || this.devour) return;
-    const paths = this.veinsFor(`${palette.core}:${this.bodyLook.aura}`);
-
-    context.save();
-    Blob.trace(context, this.points, this.blob.count);
-    context.clip();
-    context.lineCap = 'round';
-    for (let i = 0; i < count; i++) {
-      const newest = i === count - 1;
-      const grown = newest ? this.veinGrow : 1;
-      if (grown <= 0.001) continue;
-      const [radius, start, sweep, drift] = paths[i];
-      const r = this.radius;
-
-      // Traced as a short polyline rather than an `arc`, because the radius drifts as it goes —
-      // a true circle inside a wobbling body reads as a machined part.
-      const steps = 12;
-      const trace = () => {
-        context.beginPath();
-        for (let step = 0; step <= steps; step++) {
-          const t = (step / steps) * grown;
-          const angle = start + sweep * t;
-          const at = (radius + drift * t) * r;
-          const px = Math.cos(angle) * at;
-          const py = Math.sin(angle) * at;
-          if (step === 0) context.moveTo(px, py);
-          else context.lineTo(px, py);
-        }
-        context.stroke();
-      };
-
-      // Drawn twice: a wide faint pass for the bloom in the membrane and a narrow bright one for
-      // the strand itself. The same trick the aura bands use, and for the same reason — one stroke
-      // reads as a wireframe, two read as light under a surface.
-      for (const [width, alpha, pen] of [
-        [r * 0.13, 0.15, palette.core],
-        [r * 0.042, 0.4, '#ffffff'],
-      ] as [number, number, string][]) {
-        // A strand still arriving is brighter than the settled ones, which is what makes it
-        // possible to see *which* one is new without counting.
-        context.globalAlpha = alpha * (newest ? 1 + (1 - grown) * 1.4 : 1);
-        context.lineWidth = width;
-        context.strokeStyle = pen;
-        trace();
-      }
-
-      // A bright head on the one still being drawn, so it reads as being written rather than as
-      // fading up.
-      if (newest && grown < 1) {
-        const angle = start + sweep * grown;
-        const at = (radius + drift * grown) * r;
-        const hx = Math.cos(angle) * at;
-        const hy = Math.sin(angle) * at;
-        const head = context.createRadialGradient(hx, hy, 0, hx, hy, r * 0.2);
-        head.addColorStop(0, '#ffffff');
-        head.addColorStop(1, clear(palette.core));
-        context.globalAlpha = 0.95;
-        context.fillStyle = head;
-        context.beginPath();
-        context.arc(hx, hy, r * 0.2, 0, Math.PI * 2);
-        context.fill();
-      }
-    }
-    context.restore();
   }
 
   private drawSleepMarks(context: CanvasRenderingContext2D): void {

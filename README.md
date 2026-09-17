@@ -924,11 +924,18 @@ repaint area. Inside the membrane it is a radial gradient rather than flat white
 middle, the realm's colour at the rim, so a shining body is still visibly *this* body. Flat white at
 the strength this needs washes it to a white ball.
 
-The qi veins stay: one per stage, one to nine, clipped to the body outline, fading in under the
-brightening. The dust is the **event** and the veins are the **referent** — a stage still has to
-leave something changed, or the next one has nothing to be an increment of. A realm change drops all
-nine back to one in the new colour, inside the cocoon where nothing can be seen of it. They also pay
-off the flowing veins that section five of the plan has owed since it was written.
+**There were also qi veins, and they are gone too.** One per stage, one to nine, clipped to the
+body outline. They existed to give a stage something that *stayed* changed, on the argument that a
+one-off flourish over a state that does not move is a flicker however well drawn.
+
+That argument was sound while a stage was a **click** — something you did and wanted a receipt for.
+Stages advance by themselves now, which makes the beat ambient rather than transactional, and
+ambient progress does not need a receipt. They went on looks in the end, and the looks verdict was
+easier to accept knowing the mechanical case had already weakened underneath it.
+
+(The flowing veins section five of the plan has owed since it was written are still owed. That debt
+is about the last four days of a run having nothing to look at, which is a different problem from
+giving a stage a referent.)
 
 Taking a breakthrough is also one function now rather than two. Answering the alert and poking a
 ready pet in seclusion had drifted apart, and the seclusion path called `breakThrough` and

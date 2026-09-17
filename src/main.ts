@@ -590,7 +590,7 @@ function gatherReach(): number {
   return slime.blob.restRadius * (1.15 + 0.06 * cultivation.realm);
 }
 /** What `applyLook` last handed over, so an unchanged look costs nothing and forces no repaint. */
-let appliedLook = { scale: 0, core: '', glow: -1, aura: -1, veins: -1 };
+let appliedLook = { scale: 0, core: '', glow: -1, aura: -1 };
 
 /**
  * Pushes the realm onto the body: size, palette, and how close the stage is to full.
@@ -656,7 +656,6 @@ function applyLook(): void {
     look.scale === appliedLook.scale &&
     look.palette.core === appliedLook.core &&
     look.aura === appliedLook.aura &&
-    look.veins === appliedLook.veins &&
     Math.abs(look.glow - appliedLook.glow) <= 0.02
   ) {
     return;
@@ -666,7 +665,6 @@ function applyLook(): void {
     core: look.palette.core,
     glow: look.glow,
     aura: look.aura,
-    veins: look.veins,
   };
   slime.setLook(look);
   fullRepaint = true;

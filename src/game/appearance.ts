@@ -1,6 +1,6 @@
 import type { BodyLook, Palette } from '../slime/Slime';
 import type { Cultivation } from './cultivation.js';
-import { Ascended, StagesPerRealm } from './realms.js';
+import { Ascended } from './realms.js';
 
 /**
  * One palette per realm, plus one past the top.
@@ -62,10 +62,5 @@ export function lookFor(cultivation: Cultivation): BodyLook {
     // and not a lump of qi nobody can see.
     glow: nourished ? Math.max(NourishedGlow, glow) : glow,
     aura: cultivation.ascensions,
-    // One per stage, 1 through 9. This is the only thing on the body that says *where in a realm*
-    // you are — the palette and the size both move once every nine stages and say nothing in
-    // between, which is why seventy-two of the seventy-three breakthroughs in a run had nothing to
-    // change and no amount of animation was going to make them land.
-    veins: cultivation.ascended ? StagesPerRealm : cultivation.stage + 1,
   };
 }
