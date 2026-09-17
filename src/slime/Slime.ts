@@ -63,8 +63,11 @@ const AscendBurstSeconds = 1.4;
  * Shorter than the ascension on purpose. There are eight of these and one of that, so this has to
  * be an event without competing with the ending.
  */
-const RealmBraceSeconds = 0.55;
-const RealmBurstSeconds = 1;
+const RealmDrawSeconds = 0.9;
+const RealmSurgeSeconds = 0.5;
+const RealmMoultSeconds = 0.9;
+/** How far the pillar reaches, as a multiple of the body radius. Also what `bounds` reserves. */
+const PillarReach = 9;
 /** How long the shockwave takes to cross the screen-space it is allowed. */
 const RingSeconds = 0.85;
 /** Where the ring stops, as a multiple of the body radius. Also what `bounds` has to reserve. */
@@ -308,7 +311,23 @@ export class Slime {
   private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0 };
   private chaseX: number | null = null;
   private ascension: { until: number; phase: 'gathering' | 'burst'; tremble: number } | null = null;
-  private realmBreak: { until: number; phase: 'bracing' | 'bursting'; tremble: number } | null = null;
+  private realmBreak: {
+    phase: 'drawing' | 'surging' | 'moulting';
+    until: number;
+    tremble: number;
+    /** Seconds since it began, which is what the rising wisps are animated from. */
+    age: number;
+    /** 0 to 1: how much pillar and how many wisps. */
+    intensity: number;
+  } | null = null;
+  /**
+   * The colour being left behind, and how far the new one has risen through the body.
+   *
+   * A realm swapping its palette between two frames is not something anyone reads as a change. The
+   * new colour coming *up* through the body is — so both palettes have to exist at once for the
+   * length of the moult, and the outgoing one is captured before the caller applies the new look.
+   */
+  private moult: { from: Palette; progress: number } | null = null;
   /** 0 to 1 while a shockwave is travelling outward, null when there is none. */
   private ring: number | null = null;
   /**
@@ -332,7 +351,16 @@ export class Slime {
     this.lastInteraction = this.clock;
     this.chaseX = null;
     this.hopsLeft = 0;
-    this.realmBreak = { until: this.clock + RealmBraceSeconds, phase: 'bracing', tremble: 0 };
+    this.realmBreak = {
+      phase: 'drawing',
+      until: this.clock + RealmDrawSeconds,
+      tremble: 0,
+      age: 0,
+      intensity: 0,
+    };
+    // Captured *now*, before the caller swaps the look over. Everything after this draws with two
+    // palettes at once and slides the boundary between them upward.
+    this.moult = { from: this.bodyLook.palette, progress: 0 };
     this.blob.squash(0.32);
   }
 
@@ -471,6 +499,7 @@ export class Slime {
       this.absorbFlash > 0.01 ||
       this.ascension !== null ||
       this.realmBreak !== null ||
+      this.moult !== null ||
       this.ring !== null ||
       this.blob.energy() > 0.08 ||
       // Against the target the eyes are actually easing toward, which is the cursor whenever there
@@ -555,12 +584,19 @@ export class Slime {
     const decoration =
       this.radius *
       (this.ring !== null ? RingReach + 0.2 : this.bodyLook.aura > 0 ? 2.5 : 2.2);
+    // The pillar goes straight up and well past anything else, so while one is out the top of the
+    // damaged region is set by it rather than by the body.
+    const pillar = this.realmBreak ? this.radius * (PillarReach + 1) : 0;
     leftSpan = Math.max(leftSpan + 3, decoration);
     rightSpan = Math.max(rightSpan + 3, decoration);
     topSpan = Math.max(topSpan + 3, decoration);
     bottomSpan = Math.max(bottomSpan + 3, decoration);
 
-    const top = Math.min(this.renderY - topSpan, this.renderY - this.radius * 0.7 - 60);
+    const top = Math.min(
+      this.renderY - topSpan,
+      this.renderY - this.radius * 0.7 - 60,
+      this.renderY - pillar,
+    );
     const bottom = Math.max(this.renderY + bottomSpan, ground + this.radius * 1.1);
     return {
       x: this.renderX - leftSpan,
@@ -1033,27 +1069,50 @@ export class Slime {
 
     if (this.realmBreak) {
       const beat = this.realmBreak;
-      if (beat.phase === 'bracing') {
-        const progress = 1 - Math.max(0, beat.until - this.clock) / RealmBraceSeconds;
+      beat.age += dt;
+      const left = Math.max(0, beat.until - this.clock);
+
+      if (beat.phase === 'drawing') {
+        // Drawing the qi in. Pressed down, trembling faster, and the first wisps start lifting off
+        // it — the pillar is already forming before it goes anywhere.
+        const progress = 1 - left / RealmDrawSeconds;
+        beat.intensity = progress * 0.75;
         beat.tremble -= dt;
         if (beat.tremble <= 0) {
-          beat.tremble = 0.07;
-          this.blob.poke(Math.random() * Math.PI * 2, 38 + progress * 64, 1.5);
+          beat.tremble = 0.1 - progress * 0.055;
+          this.blob.poke(Math.random() * Math.PI * 2, 30 + progress * 70, 1.5);
         }
-        this.absorbFlash = Math.max(this.absorbFlash, progress * 0.65);
+        this.absorbFlash = Math.max(this.absorbFlash, progress * 0.55);
         if (this.clock >= beat.until) {
-          beat.phase = 'bursting';
-          beat.until = this.clock + RealmBurstSeconds;
+          beat.phase = 'surging';
+          beat.until = this.clock + RealmSurgeSeconds;
+          beat.intensity = 1;
           this.absorbFlash = 1;
-          this.blob.pulse(175);
-          this.blob.squash(-0.34);
-          this.vy = -HOP_SPEED * 0.86;
+          // Pulled tall rather than pushed round: the body is being drawn up the pillar.
+          this.blob.squash(-0.46);
+          this.blob.pulse(120);
+          this.vy = -HOP_SPEED * 0.9;
+        }
+      } else if (beat.phase === 'surging') {
+        beat.intensity = 1;
+        this.absorbFlash = Math.max(this.absorbFlash, 0.85);
+        if (this.clock >= beat.until) {
+          beat.phase = 'moulting';
+          beat.until = this.clock + RealmMoultSeconds;
+          this.blob.pulse(170);
           this.ring = 0;
         }
-      } else if (this.clock >= beat.until) {
-        this.realmBreak = null;
-        this.mood = 'happy';
-        this.moodUntil = this.clock + 1.6;
+      } else {
+        // The new colour comes up through the body while the pillar falls away.
+        const progress = 1 - left / RealmMoultSeconds;
+        beat.intensity = Math.max(0, 0.8 - progress);
+        if (this.moult) this.moult.progress = progress;
+        if (this.clock >= beat.until) {
+          this.realmBreak = null;
+          this.moult = null;
+          this.mood = 'happy';
+          this.moodUntil = this.clock + 1.6;
+        }
       }
       return;
     }
@@ -1202,6 +1261,65 @@ export class Slime {
   }
 
   /**
+   * The column of qi a realm breakthrough sends up.
+   *
+   * Tapered rather than a straight band: narrowing as it climbs is most of what makes it read as
+   * rising instead of as a rectangle someone drew. It carries the colour of the realm being
+   * *entered*, so it announces the change a beat before the body shows it.
+   */
+  private drawPillar(context: CanvasRenderingContext2D): void {
+    const beat = this.realmBreak;
+    if (!beat || beat.intensity <= 0.01 || this.devour) return;
+    const height = this.radius * PillarReach * Math.min(1, beat.intensity * 1.3);
+    const halfWidth = this.radius * (0.26 + 0.46 * beat.intensity);
+    const top = this.renderY - height;
+    const beam = context.createLinearGradient(0, this.renderY, 0, top);
+    beam.addColorStop(0, this.bodyLook.palette.core);
+    beam.addColorStop(0.3, this.bodyLook.palette.edge);
+    beam.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    context.save();
+    context.globalAlpha = 0.52 * beat.intensity;
+    context.fillStyle = beam;
+    context.beginPath();
+    context.moveTo(this.renderX - halfWidth, this.renderY);
+    context.lineTo(this.renderX - halfWidth * 0.22, top);
+    context.lineTo(this.renderX + halfWidth * 0.22, top);
+    context.lineTo(this.renderX + halfWidth, this.renderY);
+    context.closePath();
+    context.fill();
+    context.restore();
+  }
+
+  /**
+   * Threads of qi lifting off the body and up the column.
+   *
+   * Procedural rather than stored: a fixed offset per thread plus the beat's own clock gives a
+   * continuous stream with nothing to allocate, tick or clean up afterwards.
+   */
+  private drawWisps(context: CanvasRenderingContext2D): void {
+    const beat = this.realmBreak;
+    if (!beat || beat.intensity <= 0.01 || this.devour) return;
+    context.save();
+    context.strokeStyle = this.bodyLook.palette.core;
+    context.lineCap = 'round';
+    context.lineWidth = 2;
+    const count = 16;
+    for (let i = 0; i < count; i++) {
+      const seed = i * 2.3999;
+      const cycle = (beat.age * 1.45 + i / count) % 1;
+      const x = this.renderX + Math.sin(seed) * this.radius * 0.85;
+      const y = this.renderY + this.radius * 0.7 - cycle * this.radius * PillarReach * 0.8;
+      const length = this.radius * (0.16 + 0.22 * Math.abs(Math.cos(seed)));
+      context.globalAlpha = 0.62 * beat.intensity * (1 - cycle);
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x, y - length);
+      context.stroke();
+    }
+    context.restore();
+  }
+
+  /**
    * The shockwave from a realm breakthrough, in the colour just arrived at.
    *
    * Widest and brightest when it leaves and thin by the time it stops, which is what makes it read
@@ -1280,6 +1398,7 @@ export class Slime {
           ? PALETTE.sleep
           : this.bodyLook.palette;
 
+    this.drawPillar(context);
     this.drawRing(context);
     this.drawAura(context);
 
@@ -1336,13 +1455,34 @@ export class Slime {
 
     Blob.trace(context, this.points, this.blob.count);
 
-    context.fillStyle = this.bodyGradient(context, palette);
+    // Through a moult the body wears both colours at once, with the new one rising through it.
+    const outgoing = this.moult ? this.moult.from : palette;
+    context.fillStyle = this.bodyGradient(context, outgoing);
     context.globalAlpha = 0.92;
     context.fill();
 
+    if (this.moult) {
+      const front = this.radius * (1.2 - 2.4 * this.moult.progress);
+      context.save();
+      // Clipped to the silhouette, so the rising colour can never leak past a squashed outline.
+      Blob.trace(context, this.points, this.blob.count);
+      context.clip();
+      context.globalAlpha = 0.92;
+      context.fillStyle = this.bodyGradient(context, palette);
+      context.fillRect(-this.radius * 2, front, this.radius * 4, this.radius * 4);
+      // The boundary itself, bright, brightest mid-sweep. Without it the two colours merely abut
+      // and there is nothing to watch; with it there is a visible line doing the work.
+      context.globalAlpha = 0.8 * Math.sin(Math.PI * this.moult.progress);
+      context.fillStyle = '#ffffff';
+      context.fillRect(-this.radius * 2, front - 2.5, this.radius * 4, 5);
+      context.restore();
+    }
+
     context.globalAlpha = 1;
     context.lineWidth = 2;
-    context.strokeStyle = palette.rim;
+    // The rim changes over at the halfway mark rather than tracking the front, which would need the
+    // outline stroked in two pieces for a detail two pixels wide.
+    context.strokeStyle = this.moult && this.moult.progress < 0.5 ? outgoing.rim : palette.rim;
     context.stroke();
 
     // The swallow. Clipped to the body, so it lights the membrane from inside rather than washing
@@ -1393,6 +1533,7 @@ export class Slime {
     this.drawFace(context);
     context.restore();
 
+    this.drawWisps(context);
     if (this.mood === 'asleep') this.drawSleepMarks(context);
   }
 
