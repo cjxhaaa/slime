@@ -5,8 +5,15 @@ import {
   drawArray,
   drawBud,
   drawCharms,
+  drawShards,
+  drawShell,
+  drawWisps,
+  makeCracks,
+  makeShards,
   type OrdealBeat,
   type OrdealShape,
+  type Shard,
+  stepShards,
 } from './Breakthrough';
 import { HaloReach } from '../game/Glyphs';
 import { clear } from './colour';
@@ -373,6 +380,14 @@ export class Slime {
     pillar: number;
     /** 0 to 1: how completely the body is hidden. Drops before the column does. */
     veil: number;
+    /** 0 to 1: how far the stone crust has closed over the body. */
+    crust: number;
+    /** 0 to 1: how far the cracks in it have run. */
+    crack: number;
+    /** Fixed for the length of one breakthrough, so the cracks do not crawl between frames. */
+    cracks: number[][];
+    /** Pieces of the crust, once it has gone. Empty until the burst. */
+    shards: Shard[];
   } | null = null;
   /**
    * Set once, at the instant the body is hidden inside the column.
@@ -415,6 +430,12 @@ export class Slime {
       spin: 0,
       pillar: 0,
       veil: 0,
+      crust: 0,
+      crack: 0,
+      // Seeded off the realm being left, so every breakthrough in a run breaks differently and any
+      // one of them breaks the same way on every frame of itself.
+      cracks: makeCracks(this.realmSeed),
+      shards: [],
     };
     // An opening handful, and then `takeDustRequest` keeps it coming for the whole two seconds.
     // One burst at the start was all there was before, and with the beat this long the cloud had
@@ -438,6 +459,17 @@ export class Slime {
     if (!this.lookPending) return false;
     this.lookPending = false;
     return true;
+  }
+
+  /**
+   * What the cracks and the pieces are generated from.
+   *
+   * Off the realm rather than off the clock, so the eight breakthroughs in a run each break
+   * differently while any one of them is stable for its own length — `Math.random` per frame would
+   * make the cracks crawl, which is the one thing a crack must not do.
+   */
+  private get realmSeed(): number {
+    return 31 + Math.round(this.bodyLook.scale * 1000) + Math.round(this.radius);
   }
 
   private dustRequest = 0;
@@ -695,6 +727,18 @@ export class Slime {
     rightSpan = Math.max(rightSpan + 3, decoration);
     topSpan = Math.max(topSpan + 3, decoration);
     bottomSpan = Math.max(bottomSpan + 3, decoration);
+
+    // The crust's pieces are the one thing here whose reach cannot be written down as a multiple of
+    // the body radius: they are thrown at a range of speeds and they keep going. So they are
+    // measured rather than reserved, the same way the dust and the charms are.
+    for (const shard of this.realmBreak?.shards ?? []) {
+      if (shard.life <= 0) continue;
+      const span = shard.size * 1.6 + 2;
+      leftSpan = Math.max(leftSpan, span - shard.x);
+      rightSpan = Math.max(rightSpan, shard.x + span);
+      topSpan = Math.max(topSpan, span - shard.y);
+      bottomSpan = Math.max(bottomSpan, shard.y + span);
+    }
 
     const top = Math.min(
       this.renderY - topSpan,
@@ -1206,6 +1250,10 @@ export class Slime {
           this.dustRequest += 3 + Math.round(progress * 10);
         }
         this.absorbFlash = Math.max(this.absorbFlash, progress * 0.6);
+        // The bottleneck, arriving as a crust and then failing. Both are on this beat because this
+        // is the only one where the body can still be seen — after it, the cocoon is shut.
+        beat.crust = Math.min(1, progress / 0.55);
+        beat.crack = Math.max(0, (progress - 0.6) / 0.4);
         if (this.clock >= beat.until) {
           beat.phase = 'kindling';
           beat.until = this.clock + RealmKindleSeconds;
@@ -1219,12 +1267,18 @@ export class Slime {
         beat.progress = 1 - left / RealmKindleSeconds;
         beat.pillar = beat.progress;
         beat.veil = beat.pillar;
+        beat.crust = 1;
+        beat.crack = 1;
         this.absorbFlash = Math.max(this.absorbFlash, 0.9);
         if (this.clock >= beat.until) {
           beat.phase = 'revealing';
           beat.until = this.clock + RealmRevealSeconds;
           beat.pillar = 1;
           beat.veil = 1;
+          beat.crust = 0;
+          // It breaks where it cannot be watched, same as everything else on this beat, and the
+          // pieces come out through the cocoon on their own.
+          beat.shards = makeShards(this.radius, this.realmSeed);
           // Now, while nothing can be seen of it. The new form is put on inside the light.
           this.lookPending = true;
           this.ring = 0;
@@ -1233,6 +1287,7 @@ export class Slime {
         // The figure coming back first, the column going second.
         const progress = 1 - left / RealmRevealSeconds;
         beat.progress = progress;
+        stepShards(beat.shards, dt);
         beat.veil = Math.max(0, 1 - progress / VeilFraction) ** 1.4;
         beat.pillar =
           progress < PillarHoldFraction
@@ -1424,6 +1479,7 @@ export class Slime {
     if (!beat) return;
     const shape = this.ordealShape();
     drawArray(context, shape, beat);
+    drawWisps(context, shape, beat);
     drawCharms(context, shape, beat, -1);
   }
 
@@ -1473,6 +1529,15 @@ export class Slime {
       context.fill();
     }
     context.restore();
+
+    // The pieces of the crust, in front of the cocoon they are coming out through.
+    const burst = this.realmBreak;
+    if (burst && burst.shards.length > 0) {
+      context.save();
+      context.translate(this.renderX, this.renderY);
+      drawShards(context, burst.shards, this.bodyLook.palette);
+      context.restore();
+    }
 
     drawCharms(context, shape, beat, 1);
   }
@@ -1668,6 +1733,20 @@ export class Slime {
     context.restore();
 
     this.drawFace(context);
+    // The crust, over everything the body draws including the face. Covering the face is most of
+    // what makes it read as being sealed in rather than as a change of paint.
+    const sealing = this.realmBreak;
+    if (sealing && !this.devour) {
+      drawShell(
+        context,
+        () => Blob.trace(context, this.points, this.blob.count),
+        this.radius,
+        this.bodyLook.palette,
+        sealing.cracks,
+        sealing.crust,
+        sealing.crack,
+      );
+    }
     context.restore();
 
     this.drawOrdealFront(context);

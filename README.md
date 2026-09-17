@@ -810,9 +810,9 @@ So now it goes away. Three beats:
 
 | | | |
 |---|---|---|
-| **Drawn in** | 2.0s | Dust arrives from much further out than typing ever throws it, and much more of it, while the body trembles and brightens |
-| **Taken** | 0.55s | A thick column comes up and swallows it whole |
-| **Revealed** | 1.35s | A figure surfaces inside the column, and the column thins out around it |
+| **Drawn in** | 2.0s | An array lights under the pet, eight charms wheel out, dust arrives from much further out than typing ever throws it, and a crust of jade hardens over the body and cracks |
+| **Taken** | 0.55s | A lotus bud of qi rises off the array and swallows it whole |
+| **Revealed** | 1.35s | The crust bursts, a figure surfaces inside the cage, and the cage thins out around it |
 
 Just under four seconds, up from 2.3. At the shorter length it was over before it had been read —
 the dust arrived, the light went up, the new form was standing there, and what you took away was
@@ -844,9 +844,67 @@ The spread came down from 3.2 body radii to 2.2 at the same time. At 3.2 the clo
 hundred pixels out, and seventy specks over that much desktop is a light dusting of the whole screen
 rather than something arriving at the pet.
 
-The column is drawn **in front of** the body rather than behind it. That is the entire mechanism:
-the old form is hidden, the new size and colour are put on while nothing can be seen, and what the
-light uncovers is already different. No cross-dissolve, no two bodies at some blend.
+Whatever is doing the hiding is drawn **in front of** the body rather than behind it. That is the
+entire mechanism: the old form is hidden, the new size and colour are put on while nothing can be
+seen, and what the light uncovers is already different. No cross-dissolve, no two bodies at some
+blend.
+
+#### Why the column went
+
+The first three passes at this all landed somewhere in the visual language of science fiction, and
+retinting was never going to fix it. Four things were wrong, and each one names its replacement.
+
+**It was straight.** The genre's imagery is curvilinear — cloud, qi, veins, lotus — and a vertical
+shaft with soft gradients in it is a transporter beam. The enclosure is a *bud* now: two curves
+bowing out of a ring and converging above the pet.
+
+**It had no writing in it.** Seal script is central to the genre, and this repo already drew a
+decent talisman that the breakthrough ignored completely. Eight of them wheel out one at a time now,
+close around the body, ride the bud's waist while it is shut, and burn away as the new form comes
+back. They carry 道 气 玄 元 灵 真 虚 极 rather than a letter, because the charms that fall out of the
+keyboard are keys you actually pressed and this beat is not about typing.
+
+**It had no structure.** Light in this genre is structured: arrays, a dais, the layers of a sunset.
+A uniform gradient can only read as glow. So there is a formation array under the pet — three rings,
+a graduated rim, a counter-rotating octagram, in perspective, accelerating through all three beats.
+
+**And nothing in it was an object.** A breakthrough in the genre involves *things*: pills, charms,
+arrays, ley lines. So the gather beat now hardens a crust of pale jade over the body — deliberately
+not the realm colour, because the point of it is that it is a shell and not the pet — and it closes
+over the face, which is what makes it read as being sealed in rather than repainted. 瓶颈 and 破境
+are the genre's own words for a full stage and for breaking one, and neither had been on screen. The
+crust cracks, the next realm's light comes up through the cracks, and in the last beat it bursts and
+the pieces fly out through the dissolving cocoon.
+
+Five things only the screen could tell me:
+
+**The array is anchored under the body, not on the floor.** The floor is more physical and falls
+apart the moment the pet is off it — one click can land mid-hop, and the composition comes apart
+into an array on the carpet with a long spike reaching up to a slime in the air.
+
+**A bud has to be pinched at both ends.** The first pass put its foot on the array's inner ring,
+wider than its belly, and a shape that is widest at the bottom and comes to a point is a cone —
+which is to say a wizard hat.
+
+**Every line of the array is stroked twice**, the dark rim colour wide and underneath and the pale
+core narrow on top, and the cage mixes white threads with dark ones. This is not styling. A pale
+array on a near-white wallpaper is invisible and a dark one on a dark wallpaper is invisible, and
+this app draws onto a desktop it has never seen.
+
+**The charms had to move outward when the bud shut, not inward.** Tucked in at 1.3 radii they ended
+up under the silhouette, which put the eight things this sequence is about behind the one opaque
+object on screen.
+
+**And the cloud had to be filled, not stroked.** A chain of tangent arcs is the correct construction
+for 祥云 and comes out as a caterpillar: an unfilled scalloped line has no mass, so at thirty pixels
+it is a squiggle. Three overlapping lobes with one curled tail is what reads as cloud at that size.
+
+Separately, a bug that was in every gradient in this app: `addColorStop(1, 'rgba(0,0,0,0)')` fades
+to transparent **black**, and Canvas interpolates stops non-premultiplied, so the ramp passes
+through half-alpha dark grey — which over a dark background is darker than the background. It is why
+a beam of light kept reading as a column of smoke, and I retinted the opaque end twice before
+noticing the smoke was coming from the transparent one. One function in `colour.ts`, five call
+sites.
 
 The look change is a one-shot request — `takeLookRequest()` — rather than something the caller
 times, and it had to be, because the frame loop applies the look for its own reasons: a single
