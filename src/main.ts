@@ -6,6 +6,7 @@ import { Slime, type Bite, type DevourRect } from './slime/Slime';
 import { lookFor } from './game/appearance';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes, strain } from './game/combat';
 import { Daily } from './game/daily';
+import { resolveErrand } from './game/errand';
 import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cultivation';
 import { Glyphs } from './game/Glyphs';
 import { BreakthroughSpread, Motes } from './game/Motes';
@@ -819,18 +820,18 @@ function frame(now: number): void {
   if ((absorbed > 0 || eaten > 0) && !slime.isChangingRealm) applyLook();
 
   const target = glyphs.nearest(slime.x);
-  if (target) {
-    onErrand = true;
-    slime.chaseTo(target.x);
-  } else if (onErrand) {
-    // Nothing left to fetch. Walk back to where it was left, and only then call the errand done.
-    if (restX === null || Math.abs(slime.x - restX) < slime.blob.restRadius * 0.7) {
-      slime.chaseTo(null);
-      onErrand = false;
-    } else {
-      slime.chaseTo(restX);
-    }
-  }
+  // The `held` term is the whole of the second bug this function was extracted for: the grab
+  // handler calls the errand off and this ran one frame later and turned it straight back on.
+  const errand = resolveErrand({
+    held: grabbed || pullPending,
+    charmX: target ? target.x : null,
+    x: slime.x,
+    home: restX,
+    onErrand,
+    closeEnough: slime.blob.restRadius * 0.7,
+  });
+  onErrand = errand.onErrand;
+  slime.chaseTo(errand.chase);
 
   bubble.update(elapsed);
   paw.update(elapsed);
@@ -908,6 +909,9 @@ function frame(now: number): void {
   // The frame the body stops moving is the frame its resting place becomes final, so that is the
   // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
   // and two numbers — because the write itself is debounced well outside it.
+  //
+  // Still gated on `!onErrand`, and it has to be: the place an errand ends is the place a charm
+  // happened to land, and recording *that* as home is the bug this whole path keeps producing.
   if (wasAnimating && !animating) {
     // Coming to rest anywhere that was not an errand *is* the placement. Throwing it, dragging it
     // and letting it wander all end here, which is why this needs no separate case for each.
@@ -1050,6 +1054,14 @@ function wirePointer(): void {
       const thrown = dragVelocity.release(event.timeStamp);
       slime.release(thrown.vx, thrown.vy);
       dragVelocity.reset();
+      // The gesture is over, so the home it remembered is over with it.
+      //
+      // Whatever was stored is now a position from before the user touched the pet, and the one
+      // thing this must never do is walk back to one of those. The real placement is written down
+      // at the next settle — which, for a throw, is where it lands rather than where the pointer
+      // let go. If a charm is still out it goes and gets that first and then simply stays there,
+      // because at that point there genuinely is no home on record to go back to.
+      restX = null;
       if (canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
       }

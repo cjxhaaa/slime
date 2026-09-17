@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "check": "tsc --ignoreConfig src/game/checks.ts --outDir .check --module esnext --target es2022 --moduleResolution bundler --skipLibCheck && node .check/checks.js",
+    "check": "node -e \"require('fs').rmSync('.check',{recursive:true,force:true})\" && tsc --ignoreConfig src/game/checks.ts --rootDir src --outDir .check --module esnext --target es2022 --moduleResolution bundler --skipLibCheck && node .check/game/checks.js",
     "tauri": "tauri"
   },
   "dependencies": {

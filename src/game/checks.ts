@@ -15,6 +15,7 @@ import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js
 import { Glyphs } from './Glyphs.js';
 import { BreakthroughSpread, Motes } from './Motes.js';
 import { clear } from '../slime/colour.js';
+import { resolveErrand } from './errand.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
@@ -370,6 +371,53 @@ checkTrue('an idle keyboard costs nothing', !still.busy && still.bounds() === nu
 // the same colour.
 checkTrue('a faded colour keeps its hue', clear('#8ff0d4') === 'rgba(143, 240, 212, 0)');
 checkTrue('and it works on shorthand', clear('#fff') === 'rgba(255, 255, 255, 0)');
+
+// 21. A charm is worth fetching, and being held outranks a charm.
+//
+// This logic has broken twice. The second time, picking the pet up set `onErrand = false` with a
+// comment saying a deliberate placement outranks an errand every time — and the frame loop set it
+// straight back to true one frame later, because it asked "is there a charm" without asking "is the
+// pet in somebody's hand". Dragging the pet onto a charm, feeding it and throwing it somewhere else
+// then left a pending walk-home against a home frozen since before the drag, and the pet trudged
+// back to a spot the user never chose.
+const errand = (over: Partial<Parameters<typeof resolveErrand>[0]>) =>
+  resolveErrand({
+    held: false,
+    charmX: null,
+    x: 500,
+    home: 200,
+    onErrand: false,
+    closeEnough: 32,
+    ...over,
+  });
+
+checkTrue('a charm on the desktop starts an errand', errand({ charmX: 900 }).chase === 900);
+checkTrue(
+  'being held never starts one, however near the charm',
+  errand({ held: true, charmX: 505 }).onErrand === false,
+);
+checkTrue(
+  'and being held calls off one already running',
+  errand({ held: true, charmX: 900, onErrand: true }).onErrand === false,
+);
+checkTrue(
+  'with the charm gone it walks back to where it was left',
+  errand({ onErrand: true }).chase === 200,
+);
+checkTrue('and arriving there ends the errand', errand({ onErrand: true, x: 210 }).chase === null);
+checkTrue(
+  'no home on record means it just stops',
+  errand({ onErrand: true, home: null }).onErrand === false,
+);
+// The case the fix must not break: letting go while a charm is still out has to hand the errand
+// back, or a pet put down next to a charm would ignore it forever.
+checkTrue('letting go re-arms a pending charm', errand({ charmX: 900 }).onErrand === true);
+// And the case that caused the report, end to end: held over a charm, fed, thrown. `home` is null
+// by then because the release cleared it, so nothing can send the pet to a stale position.
+checkTrue(
+  'fed while held and thrown, it goes nowhere stale',
+  errand({ onErrand: true, home: null, x: 1300 }).chase === null,
+);
 
 Math.random = realRandom;
 

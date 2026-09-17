@@ -6,7 +6,10 @@
  * behaves the way the pet already does and needs no separate sense of weight.
  */
 
-import { clear } from '../slime/colour';
+// Explicit .js, like every other runtime import under src/game. These modules are compiled and run
+// by Node for `npm run check`, and Node's ESM resolver will not guess an extension.
+import { clear } from '../slime/colour.js';
+
 interface Glyph {
   char: string;
   x: number;
