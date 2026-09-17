@@ -1018,18 +1018,19 @@ And the column's own gradient uses the pale half of the palette and white, never
 fine for 金丹, whose edge is a warm gold. 合体 is `#2b3894` and 大乘 is `#221c3d`, and a beam of
 light faded through either of those is a column of smoke.
 
-### Charms are a count now, and they buy two things
+### Charms are a count now, and they set the odds
 
 A talisman charm used to be worth a sliver of qi and nothing else — `keycapValue`, about **1.86
 seconds of output**. Picking one up was a reward you could not see, which is a strange thing to send
 the pet across the desktop for.
 
-They are counted instead, and the count spends on:
+They are counted instead, and the count sets **the odds on a realm**: `min(100%, 60% + 0.4% x
+held)`, so a hundred banked makes crossing a certainty. 修为 gets you to the threshold; charms
+decide whether crossing it works.
 
-| | |
-|---|---|
-| **Advancing a stage on its own** | 40 charms. The pet stops hopping at you for a click and just gets on with it |
-| **The odds on a realm** | `min(100%, 60% + 0.4% x held)`, so a hundred makes it a certainty |
+Stages are free and automatic. Seventy-two clicks a run to confirm something that was never a
+decision is a chore rather than an interaction — and the pet hopping to collect each one is the
+"nothing may interrupt you" guardrail being broken seventy-two times.
 
 Taking their qi away costs the economy nothing worth measuring — 1.86 seconds against a ladder
 measured in days — so this is a re-purposing rather than a nerf. It is also what lets the number be
@@ -1041,11 +1042,19 @@ of two would be noise.
 top of the window-eating code. They move the odds; sixty percent with nothing banked is "a real
 chance with none of them", not "come back when you have saved up".
 
-**Automatic stages will not spend below a hundred.** Convenience and insurance come out of the same
-pot, so without a floor a run of cheap automatic stages would quietly empty the hoard that was
-keeping the next realm safe — and the player would have no lever to stop it, because the spending
-happens while they are not looking. This is also why the feature needs no setting: a default that is
-right by construction beats a switch you have to go and find.
+**Stages briefly cost forty charms each, and that was a mistake worth recording.** Convenience and
+insurance came out of the same pot, so the spend needed a floor it would not dig below, and with the
+floor at a hundred you needed a hundred and forty banked before automation fired at all. Every step
+of that reasoning is right and the conclusion is wrong: it meant the feature did nothing for the
+whole early game — the part with most of the seventy-two stages in it and the most clicking to do. A
+feature that switches itself off exactly when it is most wanted does not have a tuning problem.
+
+Stages are free now and the pot has one job, so "convenience must not eat the insurance" is not a
+problem being held off by a threshold; it is a problem that no longer exists.
+
+**A realm edge still asks.** Those eight are the ones with something to decide — go now at these
+odds, or wait and bank more — and crossing one spends the whole hoard on a dice roll. Doing that on
+somebody's behalf while they are not watching is not a convenience either.
 
 #### What a failed realm costs, and why failure is allowed at all
 

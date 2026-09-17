@@ -1225,17 +1225,18 @@ async function main(): Promise<void> {
     daily.roll(allowance(cultivation.realm, cultivation.ascensions));
     applyLook();
     if (cultivation.readyToBreakThrough) {
-      // Charms first: a stage that can be paid for is taken without anyone being asked. A realm
-      // edge is never taken this way — that one has odds on it, and spending somebody's whole
-      // hoard on a dice roll they did not watch is not a convenience.
-      // Safe to spend before advancing: we are inside `readyToBreakThrough` and not at an edge, so
-      // there is no roll and `takeBreakThrough` cannot come back empty-handed. Worth saying out
-      // loud, because the charge and the thing it pays for are two calls apart.
-      if (!cultivation.atRealmEdge && charms.takeStage()) {
-        takeBreakThrough();
-      } else {
-        offerBreakThrough();
-      }
+      // A stage takes itself; a realm edge asks.
+      //
+      // Seventy-two clicks a run to confirm something that was never a decision is a chore, not an
+      // interaction — and the pet hopping to collect each one is the "nothing may interrupt you"
+      // guardrail being broken seventy-two times. The eight that are left are the eight where
+      // there is genuinely something to decide: go now at these odds, or wait and bank more.
+      //
+      // Which is the other half of why the alert is worth keeping for those: crossing a realm
+      // spends the whole hoard on a dice roll, and doing that on somebody's behalf while they are
+      // not watching is not a convenience.
+      if (cultivation.atRealmEdge) offerBreakThrough();
+      else takeBreakThrough();
     }
     if (
       slime.hasLiveAlert &&

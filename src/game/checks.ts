@@ -25,9 +25,6 @@ import {
   FailureQiLoss,
   OddsPerCharm,
   OddsPerFailure,
-  StageCost,
-  StageSpendFloor,
-  canAutoAdvance,
   charmsForCertainty,
   odds,
 } from './charms.js';
@@ -489,19 +486,13 @@ check('certainty has a price', needed, Math.ceil((1 - BaseOdds) / OddsPerCharm))
 checkTrue('and paying it is enough', odds(needed, 0) === 1);
 checkTrue('nothing more is wanted once it is certain', charmsForCertainty(needed, 0) === 0);
 
-// Automatic stages are drawn from the same pot as the insurance, so the floor is what stops
-// convenience quietly eating it. There is no setting for this and there should not be one — the
-// spending happens while nobody is looking, so it has to be right by construction.
-checkTrue('a bare hoard does not auto-advance', !canAutoAdvance(StageCost));
-checkTrue('and neither does one sitting exactly on the floor', !canAutoAdvance(StageSpendFloor));
-checkTrue('one charm past the floor and the cost does', canAutoAdvance(StageSpendFloor + StageCost));
-
+// The hoard is only ever spent by failing, so gathering is the only thing that moves it upward and
+// nothing quietly draws it down. Charms briefly paid for automatic stages as well, and the floor
+// that had to protect the insurance from that spending meant automation did not start until a
+// hundred and forty were banked — which is to say it did nothing for the whole early game.
 const purse = new Charms();
-purse.gather(StageSpendFloor + StageCost);
-checkTrue('spending a stage works from there', purse.takeStage());
-check('and leaves the floor intact', purse.count, StageSpendFloor);
-checkTrue('the next one is refused', !purse.takeStage());
-check('having taken nothing', purse.count, StageSpendFloor);
+purse.gather(140);
+check('gathering is the only thing that fills it', purse.count, 140);
 
 // A failure empties the pot, which is the sharpest part of the cost: it makes the *next* attempt
 // worse than this one would have been, rather than merely undoing this one.

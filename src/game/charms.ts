@@ -1,41 +1,25 @@
 /**
- * The hoard of talisman charms, and what it buys.
+ * The hoard of talisman charms, and the one thing it decides.
  *
  * Charms used to be worth a sliver of qi and nothing else — `keycapValue`, about 1.86 seconds of
  * output each. Picking one up was a reward you could not see, which is a strange thing to send the
- * pet across the desktop for. They are counted now, and the count spends on two things:
- *
- * - **Advancing a stage without being asked.** A full stage hops at you for a click; with charms
- *   banked the pet just gets on with it.
- * - **The odds on a realm.** 修为 gets you to the threshold; charms decide whether crossing it
- *   works.
+ * pet across the desktop for. They are counted now, and the count sets **the odds on a realm**:
+ * 修为 gets you to the threshold, charms decide whether crossing it works.
  *
  * Taking their qi away costs the economy almost nothing — 1.86 seconds against a ladder measured in
  * days — so this is a re-purposing rather than a nerf. It is also the reason the number can be
  * priced in the hundreds without unbalancing anything: the supply is capped in Rust at one charm
- * per 5.5 seconds of typing, so a heavy run banks something like four thousand of them, and a cost
- * of forty is a real decision while a cost of two would be noise.
- */
-
-/**
- * What a stage costs to take automatically.
+ * per 5.5 seconds of typing, so a heavy run banks something like four thousand of them.
  *
- * Forty, against roughly four thousand a run and seventy-two stages to spend them on. It is meant
- * to be affordable and not free: somebody who types all day never sees the breakthrough alert
- * again, and somebody who barely types clicks it themselves, which costs nothing.
- */
-export const StageCost = 40;
-
-/**
- * The floor automatic breakthroughs will not spend below.
+ * **They briefly bought automatic stages too, at forty each, and that was a mistake worth
+ * recording.** Convenience and insurance came out of the same pot, so the spend needed a floor it
+ * would not dig below — and with the floor at a hundred you needed a hundred and forty banked
+ * before automation fired at all. Which is to say it did nothing for the whole early game, the
+ * part with seventy-two stages in it and the most clicking to do. A feature that switches itself
+ * off exactly when it is most wanted is not a feature with a tuning problem.
  *
- * This is the whole reason the feature needs no setting. Convenience and insurance are drawn from
- * the same pot, so without a floor a run of cheap automatic stages would quietly empty the hoard
- * that was keeping the next realm safe — and the player would have no lever to stop it, because
- * the spending happens while they are not looking. Holding a hundred back means the pot is never
- * raided below the point where a realm is a certainty.
+ * Stages advance on their own now, free, and the pot has one job.
  */
-export const StageSpendFloor = 100;
 
 /** Where the odds on a realm start with nothing banked, and what a charm adds. */
 export const BaseOdds = 0.6;
@@ -89,11 +73,6 @@ export function charmsForCertainty(held: number, failures: number): number {
   return Math.max(0, Math.ceil(missing / OddsPerCharm));
 }
 
-/** True when a stage can be taken automatically, leaving the insurance floor intact. */
-export function canAutoAdvance(held: number): boolean {
-  return held - StageCost >= StageSpendFloor;
-}
-
 export class Charms {
   private held = 0;
   private failures: Record<string, number> = {};
@@ -129,19 +108,13 @@ export class Charms {
     return charmsForCertainty(this.held, this.failuresAt(realm));
   }
 
-  /** Spends a stage's worth if that can be done without touching the floor. */
-  takeStage(): boolean {
-    if (!canAutoAdvance(this.held)) return false;
-    this.held -= StageCost;
-    return true;
-  }
-
   /**
    * Wipes the hoard and remembers the failure.
    *
    * All of it, not just a stake — the whole pot was in play, which is what "your charms decide the
    * odds" has to mean if there is no interface for choosing a stake. It is also the sharpest part
-   * of the cost, because it is what makes the *next* attempt worse than this one would have been.
+   * of the cost, because it is what makes the *next* attempt worse than this one would have been,
+   * and it is the only thing the hoard is ever spent on.
    */
   fail(realm: number): void {
     this.held = 0;
