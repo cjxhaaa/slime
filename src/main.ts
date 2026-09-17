@@ -649,10 +649,8 @@ function offerBreakThrough(): void {
     cultivation.breakThrough();
     bubble.hide();
     slime.clearAlert();
-    // Applied before the performance starts, so the shockwave and the body are already wearing the
-    // colour that was just arrived at — the new colour leaving the body *is* the event.
-    applyLook();
     if (!wasAscended && cultivation.ascended) {
+      applyLook();
       slime.ascend();
       // Said once, on the one occasion someone has just finished the whole thing. Not an
       // interruption — they pressed the button a second ago — and it is the only place the rebirth
@@ -661,7 +659,15 @@ function offerBreakThrough(): void {
       emitPetState();
     } else if (cultivation.realm !== fromRealm) {
       // Eight of these in a run against seventy-two stages, and until now they looked identical.
+      //
+      // The new look is deliberately *not* applied here. The pet has to still be wearing the old
+      // form when it goes into the column, or the reveal has nothing to reveal — the slime asks for
+      // the change itself, at the instant nothing can be seen of it. See `takeLookRequest`.
       slime.breakRealm();
+      // Qi pulled in from well outside the body, using the same dust the keyboard produces.
+      motes.spawn(30, slime.x, slime.y, slime.blob.restRadius, 3.2);
+    } else {
+      applyLook();
     }
     // Straight to disk rather than on the next heartbeat. This is the one moment a player would
     // genuinely mind losing, and it happens rarely enough to be worth a write of its own.
@@ -766,6 +772,8 @@ function frame(now: number): void {
   if (readyToRaise !== null) void runRaise(readyToRaise);
   const readyToSwallow = slime.takeSwallowRequest();
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
+  // The new form goes on when the slime says so, which is when it is hidden inside the column.
+  if (slime.takeLookRequest()) applyLook();
 
   // What the bubble says, in priority order. An alert outranks everything: it is the one thing
   // on screen asking for an answer, and it must not be displaced by an idle greeting.
@@ -804,7 +812,9 @@ function frame(now: number): void {
     cultivation.swallow();
     slime.gulp(reached ? Math.atan2(reached.y - slime.y, reached.x - slime.x) : 0);
   }
-  if (absorbed > 0 || eaten > 0) applyLook();
+  // Not while a realm is changing: the look is on a timer then, and putting the new form on early
+  // because a speck of dust happened to land would undo the entire reveal.
+  if ((absorbed > 0 || eaten > 0) && !slime.isChangingRealm) applyLook();
 
   const target = glyphs.nearest(slime.x);
   if (target) {

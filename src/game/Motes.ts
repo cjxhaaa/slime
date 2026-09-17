@@ -31,9 +31,10 @@ const SpawnFar = 3.4;
  * The most that can exist at once.
  *
  * Someone leaning on a key is not typing, and should not be able to turn the desktop into a
- * snowstorm or the frame budget into a problem.
+ * snowstorm or the frame budget into a problem. The headroom above what typing can produce is for
+ * the cloud a realm breakthrough pulls in all at once.
  */
-const MaxMotes = 36;
+const MaxMotes = 64;
 
 export interface Rect {
   x: number;
@@ -55,10 +56,12 @@ export class Motes {
   }
 
   /** Knocks `count` specks loose around a body at (x, y) with the given radius. */
-  spawn(count: number, x: number, y: number, radius: number): void {
+  spawn(count: number, x: number, y: number, radius: number, spread = 1): void {
     for (let i = 0; i < count && this.items.length < MaxMotes; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const distance = radius * (SpawnNear + Math.random() * (SpawnFar - SpawnNear));
+      // `spread` widens the ring they appear on. A keystroke drops one just outside the body; a
+      // breakthrough pulls a cloud in from much further out, and that is the same code.
+      const distance = radius * spread * (SpawnNear + Math.random() * (SpawnFar - SpawnNear));
       this.items.push({
         x: x + Math.cos(angle) * distance,
         y: y + Math.sin(angle) * distance,

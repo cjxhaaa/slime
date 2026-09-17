@@ -334,7 +334,22 @@ check('and none are left drifting', m.count, 0);
 // 18. Leaning on a key is not typing. The pile is bounded however hard it is pushed.
 const flood = new Motes();
 flood.spawn(500, 500, 400, 46);
-checkTrue('the snowstorm is bounded', flood.count <= 36);
+checkTrue('the snowstorm is bounded', flood.count <= 64);
+
+// 18b. A breakthrough's cloud has to come from further out than a keystroke's speck.
+//
+// The whole first beat of a realm change is dust arriving from everywhere at once, and it only
+// reads that way if it has somewhere to arrive *from*. Spawned at the typing distance the same
+// thirty specks are a puff that lands instantly.
+function spawnDistance(spread?: number): number {
+  const set = new Motes();
+  set.spawn(1, 500, 400, 46, spread);
+  const box = set.bounds()!;
+  return Math.hypot(box.x + box.width / 2 - 500, box.y + box.height / 2 - 400);
+}
+checkTrue('a breakthrough draws from further out', spawnDistance(3.2) > spawnDistance() * 3);
+// And still outside the body either way: a speck must never appear on top of the pet.
+checkTrue('no dust starts inside the pet', spawnDistance() > 46);
 
 // 19. Nothing at the keyboard means nothing on screen and nothing to draw.
 const still = new Motes();

@@ -798,6 +798,50 @@ Two things about nourishment that are easy to get subtly wrong, and both are ass
   which is exactly backwards. The assertion that catches it is the same shape as the one for the
   bottleneck: one long settle and sixty short ones over the same stretch must agree.
 
+### A breakthrough is something going away and something else coming out
+
+Eight times in a run the realm changes, and the first two attempts at showing it both failed the
+same way. The first one reused the stage animation: the pet looked pleased and the palette swapped
+between two frames. The second added a column of light and slid the new colour up the body. Neither
+one read as becoming something else, because in both of them **the body was on screen the whole
+time** — you were watching a thing get repainted, not a thing turn into another thing.
+
+So now it goes away. Three beats:
+
+| | | |
+|---|---|---|
+| **Drawn in** | 1.0s | Dust arrives from much further out than typing ever throws it, and much more of it, while the body trembles and brightens |
+| **Taken** | 0.45s | A thick column comes up and swallows it whole |
+| **Revealed** | 0.85s | A figure surfaces inside the column, and the column thins out around it |
+
+The column is drawn **in front of** the body rather than behind it. That is the entire mechanism:
+the old form is hidden, the new size and colour are put on while nothing can be seen, and what the
+light uncovers is already different. No cross-dissolve, no two bodies at some blend.
+
+The look change is a one-shot request — `takeLookRequest()` — rather than something the caller
+times, and it had to be, because the frame loop applies the look for its own reasons: a single
+absorbed speck of dust would have put the new form on early and left the reveal with nothing to
+reveal. The guard for that is `isChangingRealm`.
+
+Two things that were not obvious until it was on screen:
+
+**The column cannot hide the body by itself.** It is three nested slabs, and only the innermost is
+opaque — which is narrow, so the old silhouette showed on either side of a bright stripe. What
+actually hides it is a separate bloom centred on the body, opaque well past its own edge. That
+started as one white-into-colour gradient, and a single gradient has to hold full alpha through the
+colour shift to stay opaque, which draws a hard ring at the outer edge; on a pale desktop it looked
+like a soap bubble. It is two passes now: a soft realm-coloured glow, and a smaller genuinely white
+disc on top.
+
+**The bloom has to fade faster than the column.** Fading them together is a crossfade between two
+slimes. The figure has to come back inside a column that is still standing, so they are two
+separate quantities on two different curves — the veil is gone by 60% of the beat, and the column
+holds full strength for the first 35% and only then thins.
+
+And the column's own gradient uses the pale half of the palette and white, never `edge`. That was
+fine for 金丹, whose edge is a warm gold. 合体 is `#2b3894` and 大乘 is `#221c3d`, and a beam of
+light faded through either of those is a column of smoke.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held
