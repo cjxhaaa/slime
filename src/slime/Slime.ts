@@ -16,7 +16,7 @@ import {
   stepShards,
 } from './Breakthrough';
 import { HaloReach } from '../game/Glyphs';
-import { clear, drowsy } from './colour';
+import { clear, mix, smooth } from './colour';
 
 export type Mood =
   | 'idle'
@@ -230,7 +230,21 @@ const PALETTE: Record<string, Palette> = {
   // Eating. Deeper and more saturated than calm - the same creature, visibly committed to
   // something, and distinct at a glance from both "fine" and "something wants you".
   devour: { core: '#7ae0bb', edge: '#18a383', rim: '#0d6f5b' },
+  // One colour for every realm, arrived at by a fade rather than by a substitution. Deriving a
+  // dimmed version of each realm's own palette was tried — see the note in `colour.ts` — and nine
+  // dim colours turned out to be more of a palette than the pet wanted.
+  sleep: { core: '#b9d8ee', edge: '#6fa8cd', rim: '#4d86ab' },
 };
+
+/**
+ * How long the body takes to take on the sleeping colour, and to lose it again.
+ *
+ * Asymmetric on purpose. Dozing off is a drift and waking is a start, so the way back is under half
+ * as long — a slime that took a leisurely second to notice you had poked it would read as
+ * unresponsive rather than as sleepy.
+ */
+const SleepFadeSeconds = 1.1;
+const WakeFadeSeconds = 0.4;
 
 export class Slime {
   x: number;
@@ -360,21 +374,32 @@ export class Slime {
       this.gradients.clear();
     }
     this.bodyLook = look;
-    // Derived once here rather than per frame in `draw`. Nine string builds and a gradient cache
-    // entry are nothing on a realm change and would be silly sixty times a second.
-    this.sleepPalette = {
-      core: drowsy(look.palette.core),
-      edge: drowsy(look.palette.edge),
-      rim: drowsy(look.palette.rim),
-    };
   }
 
-  /** The current realm's palette, asleep. See `drowsy`. */
-  private sleepPalette: Palette = {
-    core: drowsy(PALETTE.calm.core),
-    edge: drowsy(PALETTE.calm.edge),
-    rim: drowsy(PALETTE.calm.rim),
-  };
+  /**
+   * 0 awake, 1 asleep, and everything in between while it is on its way to one of those.
+   *
+   * Raw and un-eased; `sleepTint` is the eased version. Kept separate so the easing can be changed
+   * without the timing meaning something different.
+   */
+  private sleepFade = 0;
+
+  /** How much of the sleeping colour is showing, eased. */
+  private get sleepTint(): number {
+    return smooth(this.sleepFade);
+  }
+
+  /**
+   * True while the colour is still on its way.
+   *
+   * The renderer has to know, because a fade is the one thing this pet does that changes what is on
+   * screen without moving anything: without this, hovering a sleeping slime awake and then not
+   * touching it again would leave the body frozen half blue until something else happened to
+   * trigger a repaint.
+   */
+  private get sleepFading(): boolean {
+    return this.sleepFade > 0 && this.sleepFade < 1;
+  }
 
   private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0 };
   private chaseX: number | null = null;
@@ -563,12 +588,21 @@ export class Slime {
     this.chaseX = x;
   }
 
+  /**
+   * `cache` is false while the sleep fade is mid-flight.
+   *
+   * The cache is keyed on the core colour, and a fade produces a new one every frame — so caching
+   * through a transition would add a gradient per frame, forever, for every time the pet ever dozed
+   * off. Building one per frame instead costs four `addColorStop` calls, which is what half the
+   * things in this file already do, and only for the second or so the colour is moving.
+   */
   private bodyGradient(
     context: CanvasRenderingContext2D,
     palette: { core: string; edge: string },
+    cache = true,
   ): CanvasGradient {
     const key = palette.core;
-    const cached = this.gradients.get(key);
+    const cached = cache ? this.gradients.get(key) : undefined;
     if (cached) return cached;
     const gradient = context.createRadialGradient(
       -this.radius * 0.3,
@@ -643,6 +677,9 @@ export class Slime {
       Math.abs(this.y - this.renderY) > 0.05 ||
       this.blinkPhase > 0.001 ||
       this.absorbFlash > 0.01 ||
+      // A fade is the one thing here that changes the screen without moving anything, so nothing
+      // else in this list would catch it.
+      this.sleepFading ||
       this.ascension !== null ||
       this.realmBreak !== null ||
       this.ring !== null ||
@@ -1205,7 +1242,12 @@ export class Slime {
   }
 
   private updateMood(dt: number, env: Env, ground: number): void {
-    void dt;
+    // Before any of the early returns below: the colour has to keep arriving while the pet is held,
+    // eating, breaking through or anything else that cuts this function short.
+    const sleeping = this.mood === 'asleep' || this.mood === 'sleepy';
+    const step = dt / (sleeping ? SleepFadeSeconds : WakeFadeSeconds);
+    this.sleepFade = Math.min(1, Math.max(0, this.sleepFade + (sleeping ? step : -step)));
+
     const idleFor = this.clock - this.lastInteraction;
 
     if (this.grabbed || this.devour) return;
@@ -1624,15 +1666,25 @@ export class Slime {
   draw(context: CanvasRenderingContext2D): void {
     const ground = this.groundFor(this.envHeight);
     const airborne = Math.max(0, ground - this.renderY);
-    const palette = this.devour
+    // Sleep is no longer a branch in here, it is a blend laid over whatever the answer would
+    // otherwise have been. Which also means an alert that fires on a sleeping pet slides from blue
+    // to amber instead of cutting, and that is the right behaviour for free.
+    const awake = this.devour
       ? PALETTE.devour
       : this.mood === 'nudge'
         ? PALETTE.nudge
         : this.mood === 'alert'
-        ? PALETTE.alert
-        : this.mood === 'asleep' || this.mood === 'sleepy'
-          ? this.sleepPalette
+          ? PALETTE.alert
           : this.bodyLook.palette;
+    const tint = this.sleepTint;
+    const palette =
+      tint <= 0
+        ? awake
+        : {
+            core: mix(awake.core, PALETTE.sleep.core, tint),
+            edge: mix(awake.edge, PALETTE.sleep.edge, tint),
+            rim: mix(awake.rim, PALETTE.sleep.rim, tint),
+          };
 
     this.drawRing(context);
     this.drawAura(context);
@@ -1694,7 +1746,7 @@ export class Slime {
 
     Blob.trace(context, this.points, this.blob.count);
 
-    context.fillStyle = this.bodyGradient(context, palette);
+    context.fillStyle = this.bodyGradient(context, palette, !this.sleepFading);
     context.globalAlpha = 0.92;
     context.fill();
 
@@ -1892,11 +1944,8 @@ export class Slime {
 
   private drawSleepMarks(context: CanvasRenderingContext2D): void {
     context.save();
-    // The body's own sleeping colour, so the marks belong to this pet rather than to a fixed blue.
-    // Its core rather than its rim: `drowsy` lands every palette's core in the same mid-dim band,
-    // which is what small text needs to survive both a black wallpaper and a white one. The rims
-    // of the late realms are near enough to black to vanish on half of them.
-    context.fillStyle = this.sleepPalette.core;
+    // Off the palette rather than a copy of its literal, which is what this was before.
+    context.fillStyle = PALETTE.sleep.rim;
     context.font = '600 14px system-ui, sans-serif';
     for (let i = 0; i < 3; i++) {
       // Each z rises and fades on its own offset phase, so they read as a drift rather than a blink.
