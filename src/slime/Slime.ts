@@ -790,7 +790,9 @@ export class Slime {
     this.blob.poke(angle, -260, 1.4);
     this.blob.squash(0.22);
     this.mood = 'happy';
-    this.moodUntil = this.clock + 1.4;
+    // Long enough to be read rather than glimpsed. A poke is the most common thing anyone does to
+    // this pet and the reply was over before it registered.
+    this.moodUntil = this.clock + 1.9;
   }
 
   /**
@@ -1317,11 +1319,32 @@ export class Slime {
         context.stroke();
       }
     } else if (this.mood === 'happy') {
+      // Blush first, so the eye arcs sit on top of it. Two soft patches are what turn "eyes
+      // closed" into "pleased" — without them an upturned arc reads much the same as a squint.
+      //
+      // Drawn as a gradient at high alpha rather than a flat patch at low alpha, and that is not a
+      // style choice. Red composited over this body at 0.4 lands on a grey-beige, because the
+      // green channel it is blending into is almost maxed — two dirty smudges instead of a blush.
+      // At 0.75 the centre is actually pink, and the gradient is what keeps it from being a disc.
+      context.save();
+      for (const side of [-1, 1]) {
+        const cx = side * this.radius * 0.36 * scale.x + lookX;
+        const cy = eyeY + this.radius * 0.2 + lookY;
+        const spread = this.radius * 0.16;
+        const blush = context.createRadialGradient(cx, cy, 0, cx, cy, spread);
+        blush.addColorStop(0, 'rgba(255, 122, 122, 0.78)');
+        blush.addColorStop(1, 'rgba(255, 122, 122, 0)');
+        context.fillStyle = blush;
+        context.beginPath();
+        context.ellipse(cx, cy, spread, spread * 0.62, 0, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.restore();
+
       context.lineWidth = 2.6;
       for (const [ex, ey] of eyes) {
         context.beginPath();
-        // Upturned arc: the whole "pleased" read comes from the eyes, not the mouth.
-        context.arc(ex, ey + this.radius * 0.06, this.radius * 0.12, 1.15 * Math.PI, 1.85 * Math.PI);
+        context.arc(ex, ey + this.radius * 0.07, this.radius * 0.135, 1.1 * Math.PI, 1.9 * Math.PI);
         context.stroke();
       }
     } else {
@@ -1362,11 +1385,20 @@ export class Slime {
     context.lineWidth = 2.2;
     context.beginPath();
     if (this.mood === 'happy') {
-      // A small ω, drawn as two arcs.
-      const w = this.radius * 0.085;
-      context.arc(lookX - w, mouthY, w, 0, Math.PI);
-      context.arc(lookX + w, mouthY, w, 0, Math.PI);
-      context.stroke();
+      // An ω, as two arcs in two separate paths.
+      //
+      // In one path the canvas joins the end of the first arc to the start of the second with a
+      // straight line, which draws a bar across the top and closes the whole thing into a dark
+      // blob. And at the old radius — 0.085, under four pixels — a 2.2px stroke was wider than the
+      // arcs were tall, so what little survived filled in solid. Both of those were invisible at
+      // the size the pet is normally drawn and obvious the moment it was magnified.
+      const w = this.radius * 0.115;
+      context.lineWidth = 2;
+      for (const side of [-1, 1]) {
+        context.beginPath();
+        context.arc(lookX + side * w, mouthY, w, 0, Math.PI);
+        context.stroke();
+      }
     } else if (this.mood === 'surprised' || this.mood === 'alert') {
       context.ellipse(lookX, mouthY, this.radius * 0.075, this.radius * 0.1, 0, 0, Math.PI * 2);
       context.fill();
