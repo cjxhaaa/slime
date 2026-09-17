@@ -7,7 +7,6 @@ import {
   drawCharms,
   drawShards,
   drawShell,
-  drawWisp,
   drawWisps,
   makeCracks,
   makeShards,
@@ -18,7 +17,7 @@ import {
 } from './Breakthrough';
 import { HaloReach } from '../game/Glyphs';
 import { clear, mix } from './colour';
-import { smooth, wispFade } from './ease';
+import { smooth } from './ease';
 
 export type Mood =
   | 'idle'
@@ -129,6 +128,14 @@ const PillarHoldFraction = 0.35;
 const RingSeconds = 0.85;
 /** Where the ring stops, as a multiple of the body radius. Also what `bounds` has to reserve. */
 const RingReach = 3.2;
+/**
+ * And where a stage breakthrough's ring stops.
+ *
+ * Half as far and a third as thick. The ring is the realm breakthrough's gesture and a stage
+ * borrowing it at full size does not read as a smaller event, it reads as the same event — which
+ * would flatten the hierarchy the three tiers exist to express. It is a ripple, not a shockwave.
+ */
+const StageRingReach = 1.7;
 /** How long the slime spends hauling a buried window to the front before it starts eating. */
 const HeaveSeconds = 1;
 /** How long the body takes to peel back off, whether it ate or gave up. */
@@ -210,6 +217,13 @@ export interface BodyLook {
    * many runs there have been, so it is the one piece of the body that a rebirth does not undo.
    */
   aura: number;
+  /**
+   * How many qi veins run through the body: one per stage within the current realm, 1 to 9.
+   *
+   * The realm is carried by the palette and the size, and both of those move once every nine
+   * stages. This is what carries the nine.
+   */
+  veins: number;
 }
 
 /**
@@ -251,22 +265,54 @@ const WakeFadeSeconds = 0.4;
 /**
  * A stage breakthrough: the small one, seventy-two times a run.
  *
- * It had no animation at all — `clearAlert` left a pleased face and that was the whole event, which
- * meant **advancing a stage looked exactly like being poked**, since a poke leaves the same face.
- * The one moment that is supposed to say "that worked" was indistinguishable from the most casual
- * thing anyone does to this pet.
+ * It had no animation at all to begin with — `clearAlert` left a pleased face and that was the
+ * whole event, and a poke leaves the same face, so **advancing a stage looked exactly like being
+ * prodded**.
  *
- * It has to stay small, though, and the plan is emphatic about why: at seventy-two a run, anything
- * with weight to it becomes something to sit through. So it is under a second, it is one flash and
- * two clouds, and it is deliberately the *same kind* of thing as a realm change at a fraction of
- * the size — a realm change sends up five of the same clouds and brings an array, eight charms and
- * a shell with them.
+ * The first attempt at fixing that was a scaled-down realm breakthrough: two of the same auspicious
+ * clouds, drifting off the shoulder. It did not work, and it is worth being precise about why,
+ * because the failure was in the design and not in the numbers.
+ *
+ * **A diluted version of an impressive thing reads as weak, not as small.** A small event needs its
+ * own gesture rather than a fraction of somebody else's.
+ *
+ * **It happened beside the body instead of to it.** Clouds drifting off the shoulder are peripheral
+ * vision. This project's whole thesis is that the slime *is* the progress bar, so a stage has to
+ * happen in the body.
+ *
+ * **And it had nothing to refer to.** 金丹五层 to 金丹六层 changed nothing that stayed changed —
+ * the palette and the size both move once every nine stages and say nothing in between. Any
+ * one-off flourish over a state that does not move is a flicker, however well drawn.
+ *
+ * So: something arrives, the body takes it in, it lands, and it leaves a mark that stays. Four
+ * beats, and the last one is the point.
  */
-const StageSeconds = 0.85;
-/** How many clouds go up. Two, against the realm breakthrough's five. */
-const StageWisps = 2;
-/** How far they rise, as a multiple of the body radius. Also what `bounds` reserves. */
-const StageRise = 2.3;
+const StageSeconds = 1.2;
+/**
+ * Where each beat sits inside that, as a fraction.
+ *
+ * The breath lands the instant the spark does. The first arrangement had the spark arrive at 0.26
+ * and the body react at 0.46, and those two tenths of a second of nothing in between broke the
+ * causal chain the whole sequence is built on — the body has to look like it is reacting to the
+ * thing, not like it happens to do something shortly afterwards.
+ */
+const SparkBeat = 0.26;
+const BreathBeat = 0.28;
+const RippleBeat = 0.5;
+/** How long the new vein takes to draw itself in, in seconds. Starts on the breath. */
+const VeinGrowSeconds = 0.8;
+/** How far above the body the spark condenses, as a multiple of the radius. `bounds` reserves it. */
+const SparkHeight = 2.6;
+
+/**
+ * How many veins the body can hold, and how they are drawn.
+ *
+ * One per stage, so nine at 九层. They are deliberately faint: this is texture that tells you where
+ * in a realm you are at a glance, not decoration, and nine bright lines on a forty-six pixel body
+ * would be a diagram.
+ */
+const MaxVeins = 9;
+const VeinReach = 0.82;
 
 export class Slime {
   x: number;
@@ -408,6 +454,18 @@ export class Slime {
 
   /** 0 to 1 through a stage breakthrough, or null when there is not one. */
   private stageBreak: number | null = null;
+  /**
+   * The newest vein's own progress, 0 to 1, drawn separately from the beat above.
+   *
+   * Separate because the vein has to be *finished* and stay finished: it outlives the sequence, and
+   * on a restore from disk it has to start at 1 rather than draw itself in for a save file that was
+   * loaded an hour after the breakthrough happened.
+   */
+  private veinGrow = 1;
+  /** Vein paths in body-local units, regenerated when the realm changes. */
+  private veins: number[][] = [];
+  /** What `veins` was generated for, so it is not rebuilt every frame. */
+  private veinsKey = '';
 
   /**
    * The small breakthrough. One flash, a stretch, and a couple of clouds going up.
@@ -419,15 +477,14 @@ export class Slime {
   breakStage(): void {
     this.lastInteraction = this.clock;
     this.stageBreak = 0;
-    // Negative squash is a stretch. The body pulls up and lets go, which is the cheapest motion
-    // that reads as rising rather than as being hit.
-    this.blob.squash(-0.26);
-    this.blob.pulse(70);
-    // Short of the full flash a swallowed charm gets. This happens seventy-two times a run, and a
-    // body that whites out completely that often stops being a flourish and becomes a flicker.
-    this.absorbFlash = 0.8;
-    this.vy = -HOP_SPEED * 0.32;
+    // The newest vein starts empty and draws itself in over the last two beats. The caller has
+    // already applied the new look, so `bodyLook.veins` is the number it is growing towards.
+    this.veinGrow = 0;
+    // Bracing, ahead of the spark arriving. Positive squash is a settle, not a stretch — the
+    // stretch comes on the breath beat.
+    this.blob.squash(0.14);
   }
+
 
   /** How much of the sleeping colour is showing, eased. */
   private get sleepTint(): number {
@@ -446,7 +503,7 @@ export class Slime {
     return this.sleepFade > 0 && this.sleepFade < 1;
   }
 
-  private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0 };
+  private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0, veins: 1 };
   private chaseX: number | null = null;
   private ascension: { until: number; phase: 'gathering' | 'burst'; tremble: number } | null = null;
   private realmBreak: {
@@ -483,6 +540,8 @@ export class Slime {
 
   /** 0 to 1 while a shockwave is travelling outward, null when there is none. */
   private ring: number | null = null;
+  /** Which event fired it, since a stage's ripple and a realm's shockwave are different sizes. */
+  private ringSmall = false;
   /**
    * How lit up the membrane is from something just going into it, 0 to 1, decaying.
    *
@@ -814,7 +873,12 @@ export class Slime {
       // out with a fixed-size halo on top — which is why this one is in pixels rather than in body
       // radii. A halo that scaled with the body would be a different charm at every realm.
       this.realmBreak ? this.radius * (ArrayReach + 0.2) + HaloReach : 0,
-      this.radius * (this.ring !== null ? RingReach + 0.2 : this.bodyLook.aura > 0 ? 2.5 : 2.2),
+      this.radius *
+        (this.ring !== null
+          ? (this.ringSmall ? StageRingReach : RingReach) + 0.2
+          : this.bodyLook.aura > 0
+            ? 2.5
+            : 2.2),
     );
     // The bud closes well above the body, so while one is out the top of the damaged region is set
     // by its apex rather than by anything the body itself draws.
@@ -840,10 +904,9 @@ export class Slime {
       this.renderY - topSpan,
       this.renderY - this.radius * 0.7 - 60,
       this.renderY - pillar,
-      // A stage breakthrough's clouds go higher than anything the body itself draws, and they are
-      // the one thing here small enough that forgetting to reserve for them would look like a
-      // smear rather than like a missing effect.
-      this.stageBreak !== null ? this.renderY - this.radius * (StageRise + 0.9) : Infinity,
+      // The spark condenses above everything else the body draws, and it is small enough that
+      // forgetting to reserve for it would read as a smear rather than as a missing effect.
+      this.stageBreak !== null ? this.renderY - this.radius * (SparkHeight + 0.6) : Infinity,
     );
     const bottom = Math.max(
       this.renderY + bottomSpan,
@@ -1299,8 +1362,33 @@ export class Slime {
     this.sleepFade = Math.min(1, Math.max(0, this.sleepFade + (sleeping ? step : -step)));
 
     if (this.stageBreak !== null) {
+      const before = this.stageBreak;
       this.stageBreak += dt / StageSeconds;
+
+      // The breath. Pulls up tall and narrow, and the flash goes with it — the one moment in the
+      // sequence where the body itself does something.
+      if (before < BreathBeat && this.stageBreak >= BreathBeat) {
+        this.blob.squash(-0.34);
+        this.blob.pulse(84);
+        this.vy = -HOP_SPEED * 0.3;
+        // Short of the full flash a swallowed charm gets. This happens seventy-two times a run, and
+        // a body that whites out completely that often stops being a flourish and becomes a
+        // flicker.
+        this.absorbFlash = Math.max(this.absorbFlash, 0.72);
+      }
+      // And the ring, at the top of the rise. One thin one, against the realm breakthrough's.
+      if (before < RippleBeat && this.stageBreak >= RippleBeat) {
+        this.ring = 0;
+        this.ringSmall = true;
+      }
+
       if (this.stageBreak >= 1) this.stageBreak = null;
+    }
+    // Held until the breath, then runs whether or not the beat is still going — the vein has to
+    // finish even if something interrupts the sequence, because it is the part that stays.
+    const growing = this.stageBreak === null || this.stageBreak >= BreathBeat;
+    if (this.veinGrow < 1 && growing) {
+      this.veinGrow = Math.min(1, this.veinGrow + dt / VeinGrowSeconds);
     }
 
     const idleFor = this.clock - this.lastInteraction;
@@ -1392,6 +1480,7 @@ export class Slime {
           // Now, while nothing can be seen of it. The new form is put on inside the light.
           this.lookPending = true;
           this.ring = 0;
+          this.ringSmall = false;
         }
       } else {
         // The figure coming back first, the column going second.
@@ -1665,17 +1754,23 @@ export class Slime {
     // Two waves, the second lagging. One ring reads as a circle being animated; two read as
     // something having gone off. The lag is small enough that they are one gesture rather than a
     // pulse and an echo.
-    for (const [lag, weight] of [
-      [0, 1],
-      [0.2, 0.55],
-    ]) {
+    const reach = this.ringSmall ? StageRingReach : RingReach;
+    // One wave for a ripple, two for a shockwave. Two rings read as something having gone off,
+    // which is the wrong claim to make about a stage.
+    const waves = this.ringSmall
+      ? [[0, 1]]
+      : [
+          [0, 1],
+          [0.2, 0.55],
+        ];
+    for (const [lag, weight] of waves) {
       const t = this.ring - lag;
       if (t <= 0 || t >= 1) continue;
-      const radius = this.radius * (0.9 + (RingReach - 0.9) * t);
+      const radius = this.radius * (0.9 + (reach - 0.9) * t);
       // Linear, not eased. The first version fell off as (1-t)^1.4, which left the wave visible
       // for under half its travel — it read as a blink at the body rather than as a wave leaving.
       context.globalAlpha = 0.58 * (1 - t) * weight;
-      context.lineWidth = 7 * (1 - t) + 1.2;
+      context.lineWidth = (this.ringSmall ? 2.4 : 7) * (1 - t) + 1.2;
       context.strokeStyle = this.bodyLook.palette.edge;
       context.beginPath();
       context.arc(this.renderX, this.renderY, radius, 0, Math.PI * 2);
@@ -1855,6 +1950,9 @@ export class Slime {
     context.fill();
     context.restore();
 
+    // Under the face, over the body's own shading: they are *in* the membrane.
+    this.drawVeins(context, palette);
+
     this.drawFace(context);
     // The crust, over everything the body draws including the face. Covering the face is most of
     // what makes it read as being sealed in rather than as a change of paint.
@@ -1873,7 +1971,7 @@ export class Slime {
     context.restore();
 
     this.drawOrdealFront(context);
-    this.drawStageWisps(context, palette);
+    this.drawStageSpark(context, palette);
     if (this.mood === 'asleep') this.drawSleepMarks(context);
   }
 
@@ -1999,41 +2097,163 @@ export class Slime {
   }
 
   /**
-   * The couple of clouds a stage breakthrough sends up.
+   * The qi veins, laid out once per realm.
    *
-   * Stateless beyond the one progress number: two clouds on fixed opposite paths is enough at this
-   * size, and a list of particles for something that happens for under a second would be machinery
-   * for its own sake. They share `drawWisp` with the realm breakthrough on purpose — the small
-   * event has to read as the same kind of thing as the big one.
+   * Nine curved strokes running outward from just off centre, each one bending as it goes so that
+   * nine of them read as a grain in the body rather than as a starburst. Seeded off the realm, so
+   * the pattern is stable for the whole nine stages it is being built up over and different for the
+   * next realm — which matters, because the newest one draws itself in and a pattern that moved
+   * between frames would make that impossible to see.
    */
-  private drawStageWisps(context: CanvasRenderingContext2D, palette: Palette): void {
-    const progress = this.stageBreak;
-    if (progress === null) return;
-    for (let i = 0; i < StageWisps; i++) {
-      // Staggered, so the second one is still on its way up as the first fades.
-      const rise = Math.min(1, Math.max(0, progress * 1.35 - i * 0.28));
-      if (rise <= 0 || rise >= 1) continue;
-      const side: -1 | 1 = i % 2 === 0 ? 1 : -1;
-      const x = this.renderX + side * this.radius * (0.35 + rise * 0.7);
-      const y = this.renderY - this.radius * (0.35 + rise * StageRise);
-      // Swells and then shrinks again, rather than growing the whole way.
+  private veinsFor(key: string): number[][] {
+    if (this.veinsKey === key) return this.veins;
+    let state = 0;
+    for (let i = 0; i < key.length; i++) state = (state * 31 + key.charCodeAt(i)) % 2147483647;
+    const random = () => {
+      state = (state * 48271) % 2147483647;
+      return state / 2147483647;
+    };
+    const built: number[][] = [];
+    for (let i = 0; i < MaxVeins; i++) {
+      // `[radius, start, sweep, drift]`: an arc that wanders outward or inward as it goes.
       //
-      // Eight pixels was the first guess and too small to read as a cloud at all — a cloud that
-      // cannot be read as one is a speck of dirt, and two specks of dirt is worse than nothing. But
-      // growing it all the way out was also wrong, because low alpha over a dark desktop
-      // desaturates whatever you put there and there is no arithmetic that avoids it. Something
-      // getting *smaller* as it fades reads as dissipating; something getting bigger as it fades
-      // reads as smoke spreading out, which is the one thing these are here instead of.
-      const size = this.radius * (0.2 + 0.2 * Math.sin(rise * Math.PI));
-      // Shared with the realm breakthrough's clouds, and the shape of the curve is the point —
-      // see `wispFade`.
-      const alpha = wispFade(rise) * 0.85;
-      context.save();
-      context.translate(x, y);
-      context.rotate(side * (0.25 - rise * 0.6));
-      drawWisp(context, 0, 0, size, side, alpha, palette.core);
-      context.restore();
+      // Tangential, not radial. The first pass drew them as spokes from the middle outward and they
+      // read as **cracks** — which is not a near miss, it is the exact thing the jade shell of a
+      // realm breakthrough draws, so the two would have been telling contradictory stories with the
+      // same marks. Qi circulating inside a membrane goes *around*.
+      const radius = 0.3 + (i / MaxVeins) * 0.42 + (random() - 0.5) * 0.1;
+      built.push([
+        Math.min(VeinReach, radius),
+        random() * Math.PI * 2,
+        (1.1 + random() * 1.5) * (random() < 0.5 ? -1 : 1),
+        (random() - 0.5) * 0.22,
+      ]);
     }
+    this.veins = built;
+    this.veinsKey = key;
+    return built;
+  }
+
+  /**
+   * The veins, clipped to the body.
+   *
+   * Drawn in the body's local space, so they travel and squash with it without having to be
+   * deformed by the soft-body simulation themselves — and clipped to the real outline, so they
+   * never leak past a wobble.
+   *
+   * The newest one grows. That is the entire point of the feature: it is the only thing a stage
+   * breakthrough changes that is still there afterwards.
+   */
+  private drawVeins(context: CanvasRenderingContext2D, palette: Palette): void {
+    const count = Math.min(MaxVeins, Math.max(0, Math.round(this.bodyLook.veins)));
+    if (count <= 0 || this.devour) return;
+    const paths = this.veinsFor(`${palette.core}:${this.bodyLook.aura}`);
+
+    context.save();
+    Blob.trace(context, this.points, this.blob.count);
+    context.clip();
+    context.lineCap = 'round';
+    for (let i = 0; i < count; i++) {
+      const newest = i === count - 1;
+      const grown = newest ? this.veinGrow : 1;
+      if (grown <= 0.001) continue;
+      const [radius, start, sweep, drift] = paths[i];
+      const r = this.radius;
+
+      // Traced as a short polyline rather than an `arc`, because the radius drifts as it goes —
+      // a true circle inside a wobbling body reads as a machined part.
+      const steps = 12;
+      const trace = () => {
+        context.beginPath();
+        for (let step = 0; step <= steps; step++) {
+          const t = (step / steps) * grown;
+          const angle = start + sweep * t;
+          const at = (radius + drift * t) * r;
+          const px = Math.cos(angle) * at;
+          const py = Math.sin(angle) * at;
+          if (step === 0) context.moveTo(px, py);
+          else context.lineTo(px, py);
+        }
+        context.stroke();
+      };
+
+      // Drawn twice: a wide faint pass for the bloom in the membrane and a narrow bright one for
+      // the strand itself. The same trick the aura bands use, and for the same reason — one stroke
+      // reads as a wireframe, two read as light under a surface.
+      for (const [width, alpha, pen] of [
+        [r * 0.13, 0.15, palette.core],
+        [r * 0.042, 0.4, '#ffffff'],
+      ] as [number, number, string][]) {
+        // A strand still arriving is brighter than the settled ones, which is what makes it
+        // possible to see *which* one is new without counting.
+        context.globalAlpha = alpha * (newest ? 1 + (1 - grown) * 1.4 : 1);
+        context.lineWidth = width;
+        context.strokeStyle = pen;
+        trace();
+      }
+
+      // A bright head on the one still being drawn, so it reads as being written rather than as
+      // fading up.
+      if (newest && grown < 1) {
+        const angle = start + sweep * grown;
+        const at = (radius + drift * grown) * r;
+        const hx = Math.cos(angle) * at;
+        const hy = Math.sin(angle) * at;
+        const head = context.createRadialGradient(hx, hy, 0, hx, hy, r * 0.2);
+        head.addColorStop(0, '#ffffff');
+        head.addColorStop(1, clear(palette.core));
+        context.globalAlpha = 0.95;
+        context.fillStyle = head;
+        context.beginPath();
+        context.arc(hx, hy, r * 0.2, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    context.restore();
+  }
+
+  /**
+   * The spark, on the first beat: a point of light condensing above the pet and dropping into it.
+   *
+   * Deliberately nothing like the dust a keystroke knocks loose, because that is the one thing it
+   * could be mistaken for — and "small thing flies into body" happens several times a second while
+   * anybody is typing. So this one is much bigger, it has a halo and a tail, it comes from directly
+   * overhead rather than from a random angle on a ring, and it is white rather than realm-coloured.
+   */
+  private drawStageSpark(context: CanvasRenderingContext2D, palette: Palette): void {
+    const beat = this.stageBreak;
+    if (beat === null || beat > SparkBeat) return;
+    const t = beat / SparkBeat;
+    // Eases in, so it appears rather than being flicked on, then accelerates down.
+    const fall = t * t;
+    const y = this.renderY - this.radius * SparkHeight * (1 - fall);
+    const size = this.radius * (0.1 + 0.05 * t);
+    const alpha = Math.min(1, t * 4);
+
+    context.save();
+    // The tail, pointing back up the way it came. Short at the top, long as it accelerates.
+    context.globalAlpha = alpha * 0.5;
+    context.lineCap = 'round';
+    context.lineWidth = size * 1.1;
+    const tail = context.createLinearGradient(0, y, 0, y - this.radius * 1.3 * fall);
+    tail.addColorStop(0, '#ffffff');
+    tail.addColorStop(1, clear(palette.core));
+    context.strokeStyle = tail;
+    context.beginPath();
+    context.moveTo(this.renderX, y);
+    context.lineTo(this.renderX, y - this.radius * 1.3 * fall);
+    context.stroke();
+
+    const glow = context.createRadialGradient(this.renderX, y, 0, this.renderX, y, size * 3.4);
+    glow.addColorStop(0, '#ffffff');
+    glow.addColorStop(0.3, palette.core);
+    glow.addColorStop(1, clear(palette.core));
+    context.globalAlpha = alpha;
+    context.fillStyle = glow;
+    context.beginPath();
+    context.arc(this.renderX, y, size * 3.4, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
   }
 
   private drawSleepMarks(context: CanvasRenderingContext2D): void {

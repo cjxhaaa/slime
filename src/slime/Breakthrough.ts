@@ -661,12 +661,12 @@ export function drawWisps(
 /**
  * One auspicious cloud, centred on (x, y). `side` of -1 mirrors it.
  *
- * Extracted so a stage breakthrough can send up one or two of these without owning a second,
- * slightly different cloud. Seventy-two stages against eight realms, so the small event needs to be
- * visibly the same *kind* of thing as the large one and a fraction of the size — which is what a
- * shared painter gets you and two similar painters do not.
+ * Extracted from the loop above so that a stage breakthrough could send up two of these. That idea
+ * did not survive review — a diluted version of an impressive thing reads as weak rather than as
+ * small — and the small event is its own gesture now. The extraction is kept because the loop is
+ * more legible for it.
  */
-export function drawWisp(
+function drawWisp(
   context: CanvasRenderingContext2D,
   x: number,
   y: number,

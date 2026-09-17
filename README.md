@@ -881,22 +881,52 @@ blend.
 
 A stage breakthrough had no animation at all. `clearAlert` left a pleased face and that was the
 entire event — which meant **advancing a stage looked exactly like being poked**, since a poke
-leaves the same face. The one moment that is supposed to say "that worked" was indistinguishable
-from the most casual thing anyone does to this pet.
+leaves the same face.
 
-It is one flash, an upward stretch and two clouds now, in 0.85 seconds. It has to stay small at
-seventy-two a run, so what matters is that it is visibly the *same kind* of thing as a realm change
-at a fraction of the size: the same `drawWisp`, two of them instead of five, and none of the array,
-charms, shell or cocoon. The hierarchy reads as different amounts of one thing rather than as three
-unrelated effects.
+The first attempt at fixing that was a scaled-down realm breakthrough: two of the same auspicious
+clouds, drifting off the shoulder. It failed, and the failure was in the design rather than in the
+numbers, which is the useful part:
 
-Two details. The flash stops short of the full white-out a swallowed charm gets — a body that whites
-out completely seventy-two times a run stops being a flourish and becomes a flicker. And the clouds
-**shrink** as they fade rather than growing: low alpha over a dark desktop desaturates whatever you
-put there and no arithmetic avoids it, so something getting smaller as it goes reads as dissipating
-while something getting bigger reads as smoke spreading out, which is the one thing these exist
-instead of. The fade curve is shared with the realm breakthrough's clouds and holds full strength
-for most of the travel before leaving quickly, for the same reason: better gone than grey.
+**A diluted version of an impressive thing reads as weak, not as small.** A small event needs its
+own gesture, not a fraction of somebody else's.
+
+**It happened beside the body instead of to it.** Clouds drifting off the shoulder are peripheral
+vision, and this project's whole thesis is that the slime *is* the progress bar.
+
+**And it had nothing to refer to.** 金丹五层 to 金丹六层 changed nothing that stayed changed. The
+palette and the size both move once every nine stages and say nothing in between, so any one-off
+flourish over a state that does not move is a flicker however well drawn.
+
+So there are four beats now, and the last one is the point:
+
+| | | |
+|---|---|---|
+| **Spark** | 0–0.31s | A point of white light condenses overhead and falls, trailing |
+| **Breath** | 0.34s | The body pulls up tall and a flash goes through the membrane — on the frame the spark lands, not a moment after |
+| **Ripple** | 0.60s | One thin ring out to 1.7 body radii, at the top of the rise |
+| **Vein** | 0.34–1.2s | A new qi vein draws itself in inside the body, **and stays there** |
+
+**The veins are the referent.** One per stage, one to nine, clipped to the body outline. They say
+where in a realm you are without a number anywhere, and they turn the breakthrough into the moment
+that count goes up. A realm change drops all nine back to one in the new colour — inside the cocoon,
+where nothing can be seen of it. It also pays off the flowing veins that section five of the plan
+has owed since it was written.
+
+Three things learned on the way:
+
+**The veins had to run tangentially, not radially.** The first pass drew them as spokes from the
+centre outward and they read as **cracks** — which is not a near miss, it is precisely what a realm
+breakthrough's jade shell draws, so the two would have been telling opposite stories with the same
+marks. Qi circulating in a membrane goes around.
+
+**The ripple had to be smaller than the realm breakthrough's ring.** Half the reach, a third of the
+width, and one wave instead of two. The ring is the big event's gesture, and a stage borrowing it at
+full size does not read as a smaller event, it reads as the same event.
+
+**The breath had to land on the same frame as the spark.** The first arrangement had the spark
+arrive and the body react two tenths of a second later, and that gap broke the causal chain the
+whole sequence is built on: the body has to look like it is reacting to the thing rather than like
+it happens to do something shortly afterwards.
 
 Taking a breakthrough is also one function now rather than two. Answering the alert and poking a
 ready pet in seclusion had drifted apart, and the seclusion path called `breakThrough` and
