@@ -19,6 +19,18 @@ import { smooth, wispFade } from '../slime/ease.js';
 import { resolveErrand } from './errand.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
+import {
+  BaseOdds,
+  Charms,
+  FailureQiLoss,
+  OddsPerCharm,
+  OddsPerFailure,
+  StageCost,
+  StageSpendFloor,
+  canAutoAdvance,
+  charmsForCertainty,
+  odds,
+} from './charms.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
 
 let failures = 0;
@@ -451,6 +463,71 @@ checkTrue('and a blend of everything is the other one', mix('#b9d8ee', '#4d86ab'
 checkTrue('a cloud arrives and leaves at nothing', wispFade(0) === 0 && wispFade(1) === 0);
 checkTrue('it is at full strength for most of the way', wispFade(0.25) === 1 && wispFade(0.7) === 1);
 checkTrue('and it leaves faster than it arrives', wispFade(0.06) > wispFade(0.94));
+
+// 24. Charms: a count that buys stages and odds.
+//
+// The one property that is not negotiable is the one the window-eating code has in its header:
+// **it must never decide whether you can.** Charms move the odds on a realm; a player with none
+// still gets through. Everything else here is balance and can be retuned; this cannot.
+checkTrue('an empty hoard is still a real chance', odds(0, 0) >= 0.5);
+checkTrue('and the odds can never exceed certainty', odds(100000, 99) === 1);
+check('the base is what it says it is', odds(0, 0), BaseOdds);
+check('a charm is worth its stated slice', odds(1, 0) - odds(0, 0), OddsPerCharm, 1e-9);
+check('and so is a failure', odds(0, 1) - odds(0, 0), OddsPerFailure, 1e-9);
+
+// The pity has to actually terminate. Four failures at the base rate is a one-in-forty event, and
+// four failures at the top realm is the better part of an afternoon — so the fifth attempt has to
+// be a certainty however the first four went, with nothing banked at all.
+checkTrue(
+  'the fifth attempt is certain however the first four went',
+  odds(0, Math.ceil((1 - BaseOdds) / OddsPerFailure)) === 1,
+);
+
+// What it takes to buy certainty, and that asking twice agrees with itself.
+const needed = charmsForCertainty(0, 0);
+check('certainty has a price', needed, Math.ceil((1 - BaseOdds) / OddsPerCharm));
+checkTrue('and paying it is enough', odds(needed, 0) === 1);
+checkTrue('nothing more is wanted once it is certain', charmsForCertainty(needed, 0) === 0);
+
+// Automatic stages are drawn from the same pot as the insurance, so the floor is what stops
+// convenience quietly eating it. There is no setting for this and there should not be one — the
+// spending happens while nobody is looking, so it has to be right by construction.
+checkTrue('a bare hoard does not auto-advance', !canAutoAdvance(StageCost));
+checkTrue('and neither does one sitting exactly on the floor', !canAutoAdvance(StageSpendFloor));
+checkTrue('one charm past the floor and the cost does', canAutoAdvance(StageSpendFloor + StageCost));
+
+const purse = new Charms();
+purse.gather(StageSpendFloor + StageCost);
+checkTrue('spending a stage works from there', purse.takeStage());
+check('and leaves the floor intact', purse.count, StageSpendFloor);
+checkTrue('the next one is refused', !purse.takeStage());
+check('having taken nothing', purse.count, StageSpendFloor);
+
+// A failure empties the pot, which is the sharpest part of the cost: it makes the *next* attempt
+// worse than this one would have been, rather than merely undoing this one.
+purse.fail(2);
+check('a failure wipes the hoard', purse.count, 0);
+check('and is remembered against that realm', purse.failuresAt(2), 1);
+check('only that realm', purse.failuresAt(3), 0);
+checkTrue('so the next attempt there starts better', purse.oddsAt(2) > purse.oddsAt(3));
+
+// And a rebirth must not inherit the pity, or the second climb would be quietly easier than the
+// first for a reason nobody could see.
+purse.clearFailures();
+check('a rebirth forgets the failures', purse.failuresAt(2), 0);
+
+// The set-back is a share of the *stage*, and it can never cost a stage already paid for.
+const knocked = new Cultivation(0);
+knocked.realm = 2;
+knocked.stage = 8;
+knocked.qi = requirement(2, 8);
+knocked.setBack(FailureQiLoss);
+check('failing gives back a slice of the stage', knocked.qi, requirement(2, 8) * (1 - FailureQiLoss));
+checkTrue('and it drops you below the threshold', !knocked.readyToBreakThrough);
+const barely = new Cultivation(0);
+barely.qi = 1;
+barely.setBack(1);
+check('a set-back never goes negative', barely.qi, 0);
 
 Math.random = realRandom;
 

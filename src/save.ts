@@ -12,6 +12,14 @@ export interface SaveState {
   cultivation: { realm: number; stage: number; qi: number; ascensions: number; nourishUntil: number };
   /** The daily allowance of nourished kills: the local date it rolled, and what is left of it. */
   daily: { date: string; remaining: number };
+  /**
+   * The charm hoard, and the realm breakthroughs that have failed.
+   *
+   * `failures` is keyed by realm index as a string, because that is what survives `JSON.stringify`
+   * unchanged — an array would work too and would carry eight nulls for the realms nobody has
+   * failed at.
+   */
+  charms: { held: number; failures: Record<string, number> };
   /** Unix seconds the qi above was last brought up to date. Offline progress is this and nothing else. */
   settledAt: number;
   /** The one line said on a first run has been said. */
@@ -68,6 +76,7 @@ export async function loadSave(): Promise<SaveState | null> {
       slime?: { x?: unknown; y?: unknown };
       cultivation?: Partial<SaveState['cultivation']> & { rebirths?: unknown };
       daily?: { date?: unknown; remaining?: unknown };
+      charms?: { held?: unknown; failures?: unknown };
       settledAt?: unknown;
       seenIntro?: unknown;
       quiet?: unknown;
@@ -96,6 +105,10 @@ export async function loadSave(): Promise<SaveState | null> {
         date: typeof parsed.daily?.date === 'string' ? parsed.daily.date : '',
         remaining: numberOr(parsed.daily?.remaining, 0),
       },
+      charms: {
+        held: Math.max(0, Math.floor(numberOr(parsed.charms?.held, 0))),
+        failures: countsOr(parsed.charms?.failures),
+      },
       settledAt: numberOr(parsed.settledAt, Date.now() / 1000),
       seenIntro: parsed.seenIntro === true,
       quiet: parsed.quiet === true,
@@ -113,6 +126,25 @@ export async function loadSave(): Promise<SaveState | null> {
  */
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * A map of realm index to a count, with anything unrecognisable dropped.
+ *
+ * Every entry is checked rather than the object as a whole, because this one is keyed by data: a
+ * single junk value in here would otherwise become a `NaN` added to somebody's odds, and odds that
+ * are `NaN` compare false against everything — which fails the breakthrough every time, silently,
+ * and looks exactly like very bad luck.
+ */
+function countsOr(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (typeof value !== 'object' || value === null) return out;
+  for (const [key, count] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof count === 'number' && Number.isFinite(count) && count > 0) {
+      out[key] = Math.floor(count);
+    }
+  }
+  return out;
 }
 
 /** Called once the load has settled, successfully or as a confirmed absence. */

@@ -236,7 +236,14 @@ export class Cultivation {
     return (this.rate() * (1 / IdleFactor - 1)) / ExpectedKeysPerSecond;
   }
 
-  /** What a whole key is worth on top. See `KeycapBonusSeconds`. */
+  /**
+   * What a whole key used to be worth on top.
+   *
+   * Nothing spends this any more: charms are counted rather than converted — see `charms.ts`. It
+   * stays because it is what makes the re-purposing defensible rather than a nerf, and the number
+   * is the argument: about 1.86 seconds of output against a ladder measured in days. Anyone
+   * wondering what picking up a charm used to pay can read it here instead of in the history.
+   */
   keycapValue(): number {
     return this.rate() * (1 / IdleFactor - 1) * KeycapBonusSeconds;
   }
@@ -247,8 +254,29 @@ export class Cultivation {
   }
 
   /** Swallows a fetched key. */
-  swallow(): void {
-    this.qi += this.keycapValue();
+  /**
+   * Gives back part of a stage, for a realm breakthrough that did not take.
+   *
+   * A fraction of the *stage's* requirement rather than of anything realm-wide, because qi is one
+   * running number holding progress through the stage you are on — the eight behind it spent
+   * theirs on the way past, so there is no realm total to take a share of.
+   *
+   * Floored at zero. It cannot push you back down a stage: losing a stage you had already paid for
+   * is the "hours of progress" the plan drew a line at, and the line is still there even though
+   * failure is not.
+   */
+  setBack(fraction: number): void {
+    this.qi = Math.max(0, this.qi - requirement(this.realm, this.stage) * fraction);
+  }
+
+  /**
+   * True when the next breakthrough would cross into a new realm.
+   *
+   * Asked *before* `breakThrough`, because whether the odds get rolled depends on it and
+   * `breakThrough` has already advanced by the time it could be inferred from the result.
+   */
+  get atRealmEdge(): boolean {
+    return this.stage >= StagesPerRealm - 1;
   }
 
   get readyToBreakThrough(): boolean {

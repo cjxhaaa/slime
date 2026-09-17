@@ -7,6 +7,7 @@ import { lookFor } from './game/appearance';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes, strain } from './game/combat';
 import { Daily } from './game/daily';
 import { resolveErrand } from './game/errand';
+import { Charms, FailureQiLoss } from './game/charms';
 import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cultivation';
 import { Glyphs } from './game/Glyphs';
 import { Motes } from './game/Motes';
@@ -47,6 +48,7 @@ const cultivation = new Cultivation();
 const glyphs = new Glyphs();
 const motes = new Motes();
 const daily = new Daily();
+const charms = new Charms();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -502,6 +504,14 @@ let restoredPoint: { x: number; y: number } | null = null;
  */
 let introUntil = 0;
 let ascendUntil = 0;
+/**
+ * When to stop explaining the failed breakthrough.
+ *
+ * A line is owed here and it is not an interruption: the click that caused it was two seconds ago,
+ * and without a word, "my qi went down and my charms are gone" is a bug report rather than a
+ * mechanic. It is the only place the charm cost is ever spelled out.
+ */
+let failUntil = 0;
 let seenIntro = true;
 
 /** Everything worth keeping, assembled in one place so every writer stores the same shape. */
@@ -513,6 +523,7 @@ function currentSave(): SaveState {
     cultivation: cultivation.snapshot(),
     settledAt: cultivation.settledAtSeconds,
     daily: daily.snapshot(),
+    charms: charms.snapshot(),
     seenIntro,
     quiet,
   };
@@ -548,6 +559,7 @@ const AlertPatienceMs = 3 * 60_000;
 const IntroMs = 8_000;
 /** How long the one line after an ascension stays up. */
 const AscendBubbleMs = 12_000;
+const FailBubbleMs = 9_000;
 
 let alertRaisedAt = 0;
 /**
@@ -599,6 +611,25 @@ function hoverLines(): string {
   const nourishLeft = cultivation.nourishSecondsLeft;
   if (nourishLeft > 0) {
     lines.push(`温养中 · 还余 ${Math.max(1, Math.round(nourishLeft / 60))} 分钟`);
+  }
+  if (charms.count > 0) {
+    lines.push(`符箓 ${charms.count} 张`);
+  }
+  // Only at the edge, and only as a phrase. A percentage on the desktop is a number on screen, and
+  // the guardrails are explicit about those — but "about to try something that might not work" is
+  // exactly what somebody standing at a realm edge needs to know before they click.
+  if (cultivation.atRealmEdge && cultivation.readyToBreakThrough) {
+    const chance = charms.oddsAt(cultivation.realm);
+    const shortfall = charms.shortfallAt(cultivation.realm);
+    lines.push(
+      chance >= 1
+        ? '渡劫无虞'
+        : chance >= 0.85
+          ? `渡劫稳妥 · 再攸 ${shortfall} 张无虞`
+          : chance >= 0.7
+            ? `渡劫可试 · 再攸 ${shortfall} 张无虞`
+            : `渡劫凶险 · 再攸 ${shortfall} 张无虞`,
+    );
   }
   if (daily.left > 0) {
     lines.push(`今日尚可炼化 ${daily.left} 次`);
@@ -655,6 +686,23 @@ function applyLook(): void {
 function takeBreakThrough(): boolean {
   const wasAscended = cultivation.ascended;
   const fromRealm = cultivation.realm;
+  if (!cultivation.readyToBreakThrough) return false;
+
+  // The roll, and only at a realm edge. Seventy-two of the seventy-three breakthroughs in a run are
+  // certainties, which is the half of the plan's no-failure rule that still holds: the risk is
+  // eight moments you can see coming and prepare for, not a tax on every step.
+  if (cultivation.atRealmEdge && Math.random() >= charms.oddsAt(cultivation.realm)) {
+    charms.fail(cultivation.realm);
+    cultivation.setBack(FailureQiLoss);
+    bubble.hide();
+    slime.clearAlert();
+    slime.failRealm();
+    failUntil = performance.now() + FailBubbleMs;
+    applyLook();
+    requestSave(currentSave());
+    return true;
+  }
+
   if (!cultivation.breakThrough()) return false;
 
   if (!wasAscended && cultivation.ascended) {
@@ -815,6 +863,9 @@ function frame(now: number): void {
   } else {
     const text =
       devourText(now) ??
+      // Above the ascension line rather than below it: the two cannot both be true, and a
+      // failure is the more recent thing to have happened either way.
+      (now < failUntil ? '渡劫未成\n符箓尽散 · 修为有损' : null) ??
       (now < ascendUntil ? '此身已证大道\n设置中可转生重历' : null) ??
       (now < introUntil ? '此物似有灵性\n正吞吐天地之气' : null) ??
       // Hovering is the only way any of the cultivation is legible, and even then it is a phrase
@@ -838,7 +889,7 @@ function frame(now: number): void {
   const reached = glyphs.nearest(slime.x);
   const eaten = glyphs.eatNear(slime.x, slime.y, gatherReach());
   for (let i = 0; i < eaten; i++) {
-    cultivation.swallow();
+    charms.gather();
     slime.gulp(reached ? Math.atan2(reached.y - slime.y, reached.x - slime.x) : 0);
   }
   // Not while a realm is changing: the look is on a timer then, and putting the new form on early
@@ -1135,6 +1186,7 @@ async function main(): Promise<void> {
       if (saved) {
         cultivation.restore(saved.cultivation, saved.settledAt);
         daily.restore(saved.daily);
+        charms.restore(saved.charms);
         seenIntro = saved.seenIntro;
         quiet = saved.quiet;
         // Rust starts out listening, so a save that says otherwise has to say so out loud.
@@ -1172,7 +1224,19 @@ async function main(): Promise<void> {
     // changes state, even something this cheap and this idempotent.
     daily.roll(allowance(cultivation.realm, cultivation.ascensions));
     applyLook();
-    if (cultivation.readyToBreakThrough) offerBreakThrough();
+    if (cultivation.readyToBreakThrough) {
+      // Charms first: a stage that can be paid for is taken without anyone being asked. A realm
+      // edge is never taken this way — that one has odds on it, and spending somebody's whole
+      // hoard on a dice roll they did not watch is not a convenience.
+      // Safe to spend before advancing: we are inside `readyToBreakThrough` and not at an edge, so
+      // there is no roll and `takeBreakThrough` cannot come back empty-handed. Worth saying out
+      // loud, because the charge and the thing it pays for are two calls apart.
+      if (!cultivation.atRealmEdge && charms.takeStage()) {
+        takeBreakThrough();
+      } else {
+        offerBreakThrough();
+      }
+    }
     if (
       slime.hasLiveAlert &&
       !slime.isAlertAcknowledged &&
@@ -1270,6 +1334,21 @@ async function main(): Promise<void> {
 
   // The ordeal, without four days of climbing first.
   debugHooks.__ascend = () => slime.ascend();
+  // The charm hoard, for checking the odds and the failure without typing for an hour first.
+  debugHooks.__charms = (held?: number) => {
+    if (held !== undefined) {
+      charms.restore({ held, failures: charms.snapshot().failures });
+      requestSave(currentSave());
+    }
+    return {
+      held: charms.count,
+      odds: charms.oddsAt(cultivation.realm),
+      shortfall: charms.shortfallAt(cultivation.realm),
+      failures: charms.failuresAt(cultivation.realm),
+      atEdge: cultivation.atRealmEdge,
+    };
+  };
+  debugHooks.__failRealm = () => slime.failRealm();
 
   // Engulfs a rectangle without needing a real window under the slime. The real path is gated on
   // Win32 calls that only exist inside Tauri, so in a plain browser - which is the only way to see
@@ -1298,6 +1377,9 @@ async function main(): Promise<void> {
   await listen('rebirth', () => {
     cultivation.settle();
     if (!cultivation.rebirth()) return;
+    // Otherwise the second climb inherits the first one's pity and is quietly easier for a reason
+    // nobody can see.
+    charms.clearFailures();
     applyLook();
     requestSave(currentSave());
     emitPetState();

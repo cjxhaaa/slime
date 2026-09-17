@@ -300,6 +300,24 @@ const StageWaveSeconds = 0.16;
  */
 const StageGlowFull = 0.4;
 const StageGlowUntil = 0.72;
+
+/**
+ * A realm breakthrough that did not take.
+ *
+ * Deliberately built out of the *absence* of the things a success is made of. A success draws qi in
+ * and turns the body into a lantern; this one has the body sag, the colour drain towards a flat
+ * grey and come back, and nothing arrive at all. The point is that it should be legible in
+ * peripheral vision as "that was the bad one" without needing a word of text — and the cheapest
+ * way to be unmistakably not-a-success is to run the success's own channels backwards.
+ *
+ * It does not get more than this. Eight realm edges a run and some fraction of them failing is not
+ * a lot of screen time, and a long, elaborate failure animation is a punishment on top of the
+ * punishment.
+ */
+const FailSeconds = 1.5;
+/** How far the colour drains towards grey at the worst of it. */
+const FailDrain = 0.55;
+const FailGrey = '#8d9195';
 /** How long the new vein takes to fade in. Short: it arrives under the brightening. */
 const VeinGrowSeconds = 0.4;
 
@@ -619,6 +637,43 @@ export class Slime {
   /** Seconds until the next wave of a stage breakthrough's dust. */
   private stageWave = 0;
 
+  /** 0 to 1 through a failed realm breakthrough, or null when there is not one. */
+  private realmFail: number | null = null;
+  /** Seconds until the next slump while one is playing. */
+  private failSag = 0;
+
+  /**
+   * The qi did not hold. Sags, drains, and comes back.
+   *
+   * No dust and no light: see `FailSeconds` for why the absence is the design rather than a corner
+   * being cut.
+   */
+  failRealm(): void {
+    this.lastInteraction = this.clock;
+    this.chaseX = null;
+    this.hopsLeft = 0;
+    this.realmFail = 0;
+    this.failSag = 0;
+    // Everything a success would have built up, let go of at once.
+    this.stageBreak = null;
+    this.absorbFlash = 0;
+    this.blob.squash(0.46);
+    this.mood = 'surprised';
+    this.moodUntil = this.clock + FailSeconds;
+  }
+
+  /** True for the length of one, so the caller can hold off on anything else. */
+  get isFailingRealm(): boolean {
+    return this.realmFail !== null;
+  }
+
+  /** How far the colour has drained, 0 to 1: in quickly, out slowly. */
+  private get failTint(): number {
+    const beat = this.realmFail;
+    if (beat === null) return 0;
+    return beat < 0.2 ? smooth(beat / 0.2) : smooth(1 - (beat - 0.2) / 0.8);
+  }
+
   /**
    * How hard the body is shining, 0 to 1: up, held, and out.
    *
@@ -804,6 +859,7 @@ export class Slime {
       // else in this list would catch it.
       this.sleepFading ||
       this.stageBreak !== null ||
+      this.realmFail !== null ||
       this.ascension !== null ||
       this.realmBreak !== null ||
       this.ring !== null ||
@@ -1378,6 +1434,17 @@ export class Slime {
     const step = dt / (sleeping ? SleepFadeSeconds : WakeFadeSeconds);
     this.sleepFade = Math.min(1, Math.max(0, this.sleepFade + (sleeping ? step : -step)));
 
+    if (this.realmFail !== null) {
+      this.realmFail += dt / FailSeconds;
+      this.failSag -= dt;
+      if (this.failSag <= 0) {
+        // Downwards, repeatedly. A single slump is a flinch; three in a row is something giving up.
+        this.failSag = 0.34;
+        this.blob.poke(Math.PI / 2, 150, 1.7);
+      }
+      if (this.realmFail >= 1) this.realmFail = null;
+    }
+
     if (this.stageBreak !== null) {
       const progress = this.stageBreak;
       this.stageBreak += dt / StageSeconds;
@@ -1830,13 +1897,24 @@ export class Slime {
     // Hoisted above the halo, which is drawn before the body and needs it too.
     const shining = this.stageGlow;
     const tint = this.sleepTint;
-    const palette =
+    const dozing =
       tint <= 0
         ? awake
         : {
             core: mix(awake.core, PALETTE.sleep.core, tint),
             edge: mix(awake.edge, PALETTE.sleep.edge, tint),
             rim: mix(awake.rim, PALETTE.sleep.rim, tint),
+          };
+    // And the drain of a failed breakthrough over the top of that, towards a flat grey. Laid on
+    // last so it applies whatever else the body happens to be doing, the same way sleep is.
+    const drained = this.failTint * FailDrain;
+    const palette =
+      drained <= 0
+        ? dozing
+        : {
+            core: mix(dozing.core, FailGrey, drained),
+            edge: mix(dozing.edge, FailGrey, drained),
+            rim: mix(dozing.rim, FailGrey, drained),
           };
 
     this.drawRing(context);

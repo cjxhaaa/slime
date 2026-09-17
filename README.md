@@ -1018,6 +1018,89 @@ And the column's own gradient uses the pale half of the palette and white, never
 fine for 金丹, whose edge is a warm gold. 合体 is `#2b3894` and 大乘 is `#221c3d`, and a beam of
 light faded through either of those is a column of smoke.
 
+### Charms are a count now, and they buy two things
+
+A talisman charm used to be worth a sliver of qi and nothing else — `keycapValue`, about **1.86
+seconds of output**. Picking one up was a reward you could not see, which is a strange thing to send
+the pet across the desktop for.
+
+They are counted instead, and the count spends on:
+
+| | |
+|---|---|
+| **Advancing a stage on its own** | 40 charms. The pet stops hopping at you for a click and just gets on with it |
+| **The odds on a realm** | `min(100%, 60% + 0.4% x held)`, so a hundred makes it a certainty |
+
+Taking their qi away costs the economy nothing worth measuring — 1.86 seconds against a ladder
+measured in days — so this is a re-purposing rather than a nerf. It is also what lets the number be
+priced in the hundreds: the supply is capped in Rust at one charm per 5.5 seconds of typing, so a
+heavy run banks something like four thousand, and a cost of forty is a real decision where a cost
+of two would be noise.
+
+**The guardrail that cannot move: charms never decide whether you can.** The same sentence is at the
+top of the window-eating code. They move the odds; sixty percent with nothing banked is "a real
+chance with none of them", not "come back when you have saved up".
+
+**Automatic stages will not spend below a hundred.** Convenience and insurance come out of the same
+pot, so without a floor a run of cheap automatic stages would quietly empty the hoard that was
+keeping the next realm safe — and the player would have no lever to stop it, because the spending
+happens while they are not looking. This is also why the feature needs no setting: a default that is
+right by construction beats a switch you have to go and find.
+
+#### What a failed realm costs, and why failure is allowed at all
+
+Section 4.2 of the plan used to say flatly that **breakthroughs cannot fail**, on the grounds that a
+desk toy costing twenty-five yuan does not get to take hours of progress off somebody. That sentence
+left itself an exit: *it has to be a risk the player chose, not the default*. Charms raising the odds
+is exactly that exit, and the risk lands on **eight of the seventy-three breakthroughs in a run** —
+the other seventy-two are still certainties.
+
+A failure costs:
+
+- **The whole hoard.** Not a stake — there is no interface for choosing one, so "your charms decide
+  the odds" can only mean all of them are in play. This is the sharpest part of it, because it makes
+  the *next* attempt worse than this one would have been rather than merely undoing this one.
+- **A fifth of the current stage's requirement.** Of the *stage*, which is the only reading that
+  maps onto something that exists: qi is one running number holding progress through the stage you
+  are on, and the eight behind it spent theirs on the way past. There is no stored realm total to
+  take a share of.
+- **Never a stage you already paid for.** The set-back is floored at zero, and that is the line the
+  plan actually drew.
+
+Worth stating in time, because the same fraction is two very different prices at the two ends:
+half a minute at 练气, two minutes at 金丹, and **about fifty minutes at 大乘** at full output — two
+and a half hours at the idle floor.
+
+**And each failure adds ten points to that realm's floor, permanently.** Not in the brief; it is
+here because sixty percent with no pity has a tail. Four failures in a row is a one-in-forty event,
+and four failures at 大乘 is the better part of an afternoon. Dice do not get to take an afternoon
+off somebody. With it, the fifth attempt is a certainty however the first four went. A rebirth clears
+the counters, or the second climb would be quietly easier than the first for a reason nobody could
+see.
+
+Hovering gains a line at a realm edge, and it is a phrase rather than a percentage — 无虞 / 稳妥 /
+可试 / 凶险, plus how many more charms would make it certain. A percentage is a number on screen and
+the guardrails are explicit about those, but "about to try something that might not work" is exactly
+what somebody standing there needs before they click. A failure then says one line, which is the
+only place the charm cost is ever spelled out: without it, "my qi went down and my charms are gone"
+is a bug report rather than a mechanic.
+
+#### 法宝 is cancelled, not deferred
+
+There was a whole section of plan for it: feed, digest, produce a treasure, four slots, auto-dismantle
+the worse ones, a comparison popup for the better ones, five tiers and eight production-side affixes.
+It is deleted.
+
+The reason is not that there was no time. Its core was **a hidden stat panel** — and even with the
+inventory designed away, you still need somewhere to look at what you are wearing, and that place is
+a panel. The first guardrail says no panels. It broke a second one too: every slot is one more "there
+is a better one" asking for an answer, and one to three drops a day times four slots is several
+interruptions a day, where the guardrail says nothing may need checking on a schedule. A design that
+hits two guardrails at once is not a scheduling problem.
+
+The question it was there to answer — *what does typing get me besides qi* — is answered by the
+charm count instead: one number, two uses, no interface.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held
