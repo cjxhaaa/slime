@@ -645,9 +645,13 @@ function offerBreakThrough(): void {
   alertRaisedAt = performance.now();
   slime.raiseAlert(`${stageName(cultivation.realm, cultivation.stage)} · 可突破\n点击渡劫`, () => {
     const wasAscended = cultivation.ascended;
+    const fromRealm = cultivation.realm;
     cultivation.breakThrough();
     bubble.hide();
     slime.clearAlert();
+    // Applied before the performance starts, so the shockwave and the body are already wearing the
+    // colour that was just arrived at — the new colour leaving the body *is* the event.
+    applyLook();
     if (!wasAscended && cultivation.ascended) {
       slime.ascend();
       // Said once, on the one occasion someone has just finished the whole thing. Not an
@@ -655,10 +659,10 @@ function offerBreakThrough(): void {
       // is mentioned at all, because the rebirth itself lives where a stray poke cannot reach it.
       ascendUntil = performance.now() + AscendBubbleMs;
       emitPetState();
+    } else if (cultivation.realm !== fromRealm) {
+      // Eight of these in a run against seventy-two stages, and until now they looked identical.
+      slime.breakRealm();
     }
-    // Immediately, not on the next tick. The colour and the size changing *is* the reward, and a
-    // reward that lands ten seconds after the click is not the same reward.
-    applyLook();
     // Straight to disk rather than on the next heartbeat. This is the one moment a player would
     // genuinely mind losing, and it happens rarely enough to be worth a write of its own.
     requestSave(currentSave());

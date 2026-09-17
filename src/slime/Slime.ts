@@ -53,6 +53,22 @@ const MinEngulfSeconds = 3;
  */
 const AscendGatherSeconds = 1.7;
 const AscendBurstSeconds = 1.4;
+
+/**
+ * A major realm breakthrough — eight of them in a run, against seventy-two small ones.
+ *
+ * It had been using the same thing as a stage: the alert stops and the face looks pleased. Eight
+ * genuine milestones indistinguishable from the seventy-one steps between them.
+ *
+ * Shorter than the ascension on purpose. There are eight of these and one of that, so this has to
+ * be an event without competing with the ending.
+ */
+const RealmBraceSeconds = 0.55;
+const RealmBurstSeconds = 1;
+/** How long the shockwave takes to cross the screen-space it is allowed. */
+const RingSeconds = 0.85;
+/** Where the ring stops, as a multiple of the body radius. Also what `bounds` has to reserve. */
+const RingReach = 3.2;
 /** How long the slime spends hauling a buried window to the front before it starts eating. */
 const HeaveSeconds = 1;
 /** How long the body takes to peel back off, whether it ate or gave up. */
@@ -292,6 +308,9 @@ export class Slime {
   private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0 };
   private chaseX: number | null = null;
   private ascension: { until: number; phase: 'gathering' | 'burst'; tremble: number } | null = null;
+  private realmBreak: { until: number; phase: 'bracing' | 'bursting'; tremble: number } | null = null;
+  /** 0 to 1 while a shockwave is travelling outward, null when there is none. */
+  private ring: number | null = null;
   /**
    * How lit up the membrane is from something just going into it, 0 to 1, decaying.
    *
@@ -301,6 +320,21 @@ export class Slime {
    * fake cheaply.
    */
   private absorbFlash = 0;
+
+  /**
+   * A realm breakthrough. Brace, burst, and a ring of the *new* colour going out.
+   *
+   * The ring is the part that makes this read as a breakthrough rather than as a big hop: a body
+   * changing colour is a state, and a shockwave leaving it is an event. It works because the
+   * caller has already applied the new palette by the time this is drawn.
+   */
+  breakRealm(): void {
+    this.lastInteraction = this.clock;
+    this.chaseX = null;
+    this.hopsLeft = 0;
+    this.realmBreak = { until: this.clock + RealmBraceSeconds, phase: 'bracing', tremble: 0 };
+    this.blob.squash(0.32);
+  }
 
   /** Starts the ordeal. The caller has already advanced the realm; this is the performance. */
   ascend(): void {
@@ -436,6 +470,8 @@ export class Slime {
       this.blinkPhase > 0.001 ||
       this.absorbFlash > 0.01 ||
       this.ascension !== null ||
+      this.realmBreak !== null ||
+      this.ring !== null ||
       this.blob.energy() > 0.08 ||
       // Against the target the eyes are actually easing toward, which is the cursor whenever there
       // is one. Comparing against the idle jitter target instead — as the first version did — is
@@ -516,7 +552,9 @@ export class Slime {
     // sleep marks that drift up and to the right.
     // The bands sit further out than anything else the body draws, so they set the floor when
     // there are any. Measured off the same numbers `drawAura` uses rather than guessed at.
-    const decoration = this.radius * (this.bodyLook.aura > 0 ? 2.5 : 2.2);
+    const decoration =
+      this.radius *
+      (this.ring !== null ? RingReach + 0.2 : this.bodyLook.aura > 0 ? 2.5 : 2.2);
     leftSpan = Math.max(leftSpan + 3, decoration);
     rightSpan = Math.max(rightSpan + 3, decoration);
     topSpan = Math.max(topSpan + 3, decoration);
@@ -993,6 +1031,33 @@ export class Slime {
       return;
     }
 
+    if (this.realmBreak) {
+      const beat = this.realmBreak;
+      if (beat.phase === 'bracing') {
+        const progress = 1 - Math.max(0, beat.until - this.clock) / RealmBraceSeconds;
+        beat.tremble -= dt;
+        if (beat.tremble <= 0) {
+          beat.tremble = 0.07;
+          this.blob.poke(Math.random() * Math.PI * 2, 38 + progress * 64, 1.5);
+        }
+        this.absorbFlash = Math.max(this.absorbFlash, progress * 0.65);
+        if (this.clock >= beat.until) {
+          beat.phase = 'bursting';
+          beat.until = this.clock + RealmBurstSeconds;
+          this.absorbFlash = 1;
+          this.blob.pulse(175);
+          this.blob.squash(-0.34);
+          this.vy = -HOP_SPEED * 0.86;
+          this.ring = 0;
+        }
+      } else if (this.clock >= beat.until) {
+        this.realmBreak = null;
+        this.mood = 'happy';
+        this.moodUntil = this.clock + 1.6;
+      }
+      return;
+    }
+
     if (this.ascension) {
       const ordeal = this.ascension;
       if (ordeal.phase === 'gathering') {
@@ -1130,6 +1195,42 @@ export class Slime {
     // permanently lit while someone types, which is the opposite of the intended "it just took
     // something in".
     this.absorbFlash = Math.max(0, this.absorbFlash - dt * 4.5);
+    if (this.ring !== null) {
+      this.ring += dt / RingSeconds;
+      if (this.ring >= 1) this.ring = null;
+    }
+  }
+
+  /**
+   * The shockwave from a realm breakthrough, in the colour just arrived at.
+   *
+   * Widest and brightest when it leaves and thin by the time it stops, which is what makes it read
+   * as something that was released rather than as a circle being animated. Drawn behind the body
+   * so it appears to come out from under it.
+   */
+  private drawRing(context: CanvasRenderingContext2D): void {
+    if (this.ring === null || this.devour) return;
+    context.save();
+    // Two waves, the second lagging. One ring reads as a circle being animated; two read as
+    // something having gone off. The lag is small enough that they are one gesture rather than a
+    // pulse and an echo.
+    for (const [lag, weight] of [
+      [0, 1],
+      [0.2, 0.55],
+    ]) {
+      const t = this.ring - lag;
+      if (t <= 0 || t >= 1) continue;
+      const radius = this.radius * (0.9 + (RingReach - 0.9) * t);
+      // Linear, not eased. The first version fell off as (1-t)^1.4, which left the wave visible
+      // for under half its travel — it read as a blink at the body rather than as a wave leaving.
+      context.globalAlpha = 0.58 * (1 - t) * weight;
+      context.lineWidth = 7 * (1 - t) + 1.2;
+      context.strokeStyle = this.bodyLook.palette.edge;
+      context.beginPath();
+      context.arc(this.renderX, this.renderY, radius, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.restore();
   }
 
   /**
@@ -1179,6 +1280,7 @@ export class Slime {
           ? PALETTE.sleep
           : this.bodyLook.palette;
 
+    this.drawRing(context);
     this.drawAura(context);
 
     // The halo. Drawn under everything, and only when there is something to say — a body that is
