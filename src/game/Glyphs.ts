@@ -5,6 +5,8 @@
  * it or it fades. That is the whole of it — the throw is physics rather than a curve, so it
  * behaves the way the pet already does and needs no separate sense of weight.
  */
+
+import { clear } from '../slime/colour';
 interface Glyph {
   char: string;
   x: number;
@@ -32,10 +34,10 @@ const FadeSeconds = 1.2;
  * what it looked like — a key that had fallen off a keyboard. Nothing about it said this was
  * something a cultivating slime had condensed out of the air.
  */
-const SlipWidth = 19;
-const SlipHeight = 28;
+export const SlipWidth = 19;
+export const SlipHeight = 28;
 /** How far the glow reaches, and therefore what has to be repainted around one. */
-const HaloReach = 34;
+export const HaloReach = 34;
 /** Clearance kept from the screen edges while one is in the air. */
 const Margin = 16;
 /**
@@ -185,70 +187,85 @@ export class Glyphs {
       // "hovering by its own power" from "dropped on the floor".
       const drift = glyph.landed ? Math.sin(this.clock * 1.9 + glyph.phase) : 0;
       const lean = glyph.landed ? drift * 0.05 : glyph.spin;
+      const breath = 0.8 + 0.2 * Math.sin(this.clock * 2.6 + glyph.phase * 1.7);
 
       context.save();
-      context.globalAlpha = fade;
       context.translate(glyph.x, glyph.y + drift * 2.2);
       context.rotate(lean);
-
-      // The glow, first and underneath. It breathes slightly out of step with the drift so the two
-      // never line up into a single obvious pulse.
-      const breath = 0.8 + 0.2 * Math.sin(this.clock * 2.6 + glyph.phase * 1.7);
-      const halo = context.createRadialGradient(0, 0, SlipHeight * 0.3, 0, 0, HaloReach);
-      halo.addColorStop(0, auraColour);
-      halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      context.globalAlpha = 0.4 * fade * breath;
-      context.fillStyle = halo;
-      context.beginPath();
-      context.arc(0, 0, HaloReach, 0, Math.PI * 2);
-      context.fill();
-
-      // A rim of the pet's own qi, hugging the edge. The halo alone is diffuse enough to vanish
-      // against a pale wallpaper, and without this the charm reads as a piece of paper lying on the
-      // floor rather than as one something has charged. The paper covers its inner half, leaving a
-      // tight outer glow.
-      context.globalAlpha = 0.6 * fade * breath;
-      context.lineWidth = 2.5;
-      context.strokeStyle = auraColour;
-      context.beginPath();
-      context.roundRect(-SlipWidth / 2 - 1, -SlipHeight / 2 - 1, SlipWidth + 2, SlipHeight + 2, 4);
-      context.stroke();
-
-      // The paper. Warm at the top edge and deeper at the bottom, the way a hanging slip catches
-      // light — a flat fill reads as a sticker.
-      context.globalAlpha = 0.95 * fade;
-      const paper = context.createLinearGradient(0, -SlipHeight / 2, 0, SlipHeight / 2);
-      paper.addColorStop(0, '#fff3cf');
-      paper.addColorStop(1, '#efd79a');
-      context.beginPath();
-      context.roundRect(-SlipWidth / 2, -SlipHeight / 2, SlipWidth, SlipHeight, 3);
-      context.fillStyle = paper;
-      context.fill();
-      context.lineWidth = 1;
-      context.strokeStyle = 'rgba(176, 132, 52, 0.85)';
-      context.stroke();
-
-      // Two cinnabar strokes, above and below, where the border script would be. They are what
-      // stop the middle of the slip reading as a blank label with a letter typed on it.
-      context.strokeStyle = 'rgba(178, 54, 40, 0.75)';
-      context.lineWidth = 1.4;
-      context.lineCap = 'round';
-      for (const y of [-SlipHeight / 2 + 5, SlipHeight / 2 - 5]) {
-        context.beginPath();
-        context.moveTo(-SlipWidth / 2 + 4.5, y);
-        context.lineTo(SlipWidth / 2 - 4.5, y);
-        context.stroke();
-      }
-
-      // The key itself, in cinnabar, in a serif face. The letter is the one thing here that has to
-      // stay plainly legible — it is the point of the charm, and it is a letter you really pressed.
-      context.fillStyle = '#9d2f22';
-      context.font = '700 15px Georgia, "Songti SC", "SimSun", serif';
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      context.fillText(glyph.char, 0, 0.5);
-
+      drawTalisman(context, glyph.char, auraColour, fade, breath);
       context.restore();
     }
   }
+}
+
+/**
+ * One charm, centred on the current origin. The caller owns the transform.
+ *
+ * Extracted from the loop above because the realm breakthrough needs the same object: eight of
+ * these wheel out and close around the body, and drawing a second, similar-looking charm somewhere
+ * else would have been two things to keep in step. `fade` scales every alpha in here, and `breath`
+ * is the slow pulse of the glow — 0.8 to 1 is the range the falling ones use.
+ */
+export function drawTalisman(
+  context: CanvasRenderingContext2D,
+  char: string,
+  auraColour: string,
+  fade: number,
+  breath: number,
+): void {
+  // The glow, first and underneath. It breathes slightly out of step with any drift the caller
+  // applies, so the two never line up into a single obvious pulse.
+  const halo = context.createRadialGradient(0, 0, SlipHeight * 0.3, 0, 0, HaloReach);
+  halo.addColorStop(0, auraColour);
+  halo.addColorStop(1, clear(auraColour));
+  context.globalAlpha = 0.4 * fade * breath;
+  context.fillStyle = halo;
+  context.beginPath();
+  context.arc(0, 0, HaloReach, 0, Math.PI * 2);
+  context.fill();
+
+  // A rim of the pet's own qi, hugging the edge. The halo alone is diffuse enough to vanish
+  // against a pale wallpaper, and without this the charm reads as a piece of paper lying on the
+  // floor rather than as one something has charged. The paper covers its inner half, leaving a
+  // tight outer glow.
+  context.globalAlpha = 0.6 * fade * breath;
+  context.lineWidth = 2.5;
+  context.strokeStyle = auraColour;
+  context.beginPath();
+  context.roundRect(-SlipWidth / 2 - 1, -SlipHeight / 2 - 1, SlipWidth + 2, SlipHeight + 2, 4);
+  context.stroke();
+
+  // The paper. Warm at the top edge and deeper at the bottom, the way a hanging slip catches
+  // light — a flat fill reads as a sticker.
+  context.globalAlpha = 0.95 * fade;
+  const paper = context.createLinearGradient(0, -SlipHeight / 2, 0, SlipHeight / 2);
+  paper.addColorStop(0, '#fff3cf');
+  paper.addColorStop(1, '#efd79a');
+  context.beginPath();
+  context.roundRect(-SlipWidth / 2, -SlipHeight / 2, SlipWidth, SlipHeight, 3);
+  context.fillStyle = paper;
+  context.fill();
+  context.lineWidth = 1;
+  context.strokeStyle = 'rgba(176, 132, 52, 0.85)';
+  context.stroke();
+
+  // Two cinnabar strokes, above and below, where the border script would be. They are what
+  // stop the middle of the slip reading as a blank label with a letter typed on it.
+  context.strokeStyle = 'rgba(178, 54, 40, 0.75)';
+  context.lineWidth = 1.4;
+  context.lineCap = 'round';
+  for (const y of [-SlipHeight / 2 + 5, SlipHeight / 2 - 5]) {
+    context.beginPath();
+    context.moveTo(-SlipWidth / 2 + 4.5, y);
+    context.lineTo(SlipWidth / 2 - 4.5, y);
+    context.stroke();
+  }
+
+  // The key itself, in cinnabar, in a serif face. The letter is the one thing here that has to
+  // stay plainly legible — it is the point of the charm, and it is a letter you really pressed.
+  context.fillStyle = '#9d2f22';
+  context.font = '700 15px Georgia, "Songti SC", "SimSun", serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(char, 0, 0.5);
 }

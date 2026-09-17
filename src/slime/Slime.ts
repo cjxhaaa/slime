@@ -1,4 +1,15 @@
 import { Blob } from './Blob';
+import {
+  ArrayReach,
+  BudReach,
+  drawArray,
+  drawBud,
+  drawCharms,
+  type OrdealBeat,
+  type OrdealShape,
+} from './Breakthrough';
+import { HaloReach } from '../game/Glyphs';
+import { clear } from './colour';
 
 export type Mood =
   | 'idle'
@@ -88,15 +99,14 @@ const RealmRevealSeconds = 1.35;
 /** Seconds between waves of dust while the qi is being drawn in. */
 const RealmWaveSeconds = 0.13;
 /**
- * How far the column reaches, as a multiple of the body radius. Also what `bounds` reserves.
+ * How fast the array and the ring of charms turn, in radians per second, at the start and the end.
  *
- * Shorter than it first was, because height is what was making it read thin. At nine radii the
- * thing was a spike — the width was there but the proportion fought it. What says "column" is the
- * ratio, and this one is about two tall for one wide.
+ * It accelerates, so it cannot come off the wall clock — a rotation read as `clock * rate` jumps
+ * the instant the rate changes, because the whole history gets remultiplied. The angle has to be
+ * accumulated.
  */
-const PillarReach = 6.5;
-/** How wide it is at the base, likewise. Thick enough to swallow the body, which is the point. */
-const PillarWidth = 3.2;
+const SpinFrom = 0.9;
+const SpinTo = 4.2;
 /**
  * How much of the reveal the body spends hidden, and how much of it the column spends thinning.
  *
@@ -355,6 +365,10 @@ export class Slime {
     tremble: number;
     /** Seconds until the next wave of dust is asked for. */
     wave: number;
+    /** 0 to 1 through the current beat, kept for the draw pass. */
+    progress: number;
+    /** Accumulated rotation of the array and the ring, in radians. */
+    spin: number;
     /** 0 to 1: how solid the column is. Peaks while the body is inside it. */
     pillar: number;
     /** 0 to 1: how completely the body is hidden. Drops before the column does. */
@@ -397,6 +411,8 @@ export class Slime {
       until: this.clock + RealmGatherSeconds,
       tremble: 0,
       wave: RealmWaveSeconds,
+      progress: 0,
+      spin: 0,
       pillar: 0,
       veil: 0,
     };
@@ -665,17 +681,16 @@ export class Slime {
     // sleep marks that drift up and to the right.
     // The bands sit further out than anything else the body draws, so they set the floor when
     // there are any. Measured off the same numbers `drawAura` uses rather than guessed at.
-    const decoration =
-      this.radius *
-      Math.max(
-        // The ground flare is the widest thing a column draws, so it sets the floor while one is
-        // out — the beam itself is narrower than the flare it stands in.
-        this.realmBreak ? PillarWidth + 0.3 : 0,
-        this.ring !== null ? RingReach + 0.2 : this.bodyLook.aura > 0 ? 2.5 : 2.2,
-      );
-    // The pillar goes straight up and well past anything else, so while one is out the top of the
-    // damaged region is set by it rather than by the body.
-    const pillar = this.realmBreak ? this.radius * (PillarReach + 1) : 0;
+    const decoration = Math.max(
+      // The array is the widest thing the breakthrough draws, and the charms wheel almost as far
+      // out with a fixed-size halo on top — which is why this one is in pixels rather than in body
+      // radii. A halo that scaled with the body would be a different charm at every realm.
+      this.realmBreak ? this.radius * (ArrayReach + 0.2) + HaloReach : 0,
+      this.radius * (this.ring !== null ? RingReach + 0.2 : this.bodyLook.aura > 0 ? 2.5 : 2.2),
+    );
+    // The bud closes well above the body, so while one is out the top of the damaged region is set
+    // by its apex rather than by anything the body itself draws.
+    const pillar = this.realmBreak ? this.radius * (BudReach + 0.6) : 0;
     leftSpan = Math.max(leftSpan + 3, decoration);
     rightSpan = Math.max(rightSpan + 3, decoration);
     topSpan = Math.max(topSpan + 3, decoration);
@@ -686,7 +701,13 @@ export class Slime {
       this.renderY - this.radius * 0.7 - 60,
       this.renderY - pillar,
     );
-    const bottom = Math.max(this.renderY + bottomSpan, ground + this.radius * 1.1);
+    const bottom = Math.max(
+      this.renderY + bottomSpan,
+      ground + this.radius * 1.1,
+      // The array lies flat under the body and its near edge reaches further down than anything
+      // else here. Without this it is left uncleared on the desktop when the sequence ends.
+      this.realmBreak ? this.renderY + this.radius * (0.8 + ArrayReach * 0.32) : 0,
+    );
     return {
       x: this.renderX - leftSpan,
       y: top,
@@ -1160,10 +1181,15 @@ export class Slime {
       const beat = this.realmBreak;
       const left = Math.max(0, beat.until - this.clock);
 
+      // Faster as it goes, and it keeps going through all three beats: an array that slowed down
+      // the moment the bud shut would say the working was over halfway through it.
+      beat.spin += dt * (SpinFrom + (SpinTo - SpinFrom) * Math.max(beat.progress, beat.pillar));
+
       if (beat.phase === 'gathering') {
         // Qi being pulled in. The caller has already thrown a cloud of dust at the body; all this
         // has to do is look like it is holding on against the pull.
         const progress = 1 - left / RealmGatherSeconds;
+        beat.progress = progress;
         // Set every frame rather than once, so being picked up and put down mid-sequence cannot
         // leave the dragged face on for the rest of it.
         this.mood = 'surprised';
@@ -1190,7 +1216,8 @@ export class Slime {
         }
       } else if (beat.phase === 'kindling') {
         // The column coming up around it, to near-solid. By the end of this the body is inside.
-        beat.pillar = 1 - left / RealmKindleSeconds;
+        beat.progress = 1 - left / RealmKindleSeconds;
+        beat.pillar = beat.progress;
         beat.veil = beat.pillar;
         this.absorbFlash = Math.max(this.absorbFlash, 0.9);
         if (this.clock >= beat.until) {
@@ -1205,6 +1232,7 @@ export class Slime {
       } else {
         // The figure coming back first, the column going second.
         const progress = 1 - left / RealmRevealSeconds;
+        beat.progress = progress;
         beat.veil = Math.max(0, 1 - progress / VeilFraction) ** 1.4;
         beat.pillar =
           progress < PillarHoldFraction
@@ -1365,70 +1393,67 @@ export class Slime {
     }
   }
 
-  /**
-   * The column the body goes into and a new one comes out of.
-   *
-   * Drawn **in front of** the pet rather than behind it, which is the whole mechanism: at full
-   * strength the core is nearly solid and there is simply nothing to see of whatever is inside, so
-   * the form can be changed unobserved. The reveal is this fading — no cross-dissolve, no second
-   * body drawn at some blend, just light thinning out over something that is already different.
-   *
-   * Three nested slabs rather than one gradient, because the fill needs to fall off in both
-   * directions at once: each slab has its own vertical fade, and stacking a wide faint one under a
-   * narrow bright one is what gives the horizontal falloff a single gradient cannot.
-   */
-  private drawPillar(context: CanvasRenderingContext2D): void {
-    const beat = this.realmBreak;
-    if (!beat || beat.pillar <= 0.01 || this.devour) return;
-    const height = this.radius * PillarReach;
-    const top = this.renderY - height;
-    const base = this.renderY + this.radius * 0.9;
-    context.save();
-    for (const [spread, strength] of [
-      [1, 0.62],
-      [0.62, 0.85],
-      [0.3, 1],
-    ]) {
-      const halfWidth = this.radius * PillarWidth * 0.5 * spread;
-      const beam = context.createLinearGradient(0, base, 0, top);
-      // Only the pale half of the palette. Feeding `edge` into this was fine for gold and turned
-      // 合体 and 大乘 — whose edges are near-black — into a column of smoke.
-      beam.addColorStop(0, this.bodyLook.palette.core);
-      beam.addColorStop(0.16, '#ffffff');
-      // Full strength most of the way up and then a quick fade, rather than a long even taper —
-      // the long one looked like smoke thinning out instead of light being thrown.
-      beam.addColorStop(0.72, this.bodyLook.palette.core);
-      beam.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      context.globalAlpha = Math.min(1, beat.pillar * strength);
-      context.fillStyle = beam;
-      context.beginPath();
-      // Barely tapered. A narrow cone reads as a beam pointed at the pet; a thick column reads as
-      // the pet being *in* something, which is what has to happen here.
-      context.moveTo(this.renderX - halfWidth, base);
-      context.lineTo(this.renderX - halfWidth * 0.88, top);
-      context.lineTo(this.renderX + halfWidth * 0.88, top);
-      context.lineTo(this.renderX + halfWidth, base);
-      context.closePath();
-      context.fill();
-    }
+  /** What the array and the ring need to know about the body they are working on. */
+  private ordealShape(): OrdealShape {
+    return {
+      x: this.renderX,
+      y: this.renderY,
+      radius: this.radius,
+      // Under the body rather than on the floor — see `OrdealShape.groundY`.
+      groundY: this.renderY + this.radius * 0.8,
+      palette: this.bodyLook.palette,
+      spin: this.realmBreak?.spin ?? 0,
+    };
+  }
 
-    // The bloom, and the load-bearing part of the whole sequence.
+  private ordealBeat(): OrdealBeat | null {
+    const beat = this.realmBreak;
+    if (!beat || this.devour) return null;
+    return { phase: beat.phase, progress: beat.progress, bud: beat.pillar, veil: beat.veil };
+  }
+
+  /**
+   * The array on the ground and the far half of the ring of charms. Behind the body.
+   *
+   * Split from the near half rather than drawn in one pass because a ring of objects that all sit
+   * in front of the pet is not a ring — it is a bracelet laid on top of a photograph. Half behind
+   * and half in front is the only thing here that makes the orbit read as an orbit.
+   */
+  private drawOrdealBehind(context: CanvasRenderingContext2D): void {
+    const beat = this.ordealBeat();
+    if (!beat) return;
+    const shape = this.ordealShape();
+    drawArray(context, shape, beat);
+    drawCharms(context, shape, beat, -1);
+  }
+
+  /**
+   * The bud, the light inside it, and the near half of the ring. In front of the body.
+   *
+   * The whole mechanism of the sequence lives in this being in *front*: at full strength there is
+   * nothing to see of whatever is inside, so the form can be changed unobserved, and the reveal is
+   * the light thinning out over something that is already different. No cross-dissolve, no second
+   * body drawn at some blend.
+   */
+  private drawOrdealFront(context: CanvasRenderingContext2D): void {
+    const beat = this.ordealBeat();
+    if (!beat) return;
+    const shape = this.ordealShape();
+    drawBud(context, shape, beat);
+
+    // The bloom, and still the part that guarantees the hide.
     //
-    // The slabs alone do not hide the body: the only one at full alpha is the narrow inner one, so
-    // the first version of this left the old silhouette showing through either side of a bright
-    // stripe — the form visibly changed in plain sight and there was nothing left to reveal. This
-    // is a disc of light centred on the body, opaque well past its own edge, and it is what the
-    // change actually happens behind. It fades on `veil` rather than `pillar`, which is what puts
-    // the figure back in view while the column is still standing.
-    //
-    // Two passes rather than one gradient. A single white-into-colour ramp has to hold full alpha
-    // through the colour shift to stay opaque, and that opaque coloured band draws a hard ring
-    // around the light — on a pale desktop the whole thing looked like a soap bubble. So the
-    // colour is its own smooth glow underneath, and the white is a separate, smaller, genuinely
-    // opaque disc on top.
+    // The bud's silhouette is a gradient that has to reach transparent at its top, so it cannot be
+    // relied on to be opaque everywhere the body is. This is a disc of light centred on the body,
+    // opaque well past its own edge. Two passes rather than one: a single white-into-colour ramp
+    // has to hold full alpha through the colour shift to stay opaque, and that opaque coloured band
+    // draws a hard ring around the light — on a pale desktop it looked like a soap bubble.
+    context.save();
     for (const [reach, stop, colour, alpha] of [
       [2.4, 0, this.bodyLook.palette.core, 0.6],
-      [1.9, 0.6, '#ffffff', 1.15],
+      // Just wide enough: opaque out to 1.15 body radii and no further. At 1.9 it was washing the
+      // bud's own colour out of the one frame that is supposed to be the most saturated.
+      [1.75, 0.66, '#ffffff', 1.15],
     ] as [number, number, string, number][]) {
       const bloom = context.createRadialGradient(
         this.renderX,
@@ -1440,39 +1465,16 @@ export class Slime {
       );
       bloom.addColorStop(0, colour);
       if (stop > 0) bloom.addColorStop(stop, colour);
-      bloom.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      bloom.addColorStop(1, clear(colour));
       context.globalAlpha = Math.min(1, beat.veil * alpha);
       context.fillStyle = bloom;
       context.beginPath();
       context.arc(this.renderX, this.renderY, this.radius * reach, 0, Math.PI * 2);
       context.fill();
     }
-
-    // A flare where it meets the ground, so the column looks planted rather than floating.
-    const flare = context.createRadialGradient(
-      this.renderX,
-      base,
-      0,
-      this.renderX,
-      base,
-      this.radius * PillarWidth,
-    );
-    flare.addColorStop(0, '#ffffff');
-    flare.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    context.globalAlpha = 0.6 * beat.pillar;
-    context.fillStyle = flare;
-    context.beginPath();
-    context.ellipse(
-      this.renderX,
-      base,
-      this.radius * PillarWidth,
-      this.radius * 0.5,
-      0,
-      0,
-      Math.PI * 2,
-    );
-    context.fill();
     context.restore();
+
+    drawCharms(context, shape, beat, 1);
   }
 
   /**
@@ -1556,6 +1558,7 @@ export class Slime {
 
     this.drawRing(context);
     this.drawAura(context);
+    this.drawOrdealBehind(context);
 
     // The halo. Drawn under everything, and only when there is something to say — a body that is
     // barely into a stage has none at all, so this is not permanent glare around the pet. It stays
@@ -1571,7 +1574,7 @@ export class Slime {
         reach,
       );
       halo.addColorStop(0, this.bodyLook.palette.core);
-      halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      halo.addColorStop(1, clear(this.bodyLook.palette.core));
       context.save();
       context.globalAlpha = 0.34 * this.bodyLook.glow;
       context.fillStyle = halo;
@@ -1667,7 +1670,7 @@ export class Slime {
     this.drawFace(context);
     context.restore();
 
-    this.drawPillar(context);
+    this.drawOrdealFront(context);
     if (this.mood === 'asleep') this.drawSleepMarks(context);
   }
 

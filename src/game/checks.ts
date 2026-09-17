@@ -14,6 +14,7 @@ declare const process: { exit(code: number): never };
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
 import { Glyphs } from './Glyphs.js';
 import { BreakthroughSpread, Motes } from './Motes.js';
+import { clear } from '../slime/colour.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
@@ -359,6 +360,16 @@ const still = new Motes();
 still.spawn(0, 500, 400, 46);
 checkTrue('an idle keyboard costs nothing', !still.busy && still.bounds() === null);
 
+
+// 20. Fading to transparent black is not fading out.
+//
+// Canvas interpolates gradient stops in non-premultiplied RGBA, so a ramp from a colour to
+// `rgba(0,0,0,0)` passes through half-alpha dark grey — which over a dark background is *darker*
+// than the background. It is why a beam of light kept reading as a column of smoke. The fix is to
+// end on the same colour at zero alpha, and the only thing worth asserting is that it is in fact
+// the same colour.
+checkTrue('a faded colour keeps its hue', clear('#8ff0d4') === 'rgba(143, 240, 212, 0)');
+checkTrue('and it works on shorthand', clear('#fff') === 'rgba(255, 255, 255, 0)');
 
 Math.random = realRandom;
 
