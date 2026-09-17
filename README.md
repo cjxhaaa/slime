@@ -879,57 +879,41 @@ blend.
 
 #### The small one, seventy-two times
 
-A stage breakthrough had no animation at all to begin with. `clearAlert` left a pleased face and
-that was the entire event — and a poke leaves the same face, so **advancing a stage looked exactly
-like being prodded**.
+This animation took five goes. The four that failed are worth keeping, because none of them failed
+for the reason I expected going in.
 
-It then went through three attempts that all failed for the same reason, which is the useful part:
+1. **Nothing at all.** `clearAlert` left a pleased face and that was the whole event — and a poke
+   leaves the same face, so advancing a stage looked exactly like being prodded.
+2. **Two auspicious clouds**, a scaled-down realm breakthrough. A diluted version of an impressive
+   thing reads as weak rather than as small, and it happened beside the body rather than to it.
+3. **A spark, a breath, a ripple and a vein.** Four effects standing in for one event.
+4. **A shed skin**, peeling off and fluttering away. That one was at least a real event with a
+   before and an after, and it went on looks: a torn crescent coming off a soft round body is a
+   faintly alarming image for something that is meant to be good news.
 
-1. **Two auspicious clouds drifting off the shoulder** — a scaled-down realm breakthrough. A diluted
-   version of an impressive thing reads as weak rather than small, and it happened beside the body
-   instead of to it, which contradicts the whole thesis that the slime *is* the progress bar.
-2. **A spark falling in, a breath, a ripple, and a vein** — four effects standing in for one event.
-3. Tuning.
+What it is now is the **first beat of a realm breakthrough at a smaller scale**. Qi dust arrives from
+outside and is taken in, the body brightens as it absorbs, and that is the event. 0.9 seconds.
 
-All three were **additive light**. A flash, a cloud, a spark, a ring. Light effects do not
-accumulate into an event however many you stack, because nothing in them has a before and an after.
+**That looks like mistake 2 and is not, and the difference is the whole lesson.** The clouds were a
+*decoration* of the big sequence scaled down — the part of it with no mechanism behind it. The dust
+is the part that means something: it is literally 修为 arriving, it is the same dust the keyboard
+knocks loose, and a stage filling up is exactly that having happened. Borrowing the mechanism reads
+as the same event at a smaller size. Borrowing the flourish reads as a cheap copy of a better one.
 
-So now the body sheds a skin, which is **subtractive and physical**:
+The three tiers are told apart by **how far the dust comes from**: one body radius for a keystroke,
+1.5 for a stage, 2.2 for a realm. Those three numbers carry the sense of scale between the three
+events and they live in two different files, so there is an assertion holding them in order.
 
-| | | |
-|---|---|---|
-| **Swell** | 0–0.64s | A rim of light presses outward from just inside the membrane, brightening — pressure from within |
-| **Split** | 0.64s | The skin gives. The body flinches in and what is underneath glosses over |
-| **Shed** | 0.64–2.14s | A tapered crescent of membrane peels off the outline, slides clear, curls and sways as it goes, and flutters down |
+The brightening needed no code of its own — arriving dust lights the membrane already, which is what
+`absorb` does. All that was added is a *floor* under it, because the specks land at whatever rate
+the physics delivers them and the glow could otherwise dip on a thin frame when it should be
+climbing.
 
-蜕皮 is the genre's own image for advancing, and the qi veins stay: the husk is the **event** and the
-veins are the **referent**, and those are two different problems. One vein per stage, one to nine,
-and the new one draws itself in once the skin is off. The spark and the ripple both went — a husk
-coming off is already the event, and light going out beside it is one more additive thing standing
-next to the thing that actually happened.
-
-The first cut of this ran 1.15 seconds and was too fast, the swell worst of all: a quarter second of
-pressure building is the same as no pressure building, and that beat is what the split is a payoff
-for. It is a 2 second sequence now with the husk outliving it slightly, about 2.1s in total — still
-under half a realm breakthrough, so the hierarchy holds.
-
-Lengthening it meant changing the physics with it. The husk's gravity came down from 340 to 190, its
-initial shove came down, and it gained air drag and a sideways sway. That is not a trick to keep it
-in frame: a scrap of membrane with almost no mass falling at the same rate as the creature it came
-off reads as a dropped coin. **It should flutter.** As it is, it falls about 102px over its
-second-and-a-half — roughly two body radii.
-
-Two details decide whether it works:
-
-**It has to be an open arc, not a closed outline.** A closed copy of the body is a copy of the body
-however you tint it — it reads as a second slime sliding out from behind the first. A crescent with
-two ends is a scrap of something that used to wrap around.
-
-**And stroking that arc is not enough.** A stroked arc is a wire, and a wire is not a piece of skin.
-It walks the arc twice — out along the outer edge and back along the inner — to close a band with
-real width, tapered to nothing at both ends so it reads as torn off rather than cut to length. The
-band is filled with a translucent gradient and edged twice, once dark and once white, for the same
-reason the formation array is engraved twice: this draws onto a desktop it has never seen.
+The qi veins stay: one per stage, one to nine, clipped to the body outline, fading in under the
+brightening. The dust is the **event** and the veins are the **referent** — a stage still has to
+leave something changed, or the next one has nothing to be an increment of. A realm change drops all
+nine back to one in the new colour, inside the cocoon where nothing can be seen of it. They also pay
+off the flowing veins that section five of the plan has owed since it was written.
 
 Taking a breakthrough is also one function now rather than two. Answering the alert and poking a
 ready pet in seclusion had drifted apart, and the seclusion path called `breakThrough` and

@@ -57,6 +57,15 @@ const TailSeconds = 0.05;
  */
 export const BreakthroughSpread = 2.2;
 
+/**
+ * And how much wider a *stage* breakthrough's is.
+ *
+ * Nearer in than a realm's, because it is the same gesture at a smaller scale and the distance the
+ * dust comes from is most of what says which of the two you are looking at. Still well outside the
+ * body, or it is not an inrush.
+ */
+export const StageSpread = 1.5;
+
 export interface Rect {
   x: number;
   y: number;

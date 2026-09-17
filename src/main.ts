@@ -9,7 +9,7 @@ import { Daily } from './game/daily';
 import { resolveErrand } from './game/errand';
 import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cultivation';
 import { Glyphs } from './game/Glyphs';
-import { BreakthroughSpread, Motes } from './game/Motes';
+import { Motes } from './game/Motes';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -796,10 +796,13 @@ function frame(now: number): void {
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
   // The new form goes on when the slime says so, which is when it is hidden inside the column.
   if (slime.takeLookRequest()) applyLook();
-  // Qi drawn in from well outside the body, using the same dust the keyboard produces — spread
-  // wide, because the first beat only reads as an inrush if it has somewhere to rush in from.
+  // Qi drawn in from outside the body, using the same dust the keyboard produces — and the slime
+  // says how far out, because a realm breakthrough draws from much further than a stage does, and
+  // that distance is most of what tells the two apart.
   const drawnIn = slime.takeDustRequest();
-  if (drawnIn > 0) motes.spawn(drawnIn, slime.x, slime.y, slime.blob.restRadius, BreakthroughSpread);
+  if (drawnIn !== null) {
+    motes.spawn(drawnIn.count, slime.x, slime.y, slime.blob.restRadius, drawnIn.spread);
+  }
 
   // What the bubble says, in priority order. An alert outranks everything: it is the one thing
   // on screen asking for an answer, and it must not be displaced by an idle greeting.

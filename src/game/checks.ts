@@ -13,7 +13,7 @@ declare const process: { exit(code: number): never };
 
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
 import { Glyphs } from './Glyphs.js';
-import { BreakthroughSpread, Motes } from './Motes.js';
+import { BreakthroughSpread, Motes, StageSpread } from './Motes.js';
 import { clear, mix } from '../slime/colour.js';
 import { smooth, wispFade } from '../slime/ease.js';
 import { resolveErrand } from './errand.js';
@@ -353,6 +353,15 @@ function spawnDistance(spread?: number): number {
 checkTrue(
   'a breakthrough draws from further out',
   spawnDistance(BreakthroughSpread) > spawnDistance() * 2,
+);
+// And the three tiers have to stay ordered. A stage breakthrough is the same gesture as a realm
+// one at a smaller scale, and the distance the dust comes from is most of what tells them apart —
+// so a stage has to reach further than a keystroke and not as far as a realm. Asserted because
+// these are three numbers in two files and nothing else would notice them crossing over.
+checkTrue(
+  'a stage sits between a keystroke and a realm',
+  spawnDistance() < spawnDistance(StageSpread) &&
+    spawnDistance(StageSpread) < spawnDistance(BreakthroughSpread),
 );
 // And still outside the body either way: a speck must never appear on top of the pet.
 checkTrue('no dust starts inside the pet', spawnDistance() > 46);
