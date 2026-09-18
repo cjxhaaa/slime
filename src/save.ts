@@ -20,6 +20,8 @@ export interface SaveState {
    * failed at.
    */
   charms: { held: number; failures: Record<string, number> };
+  /** When the next 机缘 is due, in unix seconds. Zero on a fresh install. */
+  fortune: { nextAt: number };
   /** Unix seconds the qi above was last brought up to date. Offline progress is this and nothing else. */
   settledAt: number;
   /** The one line said on a first run has been said. */
@@ -77,6 +79,7 @@ export async function loadSave(): Promise<SaveState | null> {
       cultivation?: Partial<SaveState['cultivation']> & { rebirths?: unknown };
       daily?: { date?: unknown; remaining?: unknown };
       charms?: { held?: unknown; failures?: unknown };
+      fortune?: { nextAt?: unknown };
       settledAt?: unknown;
       seenIntro?: unknown;
       quiet?: unknown;
@@ -109,6 +112,7 @@ export async function loadSave(): Promise<SaveState | null> {
         held: Math.max(0, Math.floor(numberOr(parsed.charms?.held, 0))),
         failures: countsOr(parsed.charms?.failures),
       },
+      fortune: { nextAt: numberOr(parsed.fortune?.nextAt, 0) },
       settledAt: numberOr(parsed.settledAt, Date.now() / 1000),
       seenIntro: parsed.seenIntro === true,
       quiet: parsed.quiet === true,

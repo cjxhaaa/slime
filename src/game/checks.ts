@@ -20,6 +20,19 @@ import { resolveErrand } from './errand.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
 import {
+  FINDS,
+  Fortune,
+  LeastSeconds,
+  MaxGapSeconds,
+  MinGapSeconds,
+  MostSeconds,
+  PullForwardSeconds,
+  findText,
+  findValue,
+  nextGap,
+  onReturn,
+} from './fortune.js';
+import {
   BaseOdds,
   Charms,
   FailureQiLoss,
@@ -519,6 +532,65 @@ const barely = new Cultivation(0);
 barely.qi = 1;
 barely.setBack(1);
 check('a set-back never goes negative', barely.qi, 0);
+
+// 25. 机缘, and the rule the whole system rests on.
+//
+// A reward that waits for you is a chore with a bow on it. §4.4 is explicit: ignoring one makes it
+// go away for good, and the amount has to be small enough that missing every single one costs
+// nothing worth minding.
+checkTrue('a find is worth minutes, not hours', MostSeconds <= 20 * 60);
+checkTrue('and the gap between them is hours', MinGapSeconds >= 60 * 60);
+checkTrue('the pool is a table of about twenty', FINDS.length >= 18 && FINDS.length <= 24);
+checkTrue('and none of them repeat', new Set(FINDS).size === FINDS.length);
+
+// The picks stay inside their stated ranges at both extremes of `random`.
+for (const roll of [0, 0.5, 0.999999]) {
+  const r = () => roll;
+  checkTrue(`a gap at ${roll} is within range`, nextGap(r) >= MinGapSeconds && nextGap(r) <= MaxGapSeconds);
+  checkTrue(`a value at ${roll} is within range`, findValue(r) >= LeastSeconds && findValue(r) <= MostSeconds);
+  checkTrue(`a line at ${roll} exists`, typeof findText(r) === 'string' && findText(r).length > 0);
+}
+// `random` returning exactly 1 is out of contract but costs nothing to survive, and an index past
+// the end of the pool would be `undefined` reaching the bubble as the word "undefined".
+checkTrue('and a line at 1 still exists', findText(() => 1).length > 0);
+
+// Coming back nudges a pending find forward. The bound on that is what stops the whole thing being
+// farmable by anyone who notices: stepping away and back must *move* finds, never mint them.
+const now = 1_000_000;
+check('a return pulls a distant find forward', onReturn(now, now + 3600), now + 3600 - PullForwardSeconds);
+checkTrue('but never to sooner than the buffer', onReturn(now, now + 3600) >= now + PullForwardSeconds);
+check('a find already inside the buffer is left alone', onReturn(now, now + 60), now + 60);
+check('and one already due is left alone', onReturn(now, now - 500), now - 500);
+// Repeated returns cannot walk it in: once inside the buffer it stops moving.
+let walked = now + 3600;
+for (let i = 0; i < 20; i++) walked = onReturn(now, walked);
+checkTrue('and hammering the return does not walk it in', walked >= now + PullForwardSeconds);
+
+const luck = new Fortune();
+luck.arm(now, () => 0.5);
+checkTrue('arming schedules one', luck.due(now) === false && luck.dueAt > now);
+const first = luck.dueAt;
+luck.arm(now, () => 0.5);
+check('arming again leaves it alone', luck.dueAt, first);
+checkTrue('and it comes due eventually', luck.due(luck.dueAt));
+
+// A save from a machine whose clock was wound back leaves a `nextAt` months out. Waiting months
+// for something with no visible timer is indistinguishable from the feature being broken.
+luck.restore({ nextAt: now + 400 * 24 * 3600 });
+luck.arm(now, () => 0.5);
+checkTrue('a find stranded by a wound-back clock is re-armed', luck.dueAt <= now + MaxGapSeconds);
+
+// Taken or ignored, the next one is booked the same way: a missed find must not come back sooner to
+// make up for it. Missing one costs nothing *and* changes nothing.
+const taken = new Fortune();
+const ignored = new Fortune();
+taken.spent(now, () => 0.25);
+ignored.spent(now, () => 0.25);
+check('ignoring one is booked exactly like taking one', ignored.dueAt, taken.dueAt);
+
+// A fresh install has nothing scheduled, and must not therefore be owed one immediately.
+const fresh = new Fortune();
+checkTrue('a fresh install is not owed a find', !fresh.due(now));
 
 Math.random = realRandom;
 

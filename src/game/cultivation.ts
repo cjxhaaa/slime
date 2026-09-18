@@ -255,6 +255,17 @@ export class Cultivation {
 
   /** Swallows a fetched key. */
   /**
+   * A gift, in seconds of the pet's own current output.
+   *
+   * Expressed in time rather than in qi so that the same find is worth the same *amount of
+   * progress* at 练气 and at 大乘 — a flat number of qi would be a morning's work early on and
+   * invisible later, which is the trap every one of these numbers has to be written to avoid.
+   */
+  bestow(seconds: number): void {
+    this.qi += this.rate() * seconds;
+  }
+
+  /**
    * Gives back part of a stage, for a realm breakthrough that did not take.
    *
    * A fraction of the *stage's* requirement rather than of anything realm-wide, because qi is one

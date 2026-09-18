@@ -1125,6 +1125,50 @@ hits two guardrails at once is not a scheduling problem.
 The question it was there to answer — *what does typing get me besides qi* — is answered by the
 charm count instead: one number, two uses, no interface.
 
+### 机缘: the lucky find, and why it has to expire
+
+Two to four times a working day the pet comes across something — 「拾得下品灵石三枚」,
+「石缝里挖出半截灵根」, 「打了个嗝，竟吐出灵光」 — and a bubble says so. Clicking it takes the find.
+**Ignoring it makes it go away for good after ninety seconds.**
+
+That last sentence is the reason the system is allowed to exist, and it came before any of the
+numbers. A reward that waits for you is a chore with a bow on it: it becomes something to check, and
+the guardrails say nothing here may need checking on a schedule. A reward that expires is a
+surprise. Which forces the amount to be small: **five to fifteen minutes** of the pet's own current output,
+against a ladder measured in days. Missing
+every single find in a run costs about as much as a long lunch.
+
+It is deliberately **not** put through `raiseAlert`. That machinery persists: it hops on a beat
+until answered, and quietens rather than leaves. Sending a lucky find through it would have turned a
+surprise into an errand, which is precisely what the section forbids.
+
+Three things the scheduling has to get right, none of which can be checked by looking at it — which
+is why they are all asserted:
+
+**The reward is in seconds of output, not in qi.** A flat number of qi would be a morning's work at
+练气 and invisible at 大乘. Every number in this project has to be written to avoid that trap, and
+this is the cheapest place to get it wrong.
+
+**Coming back to the machine pulls a pending find forward, and cannot mint one.** Twenty minutes
+away and then activity is the moment a find is most welcome, because it is the one moment the pet is
+being looked at on purpose. But the nudge is bounded and floored: a return can move the next find
+closer by at most eight minutes and never nearer than eight minutes from now. Without that bound,
+stepping away and back would *produce* finds, and anyone who noticed could farm it. There is an
+assertion that hammering the return twenty times does not walk one in.
+
+**An ignored find is booked exactly like a taken one.** Same call, same distribution. A missed find
+must not come back sooner to make up for it — missing one is meant to cost nothing *and* change
+nothing, and "the game quietly compensates you" is a different feeling from "that was luck".
+
+Also handled: a `nextAt` further out than the longest possible gap can only come from a clock that
+has been wound back, and waiting months for something with no visible timer is indistinguishable
+from the feature being broken. Arming repairs it.
+
+The clock only runs while the app does, so "two to four a day" counts time in front of the machine
+rather than time on Earth — otherwise leaving it running overnight would mean waking up owed a
+queue, and a queue is the one shape this must never take. Seclusion suppresses finds entirely: that
+switch means nothing asks for anything, and a bubble offering something is still a bubble.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held

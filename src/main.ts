@@ -8,9 +8,10 @@ import { allowance, burden, effort, engulfSeconds, spoilMinutes, strain } from '
 import { Daily } from './game/daily';
 import { resolveErrand } from './game/errand';
 import { Charms, FailureQiLoss } from './game/charms';
+import { AwaySeconds, Fortune, OfferSeconds, findText, findValue } from './game/fortune';
 import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cultivation';
 import { Glyphs } from './game/Glyphs';
-import { Motes } from './game/Motes';
+import { Motes, StageSpread } from './game/Motes';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -49,6 +50,7 @@ const glyphs = new Glyphs();
 const motes = new Motes();
 const daily = new Daily();
 const charms = new Charms();
+const fortune = new Fortune();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -512,6 +514,50 @@ let ascendUntil = 0;
  * mechanic. It is the only place the charm cost is ever spelled out.
  */
 let failUntil = 0;
+/**
+ * The 机缘 currently on offer: what it says, what it is worth, and when it gives up.
+ *
+ * Held here rather than pushed through `raiseAlert`, and that is the whole shape of the feature.
+ * An alert *persists* — it hops on a beat until it is answered, and quietens rather than leaves.
+ * §4.4 asks for the opposite: **ignore it and after ninety seconds it is gone for good.** Putting
+ * a lucky find through the alert machinery would have turned a surprise into an errand, which is
+ * the one thing the section says it must not be.
+ */
+let fortuneText: string | null = null;
+let fortuneWorth = 0;
+let fortuneUntil = 0;
+/**
+ * When somebody was last doing anything at all, in unix seconds.
+ *
+ * Typing or touching the pet. Used only to notice a *return* — twenty minutes of nothing and then
+ * something is the moment a find is most welcome, because it is the one moment the pet is being
+ * looked at on purpose.
+ */
+let lastActivityAt = Date.now() / 1000;
+
+/** Notes activity, and lets a pending find know if this was somebody coming back. */
+function sawActivity(): void {
+  const now = Date.now() / 1000;
+  if (now - lastActivityAt > AwaySeconds) fortune.noticeReturn(now);
+  lastActivityAt = now;
+}
+
+/** Takes the find on offer, if there is one. */
+function takeFortune(): boolean {
+  if (fortuneText === null) return false;
+  cultivation.settle();
+  cultivation.bestow(fortuneWorth);
+  fortuneText = null;
+  fortuneUntil = 0;
+  fortune.spent(Date.now() / 1000, Math.random);
+  applyLook();
+  // Seen rather than read: the same swallow a whole charm gets, and a few specks drawn in so the
+  // find visibly goes *into* the pet. §5 asks that a good thing be legible without hovering.
+  slime.gulp(-Math.PI / 2);
+  motes.spawn(9, slime.x, slime.y, slime.blob.restRadius, StageSpread);
+  requestSave(currentSave());
+  return true;
+}
 let seenIntro = true;
 
 /** Everything worth keeping, assembled in one place so every writer stores the same shape. */
@@ -524,6 +570,7 @@ function currentSave(): SaveState {
     settledAt: cultivation.settledAtSeconds,
     daily: daily.snapshot(),
     charms: charms.snapshot(),
+    fortune: fortune.snapshot(),
     seenIntro,
     quiet,
   };
@@ -838,6 +885,13 @@ function frame(now: number): void {
   // finishes wrapping.
   const readyToRaise = slime.takeRaiseRequest();
   if (readyToRaise !== null) void runRaise(readyToRaise);
+  // Ninety seconds and it is gone, with nothing said about it. The offer is dropped here rather
+  // than on a timer so that it cannot outlive a reload or fire into a closed window.
+  if (fortuneText !== null && now >= fortuneUntil) {
+    fortuneText = null;
+    fortuneUntil = 0;
+  }
+
   const readyToSwallow = slime.takeSwallowRequest();
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
   // The new form goes on when the slime says so, which is when it is hidden inside the column.
@@ -863,6 +917,15 @@ function frame(now: number): void {
       devourText(now) ??
       // Above the ascension line rather than below it: the two cannot both be true, and a
       // failure is the more recent thing to have happened either way.
+      // A find outranks the idle lines and the hover text, and is outranked by anything that is
+      // actually asking for an answer. It carries its own deadline rather than being cleared by
+      // anything: ninety seconds and it is simply not there any more.
+      //
+      // An alert is checked above this branch entirely, so a realm edge coming up while a find is
+      // on offer hides the find and a click goes to the alert — and the find then expires unseen.
+      // Left that way on purpose rather than queued: a queue is the shape §4.4 forbids, the
+      // collision is eight moments in a run, and missing a find is defined to cost nothing.
+      fortuneText ??
       (now < failUntil ? '渡劫未成\n符箓尽散 · 修为有损' : null) ??
       (now < ascendUntil ? '此身已证大道\n设置中可转生重历' : null) ??
       (now < introUntil ? '此物似有灵性\n正吞吐天地之气' : null) ??
@@ -1038,6 +1101,7 @@ function wirePointer(): void {
         }
         return;
       }
+      sawActivity();
       grabbed = true;
       slime.grab(event.clientX, event.clientY);
       // Picking it up calls the errand off. Wherever it is put down becomes the new home when it
@@ -1150,8 +1214,9 @@ function wirePointer(): void {
       } else if (slime.hitTest(event.clientX, event.clientY)) {
         // In seclusion nothing hops to tell you a stage is full, so a poke on a pet that is ready
         // takes the breakthrough. Otherwise progress would be stuck behind a trip to Settings.
+        // A find on offer is what the click takes, ahead of anything else a poke would do.
         // In seclusion nothing hops to say a stage is full, so the poke has to be able to take it.
-        const took = quiet && takeBreakThrough();
+        const took = takeFortune() || (quiet && takeBreakThrough());
         // Only the body gets poked. Clicks land here from the hover bubble too, and denting the
         // slime from an inch away because the pointer was over its speech bubble looks like a bug.
         //
@@ -1185,6 +1250,7 @@ async function main(): Promise<void> {
         cultivation.restore(saved.cultivation, saved.settledAt);
         daily.restore(saved.daily);
         charms.restore(saved.charms);
+        fortune.restore(saved.fortune);
         seenIntro = saved.seenIntro;
         quiet = saved.quiet;
         // Rust starts out listening, so a save that says otherwise has to say so out loud.
@@ -1222,6 +1288,23 @@ async function main(): Promise<void> {
     // changes state, even something this cheap and this idempotent.
     daily.roll(allowance(cultivation.realm, cultivation.ascensions));
     applyLook();
+    // 机缘. Not while in seclusion — that switch means nothing asks for anything, and a bubble
+    // offering something is still a bubble.
+    const unix = Date.now() / 1000;
+    if (!quiet) {
+      fortune.arm(unix, Math.random);
+      if (fortuneText === null && fortune.due(unix) && !slime.hasLiveAlert) {
+        fortuneText = findText(Math.random);
+        fortuneWorth = findValue(Math.random);
+        fortuneUntil = performance.now() + OfferSeconds * 1000;
+        // Booked now rather than when it is taken, so an ignored one is booked identically to a
+        // taken one — see `Fortune.spent`. Missing a find has to change nothing, not just cost
+        // nothing.
+        fortune.spent(unix, Math.random);
+        requestSave(currentSave());
+      }
+    }
+
     if (cultivation.readyToBreakThrough) {
       // A stage takes itself; a realm edge asks.
       //
@@ -1255,7 +1338,10 @@ async function main(): Promise<void> {
         // Capped at the rate the economy is balanced around, so leaning on a key is worth no more
         // than typing — and cannot turn the desktop into a snowstorm either.
         const counted = Math.min(input.presses, Math.ceil(ExpectedKeysPerSecond * InputPollSeconds));
-        if (counted > 0) motes.spawn(counted, slime.x, slime.y, slime.blob.restRadius);
+        if (counted > 0) {
+          motes.spawn(counted, slime.x, slime.y, slime.blob.restRadius);
+          sawActivity();
+        }
         if (input.key) {
           glyphs.spawn(input.key, slime.x, slime.y - slime.blob.restRadius * 0.4);
         }
@@ -1348,6 +1434,13 @@ async function main(): Promise<void> {
     };
   };
   debugHooks.__failRealm = () => slime.failRealm();
+  // Offers a 机缘 now rather than in the next hour or two.
+  debugHooks.__fortune = () => {
+    fortuneText = findText(Math.random);
+    fortuneWorth = findValue(Math.random);
+    fortuneUntil = performance.now() + OfferSeconds * 1000;
+    return { text: fortuneText, worthSeconds: Math.round(fortuneWorth), dueIn: Math.round(fortune.dueAt - Date.now() / 1000) };
+  };
 
   // Engulfs a rectangle without needing a real window under the slime. The real path is gated on
   // Win32 calls that only exist inside Tauri, so in a plain browser - which is the only way to see
