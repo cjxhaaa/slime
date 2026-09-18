@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -1409,92 +1410,101 @@ async function main(): Promise<void> {
     .catch(() => {});
 
 
-  const debugHooks = window as unknown as Record<string, unknown>;
-  // Handle for inspecting the simulation from a devtools console.
-  debugHooks.__slime = slime;
-  // Fires the full alert performance without needing anything to raise one. The animation is
-  // otherwise only reachable from whatever feature happens to be driving alerts.
-  debugHooks.__raiseAlert = (text = 'Something happened\nclick to dismiss') => {
-    slime.raiseAlert(text, () => {
-      bubble.hide();
-      slime.clearAlert();
-    });
-  };
-
-  // Drops a key beside the pet without anyone having typed one. The real path needs Raw Input,
-  // which only exists inside Tauri, and the overlay can only be *seen* in an ordinary browser —
-  // so without this the arc, the chase and the reach are all untunable.
-  // Knocks dust loose without a keyboard, for tuning the stream's density and the dent it leaves.
-  debugHooks.__typed = (count = 5) => {
-    motes.spawn(count, slime.x, slime.y, slime.blob.restRadius);
-    return motes.count;
-  };
-
-  debugHooks.__dropGlyph = (char = 'A') => {
-    glyphs.spawn(String(char).toUpperCase().slice(0, 1), slime.x, slime.y - slime.blob.restRadius * 0.4);
-    return glyphs.count;
-  };
-
-  // Jumps the body to any point on the ladder and repaints it immediately. Tuning the palette
-  // ramp and the size growth is otherwise gated on actually playing to 大乘, which is four days.
-  debugHooks.__setStage = (realm = 0, stage = 0, progress = 0, ascensions = -1) => {
-    cultivation.realm = realm;
-    cultivation.stage = stage;
-    cultivation.qi = requirement(realm, stage) * progress;
-    if (ascensions >= 0) cultivation.ascensions = ascensions;
-    applyLook();
-    return cultivation.describe();
-  };
-
-  // The ordeal, without four days of climbing first.
-  debugHooks.__ascend = () => slime.ascend();
-  // The charm hoard, for checking the odds and the failure without typing for an hour first.
-  debugHooks.__charms = (held?: number) => {
-    if (held !== undefined) {
-      charms.restore({ held, failures: charms.snapshot().failures });
-      requestSave(currentSave());
-    }
-    return {
-      held: charms.count,
-      odds: charms.oddsAt(cultivation.realm),
-      shortfall: charms.shortfallAt(cultivation.realm),
-      failures: charms.failuresAt(cultivation.realm),
-      atEdge: cultivation.atRealmEdge,
+  // Gated out of release builds entirely.
+  //
+  // `import.meta.env.DEV` is replaced with a literal at build time, so in a production bundle
+  // this whole block becomes `if (false)` and is dropped — the hooks were shipping before this,
+  // and `__setStage` in particular can put the save into states the game itself cannot reach.
+  // A release webview has no inspector to call them from, so nothing was exploitable; it was
+  // dead weight and a cheat surface waiting for the day devtools got switched on.
+  if (import.meta.env.DEV) {
+    const debugHooks = window as unknown as Record<string, unknown>;
+    // Handle for inspecting the simulation from a devtools console.
+    debugHooks.__slime = slime;
+    // Fires the full alert performance without needing anything to raise one. The animation is
+    // otherwise only reachable from whatever feature happens to be driving alerts.
+    debugHooks.__raiseAlert = (text = 'Something happened\nclick to dismiss') => {
+      slime.raiseAlert(text, () => {
+        bubble.hide();
+        slime.clearAlert();
+      });
     };
-  };
-  debugHooks.__failRealm = () => slime.failRealm();
-  // Fires a volley without needing a hoard or a hand: `speed` is raw hand pixels per second.
-  debugHooks.__fling = (speed = 3000, angle = -0.6) => {
-    const count = charmsForFling(speed);
-    volley.launch(count, slime.x, slime.y, Math.cos(angle) * speed, Math.sin(angle) * speed);
-    return { speed, count, spare: charms.spareAt(cultivation.realm) };
-  };
-  // Offers a 机缘 now rather than in the next hour or two.
-  debugHooks.__fortune = () => {
-    fortuneText = findText(Math.random);
-    fortuneWorth = findValue(Math.random);
-    fortuneUntil = performance.now() + OfferSeconds * 1000;
-    return { text: fortuneText, worthSeconds: Math.round(fortuneWorth), dueIn: Math.round(fortune.dueAt - Date.now() / 1000) };
-  };
 
-  // Engulfs a rectangle without needing a real window under the slime. The real path is gated on
-  // Win32 calls that only exist inside Tauri, so in a plain browser - which is the only way to see
-  // this overlay at all, since a transparent WebView2 window cannot be screenshotted - the morph
-  // is otherwise untunable. `swallow` then fails and is handled, which exercises the unwind too.
-  debugHooks.__simulateDevour = (x = 240, y = 160, width = 1000, height = 640, buried = false) => {
-    devourTarget = {
-      hwnd: 0,
-      title: 'Simulated',
-      process: 'simulated.exe',
-      x,
-      y,
-      width,
-      height,
-      hung: false,
-      occlusion: buried ? 1 : 0,
+    // Drops a key beside the pet without anyone having typed one. The real path needs Raw Input,
+    // which only exists inside Tauri, and the overlay can only be *seen* in an ordinary browser —
+    // so without this the arc, the chase and the reach are all untunable.
+    // Knocks dust loose without a keyboard, for tuning the stream's density and the dent it leaves.
+    debugHooks.__typed = (count = 5) => {
+      motes.spawn(count, slime.x, slime.y, slime.blob.restRadius);
+      return motes.count;
     };
-    slime.beginDevour(0, { x, y, width, height }, buried);
-  };
+
+    debugHooks.__dropGlyph = (char = 'A') => {
+      glyphs.spawn(String(char).toUpperCase().slice(0, 1), slime.x, slime.y - slime.blob.restRadius * 0.4);
+      return glyphs.count;
+    };
+
+    // Jumps the body to any point on the ladder and repaints it immediately. Tuning the palette
+    // ramp and the size growth is otherwise gated on actually playing to 大乘, which is four days.
+    debugHooks.__setStage = (realm = 0, stage = 0, progress = 0, ascensions = -1) => {
+      cultivation.realm = realm;
+      cultivation.stage = stage;
+      cultivation.qi = requirement(realm, stage) * progress;
+      if (ascensions >= 0) cultivation.ascensions = ascensions;
+      applyLook();
+      return cultivation.describe();
+    };
+
+    // The ordeal, without four days of climbing first.
+    debugHooks.__ascend = () => slime.ascend();
+    // The charm hoard, for checking the odds and the failure without typing for an hour first.
+    debugHooks.__charms = (held?: number) => {
+      if (held !== undefined) {
+        charms.restore({ held, failures: charms.snapshot().failures });
+        requestSave(currentSave());
+      }
+      return {
+        held: charms.count,
+        odds: charms.oddsAt(cultivation.realm),
+        shortfall: charms.shortfallAt(cultivation.realm),
+        failures: charms.failuresAt(cultivation.realm),
+        atEdge: cultivation.atRealmEdge,
+      };
+    };
+    debugHooks.__failRealm = () => slime.failRealm();
+    // Fires a volley without needing a hoard or a hand: `speed` is raw hand pixels per second.
+    debugHooks.__fling = (speed = 3000, angle = -0.6) => {
+      const count = charmsForFling(speed);
+      volley.launch(count, slime.x, slime.y, Math.cos(angle) * speed, Math.sin(angle) * speed);
+      return { speed, count, spare: charms.spareAt(cultivation.realm) };
+    };
+    // Offers a 机缘 now rather than in the next hour or two.
+    debugHooks.__fortune = () => {
+      fortuneText = findText(Math.random);
+      fortuneWorth = findValue(Math.random);
+      fortuneUntil = performance.now() + OfferSeconds * 1000;
+      return { text: fortuneText, worthSeconds: Math.round(fortuneWorth), dueIn: Math.round(fortune.dueAt - Date.now() / 1000) };
+    };
+
+    // Engulfs a rectangle without needing a real window under the slime. The real path is gated on
+    // Win32 calls that only exist inside Tauri, so in a plain browser - which is the only way to see
+    // this overlay at all, since a transparent WebView2 window cannot be screenshotted - the morph
+    // is otherwise untunable. `swallow` then fails and is handled, which exercises the unwind too.
+    debugHooks.__simulateDevour = (x = 240, y = 160, width = 1000, height = 640, buried = false) => {
+      devourTarget = {
+        hwnd: 0,
+        title: 'Simulated',
+        process: 'simulated.exe',
+        x,
+        y,
+        width,
+        height,
+        hung: false,
+        occlusion: buried ? 1 : 0,
+      };
+      slime.beginDevour(0, { x, y, width, height }, buried);
+    };
+  }
 
   await refreshGeometry();
 
