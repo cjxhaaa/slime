@@ -12,6 +12,7 @@ import { AwaySeconds, Fortune, OfferSeconds, findText, findValue } from './game/
 import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cultivation';
 import { Glyphs } from './game/Glyphs';
 import { Motes, StageSpread } from './game/Motes';
+import { Volley, charmsForFling } from './game/Volley';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -51,6 +52,7 @@ const motes = new Motes();
 const daily = new Daily();
 const charms = new Charms();
 const fortune = new Fortune();
+const volley = new Volley();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -838,6 +840,7 @@ function frame(now: number): void {
     bubble.isSettling ||
     glyphs.busy ||
     motes.busy ||
+    volley.busy ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
   if (!engaged && !slime.isAnimating && now - lastTick < IDLE_INTERVAL_MS) {
@@ -891,6 +894,8 @@ function frame(now: number): void {
     fortuneText = null;
     fortuneUntil = 0;
   }
+
+  volley.update(elapsed, width, height);
 
   const readyToSwallow = slime.takeSwallowRequest();
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
@@ -1007,7 +1012,7 @@ function frame(now: number): void {
   const painted = unionRect(
     slime.bounds(),
     unionRect(
-      unionRect(glyphs.bounds(), motes.bounds()),
+      unionRect(unionRect(glyphs.bounds(), motes.bounds()), volley.bounds()),
       unionRect(
         bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
         showPaw || paw.hasRipples() ? paw.bounds() : null,
@@ -1043,6 +1048,7 @@ function frame(now: number): void {
     bubble.takeTextDirty() ||
     glyphs.busy ||
     motes.busy ||
+    volley.busy ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged);
   // The frame the body stops moving is the frame its resting place becomes final, so that is the
   // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
@@ -1073,6 +1079,7 @@ function frame(now: number): void {
     motes.draw(context, slime.bodyColour);
     glyphs.draw(context, slime.bodyColour);
     slime.draw(context);
+    volley.draw(context, slime.bodyColour);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     paw.draw(context);
 
@@ -1191,6 +1198,28 @@ function wirePointer(): void {
     if (grabbed) {
       grabbed = false;
       const thrown = dragVelocity.release(event.timeStamp);
+
+      // 御符. A hard enough throw sends charms out with the pet, to detonate against the edge of
+      // the desktop.
+      //
+      // Measured on the *raw* hand speed rather than the velocity the body leaves with, because
+      // that one has been scaled by `ThrowTransfer` and clamped — two adjustments that exist to
+      // make the pet feel right and which have nothing to say about how hard somebody meant to
+      // throw it.
+      //
+      // Drawn from the spare pile only, so it can never cost the hundred that keeps the next realm
+      // safe. That is the same mistake the automatic stages made, and it would be worse here: a
+      // hidden penalty on a playful gesture is a trap.
+      const fling = Math.hypot(thrown.vx, thrown.vy);
+      const wanted = charmsForFling(fling);
+      if (wanted > 0) {
+        const fired = charms.takeSpare(cultivation.realm, wanted);
+        if (fired > 0) {
+          volley.launch(fired, slime.x, slime.y, thrown.vx, thrown.vy);
+          requestSave(currentSave());
+        }
+      }
+
       slime.release(thrown.vx, thrown.vy);
       dragVelocity.reset();
       // The gesture is over, so the home it remembered is over with it.
@@ -1434,6 +1463,12 @@ async function main(): Promise<void> {
     };
   };
   debugHooks.__failRealm = () => slime.failRealm();
+  // Fires a volley without needing a hoard or a hand: `speed` is raw hand pixels per second.
+  debugHooks.__fling = (speed = 3000, angle = -0.6) => {
+    const count = charmsForFling(speed);
+    volley.launch(count, slime.x, slime.y, Math.cos(angle) * speed, Math.sin(angle) * speed);
+    return { speed, count, spare: charms.spareAt(cultivation.realm) };
+  };
   // Offers a 机缘 now rather than in the next hour or two.
   debugHooks.__fortune = () => {
     fortuneText = findText(Math.random);

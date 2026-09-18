@@ -1071,6 +1071,48 @@ problem being held off by a threshold; it is a problem that no longer exists.
 odds, or wait and bank more — and crossing one spends the whole hoard on a dice roll. Doing that on
 somebody's behalf while they are not watching is not a convenience either.
 
+#### 御符: throwing the pet spends the surplus on fireworks
+
+**The size of the problem first.** The odds on a realm clamp at certainty, and a *successful*
+crossing spends nothing — so with a hundred banked the failure rate is zero and the expected spend
+over a whole run is **zero**, against a supply of about four thousand. Past the first hundred, every
+charm the pet ever ran across the desktop to fetch was worth exactly nothing. That is worse than the
+1.86 seconds of qi they used to be worth.
+
+**Throw the pet hard enough and charms go with it, to detonate against the edge of the desktop.**
+
+| | |
+|---|---|
+| Threshold | 1800 px/s of **raw hand speed** (placing it down is under 300; a deliberate flick runs 2000–4000) |
+| Count | one at the threshold up to five past 3600 px/s, fanned |
+| Return | **none at all** |
+
+That last row is deliberate and it is the most important line in the design. **Trying to make the
+surplus *useful* was the wrong instinct**: a sink that returns progress becomes the optimal thing to
+do, and "throw your pet at the wall repeatedly" is not a play pattern to design toward. A sink that
+returns *spectacle* costs the economy nothing and gives a dead number something to be.
+
+The threshold reads the **raw** hand velocity rather than the speed the body leaves with. That one
+has been through `ThrowTransfer` and a clamp — two adjustments that exist to make the pet feel right
+and which have nothing to say about how hard somebody meant to throw it.
+
+**It only ever spends the surplus, never the hundred keeping the next realm safe.** This is the
+automatic-stage mistake a second time — convenience drawn from the insurance pot, with the spending
+happening where the player is not looking — and it would be worse here, because a throw is a playful
+gesture and a hidden penalty on one is a trap. It also never scolds you for being poor: with no
+surplus, a throw is just a throw.
+
+Two things worth keeping from building it:
+
+`spareAt` was wrong the first time. It returned the *whole* hoard once the odds were covered rather
+than the excess over the line, so a hundred and two charms reported a hundred and two spare and
+spending five off that left ninety-seven — below the line the function exists to protect. It read
+correctly and did the opposite of its own docstring. The assertion caught it.
+
+And the blast is nudged *inside* the wall it struck rather than pinned to the pixel of impact.
+Pinning it is what actually happened and throws half the flash off the canvas — correct, and it
+halves the one frame anybody sees.
+
 #### What a failed realm costs, and why failure is allowed at all
 
 Section 4.2 of the plan used to say flatly that **breakthroughs cannot fail**, on the grounds that a

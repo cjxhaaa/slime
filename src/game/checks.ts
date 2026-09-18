@@ -20,6 +20,13 @@ import { resolveErrand } from './errand.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
 import {
+  FlingFull,
+  FlingThreshold,
+  LeastCharms,
+  MostCharms,
+  charmsForFling,
+} from './Volley.js';
+import {
   FINDS,
   Fortune,
   LeastSeconds,
@@ -591,6 +598,57 @@ check('ignoring one is booked exactly like taking one', ignored.dueAt, taken.due
 // A fresh install has nothing scheduled, and must not therefore be owed one immediately.
 const fresh = new Fortune();
 checkTrue('a fresh install is not owed a find', !fresh.due(now));
+
+// 26. 御符: throwing the pet hard sends charms out to explode against the edge of the desktop.
+//
+// It is a sink for the *surplus*, and the surplus is the whole reason it exists: the odds on a
+// realm clamp at certainty, and a successful crossing spends nothing, so past the first hundred a
+// charm was worth exactly zero against a supply of some four thousand a run.
+//
+// It pays nothing back on purpose. A sink that returns progress becomes the optimal thing to do,
+// and "throw your pet at the wall repeatedly" is not a play pattern to design toward.
+checkTrue('putting the pet down throws nothing', charmsForFling(0) === 0);
+checkTrue('and neither does a gentle move', charmsForFling(FlingThreshold - 1) === 0);
+check('a throw at the threshold sends the fewest', charmsForFling(FlingThreshold), LeastCharms);
+check('a throw at full strength sends the most', charmsForFling(FlingFull), MostCharms);
+check('and harder than that sends no more', charmsForFling(FlingFull * 4), MostCharms);
+// Monotonic across the range, so throwing harder never sends fewer.
+let sent = 0;
+let rising = true;
+for (let speed = 0; speed <= FlingFull * 1.5; speed += 25) {
+  const now = charmsForFling(speed);
+  if (now < sent) rising = false;
+  sent = now;
+}
+checkTrue('throwing harder never sends fewer', rising);
+
+// The insurance is untouchable. This is the automatic-stage mistake again — a spend drawn from the
+// pot that keeps a realm safe, happening where the player is not looking — and worse here, because
+// a throw is a playful gesture and a hidden penalty on one is a trap.
+const pouch = new Charms();
+pouch.gather(40);
+check('with no surplus, a throw spends nothing', pouch.takeSpare(0, 5), 0);
+check('and the hoard is untouched', pouch.count, 40);
+check('nothing is spare while the odds are short', pouch.spareAt(0), 0);
+
+// Exactly at the line, nothing is spare: the line is what the throw must never eat into.
+pouch.gather(charmsForCertainty(40, 0));
+check('sitting exactly on the line leaves nothing spare', pouch.spareAt(0), 0);
+check('so a throw from there spends nothing', pouch.takeSpare(0, 3), 0);
+// Above it, the excess and only the excess.
+pouch.gather(7);
+check('above the line, the excess is spare', pouch.spareAt(0), 7);
+const stocked = pouch.count;
+check('a throw takes what it asked for', pouch.takeSpare(0, 3), 3);
+check('from the spare pile', pouch.count, stocked - 3);
+checkTrue('and the odds are still certain afterwards', pouch.shortfallAt(0) === 0);
+
+// Asking for more than is spare throws what there is rather than refusing: it must not scold
+// somebody for throwing their pet.
+const thin = new Charms();
+thin.gather(charmsForCertainty(0, 0) + 2);
+check('asking for five when two are spare throws two', thin.takeSpare(0, 5), 2);
+checkTrue('and never digs below certainty', thin.shortfallAt(0) === 0);
 
 Math.random = realRandom;
 

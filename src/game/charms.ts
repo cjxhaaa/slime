@@ -109,6 +109,46 @@ export class Charms {
   }
 
   /**
+   * How many charms it takes, from nothing, to make a crossing here certain.
+   *
+   * Not the same question as `shortfallAt`, which asks how many *more* are wanted. This one is the
+   * insurance line itself, and it moves down as failures accumulate, because the pity on a realm
+   * raises its floor and so leaves less for the charms to buy.
+   */
+  private thresholdAt(realm: number): number {
+    return charmsForCertainty(0, this.failuresAt(realm));
+  }
+
+  /**
+   * How many are spare: everything *above* the insurance line.
+   *
+   * The first hundred or so is insurance; this is what is left over, and it is the only part any
+   * other feature is allowed to touch. Past certainty a charm's effect on the odds is exactly zero
+   * — `odds` clamps — so this doubles as a count of how many the pet has fetched for nothing.
+   *
+   * The first version of this returned the *whole* hoard as soon as the odds were covered, which
+   * meant a hundred and two charms reported a hundred and two spare, and spending five off that
+   * left ninety-seven — below the line the function exists to protect. It read correctly and did
+   * the opposite of its own docstring.
+   */
+  spareAt(realm: number): number {
+    return Math.max(0, this.held - this.thresholdAt(realm));
+  }
+
+  /**
+   * Spends from the spare pile only, and reports what it actually got.
+   *
+   * Never digs into the insurance, and never refuses outright — asking for five when two are spare
+   * throws two. A playful gesture must not be able to cost somebody a realm, and it must not
+   * scold them for trying either.
+   */
+  takeSpare(realm: number, want: number): number {
+    const spent = Math.max(0, Math.min(want, this.spareAt(realm)));
+    this.held -= spent;
+    return spent;
+  }
+
+  /**
    * Wipes the hoard and remembers the failure.
    *
    * All of it, not just a stake — the whole pot was in play, which is what "your charms decide the
