@@ -1455,6 +1455,45 @@ Worth writing down: three versions of tuning went into the arrival columns tryin
 and what actually bought it was content. Two thousand arrivals a minute could not do what six
 different behaviours did on the way past.
 
+#### What the effects layer learned from the dust
+
+Nearly every school shipped as **one stroked path**. A talisman was a filled rectangle, a sweep was
+a single arc, 雷法 — which ought to be the loudest thing on screen — was a polyline with one kink in
+it, and a kill was an element leaving an array with no flash at all.
+
+The benchmark was sitting in `Motes.ts` the whole time, and the reason it reads well is not its
+colour. A mote is **one of many small things with direction drawn into it**: a streak along its own
+velocity, brightest on the way in. So every effect now gets four layers instead of one —
+
+1. a soft wide **glow**, so it sits on a desktop nobody described
+2. a bright narrow **core**, so it has an edge
+3. **motion** — afterimages, smear arcs, a trail of its own path
+4. **grit** — sparks, thrown along the heading of whatever just connected
+
+and 邪气 now come apart when they die: a two-frame pale flash (the qi leaving, the one moment one of
+them is light rather than dark) and then dark shards thrown outward and turning.
+
+Three of them had to be redrawn twice, and all three failures were the same failure:
+
+- **丹火** was a wide translucent disc — which is the background with the contrast taken out, on any
+  background. Redrawn as nine tongues of flame around the rim, it became a **flower**: evenly
+  spaced, identical, with a hole in the middle. It is now one closed path whose radius is three
+  sine waves of different periods beating against each other, hot in the centre and gone at the rim.
+- **冰魄** filled its area at 19% and came out as a grey saucer. The area is now almost empty and
+  the rim carries it, with crystals turning on it and frost drifting inside.
+- **瘴气** drops a puff every fifth of a second and they last two and a half seconds, so fifteen of
+  them overlap along the path. At the alpha a single puff wants, the trail was an **opaque bright
+  green tube** following the pet around. Each is now barely there and the stack is what you see.
+
+The general lesson, which this codebase has now learned three times: **spend the pixels on edges and
+moving detail, never on broad translucent fill.** A wide soft shape is invisible on a pale wallpaper
+and a smudge on a dark one. "Better to be gone than to be grey" was written for the breakthrough
+wisps and it applies to all of it.
+
+Cost: 0.29 ms to paint a 大乘 frame with 17 邪气, 28 live effects and 80 sparks — a sixtieth of the
+frame budget. Sparks are capped at 170 and dispersals at 60, so the worst case is a fixed cost
+rather than one proportional to how well the run is going.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held

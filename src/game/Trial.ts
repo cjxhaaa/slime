@@ -177,6 +177,31 @@ export interface Menace {
   bearing: number;
 }
 
+/**
+ * A 邪气 coming apart.
+ *
+ * There was nothing here before: something died and simply stopped being in the array, so a run
+ * where you were killing eight things a second had **no feedback for killing anything**. Every
+ * flash on the screen belonged to the attack, and none of it belonged to the hit landing.
+ *
+ * Drawn as the dark thing breaking up rather than as another bright burst — the pet's light and
+ * the 邪气's dark are the only two visual languages in this mode, and a kill is the second one
+ * losing.
+ */
+interface Undoing {
+  x: number;
+  y: number;
+  size: number;
+  age: number;
+  /** Where the pieces went, fixed at death so they do not crawl between frames. */
+  shards: { vx: number; vy: number; spin: number }[];
+}
+
+/** How long one takes to disperse. Short: at eight kills a second these overlap constantly. */
+const UndoSeconds = 0.42;
+/** The most that can be dispersing at once, for the same reason the sparks are capped. */
+const MaxUndoing = 60;
+
 export type Outcome = 'running' | 'survived' | 'overwhelmed';
 
 /**
@@ -212,6 +237,7 @@ export interface Rect {
 
 export class Trial {
   private menaces: Menace[] = [];
+  private undoing: Undoing[] = [];
   private nextSpawn = 0;
   private elapsed = 0;
   private hurt = 0;
@@ -222,6 +248,7 @@ export class Trial {
 
   start(realm: number): void {
     this.menaces = [];
+    this.undoing = [];
     this.realm = realm;
     this.elapsed = 0;
     this.hurt = 0;
@@ -315,6 +342,7 @@ export class Trial {
       if (m.health > 0) continue;
       dead.add(index);
       this.kills += 1;
+      this.undo(m);
       // 裂魄 comes apart. Spawned here rather than in `update` so that a crowd cleared in one
       // sweep is immediately replaced by what the sweep should have left behind — the whole point
       // of the breed is that clearing a press all at once is the wrong move.
@@ -368,6 +396,13 @@ export class Trial {
     if (this.outcome !== 'running') return;
     this.elapsed += dt;
     this.grace = Math.max(0, this.grace - dt);
+
+    const dispersing: Undoing[] = [];
+    for (const u of this.undoing) {
+      u.age += dt;
+      if (u.age < UndoSeconds) dispersing.push(u);
+    }
+    this.undoing = dispersing;
 
     this.nextSpawn -= dt;
     if (this.nextSpawn <= 0) {
@@ -483,6 +518,30 @@ export class Trial {
     else if (this.elapsed >= RunSeconds) this.outcome = 'survived';
   }
 
+  /**
+   * Records one coming apart.
+   *
+   * Capped, because a 大乘 run kills a thousand things and a 剑气 sweep can take four in a frame.
+   * The cap drops the *newest* rather than the oldest, so a burst of kills still shows something
+   * and the ones already dispersing are allowed to finish instead of popping out of existence.
+   */
+  private undo(m: Menace): void {
+    if (this.undoing.length >= MaxUndoing) return;
+    const breed = BY_KIND[m.kind];
+    const pieces = m.kind === 'heavy' ? 9 : 6;
+    const shards: { vx: number; vy: number; spin: number }[] = [];
+    for (let i = 0; i < pieces; i++) {
+      const angle = (i / pieces) * Math.PI * 2 + Math.random() * 0.5;
+      const rush = 40 + Math.random() * 110;
+      shards.push({
+        vx: Math.cos(angle) * rush,
+        vy: Math.sin(angle) * rush,
+        spin: (Math.random() - 0.5) * 12,
+      });
+    }
+    this.undoing.push({ x: m.x, y: m.y, size: breed.size, age: 0, shards });
+  }
+
   /** Arrives from a random point on the border, just outside it, as whatever is due. */
   private spawn(width: number, height: number): void {
     const side = Math.floor(Math.random() * 4);
@@ -501,7 +560,7 @@ export class Trial {
   }
 
   bounds(): Rect | null {
-    if (this.menaces.length === 0) return null;
+    if (this.menaces.length === 0 && this.undoing.length === 0) return null;
     let left = Infinity;
     let top = Infinity;
     let right = -Infinity;
@@ -517,6 +576,14 @@ export class Trial {
       right = Math.max(right, m.x + pad);
       bottom = Math.max(bottom, m.y + pad);
     }
+    for (const u of this.undoing) {
+      const reach = u.size + 150 * UndoSeconds + 8;
+      left = Math.min(left, u.x - reach);
+      top = Math.min(top, u.y - reach);
+      right = Math.max(right, u.x + reach);
+      bottom = Math.max(bottom, u.y + reach);
+    }
+    if (left === Infinity) return null;
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
 
@@ -538,6 +605,44 @@ export class Trial {
    */
   draw(context: CanvasRenderingContext2D): void {
     context.save();
+
+    for (const u of this.undoing) {
+      const t = u.age / UndoSeconds;
+      const fade = 1 - t;
+      // A pale flash first, for two frames only: the qi coming out of it. It is the one moment a
+      // 邪气 is light rather than dark, and it is what makes a kill feel like it landed.
+      if (t < 0.22) {
+        const flash = 1 - t / 0.22;
+        const ring = context.createRadialGradient(u.x, u.y, 0, u.x, u.y, u.size * 2.4);
+        ring.addColorStop(0, 'rgba(255, 236, 224, 0.9)');
+        ring.addColorStop(1, clear('#ffece0'));
+        context.globalAlpha = flash * 0.8;
+        context.fillStyle = ring;
+        context.beginPath();
+        context.arc(u.x, u.y, u.size * 2.4 * (0.5 + 0.5 * (1 - flash)), 0, Math.PI * 2);
+        context.fill();
+      }
+      // Then the pieces, thrown outward and turning, fading as they go.
+      context.globalAlpha = fade * fade * 0.85;
+      context.fillStyle = '#1b1226';
+      for (const shard of u.shards) {
+        const px = u.x + shard.vx * u.age;
+        const py = u.y + shard.vy * u.age;
+        const size = u.size * 0.34 * fade;
+        context.save();
+        context.translate(px, py);
+        context.rotate(shard.spin * u.age);
+        context.beginPath();
+        context.moveTo(-size, -size * 0.6);
+        context.lineTo(size, 0);
+        context.lineTo(-size, size * 0.6);
+        context.closePath();
+        context.fill();
+        context.restore();
+      }
+      context.globalAlpha = 1;
+    }
+
     for (const m of this.menaces) {
       const breed = BY_KIND[m.kind];
       const size = breed.size * (0.4 + 0.6 * m.arrival);
