@@ -32,6 +32,21 @@
  * particular guard has had to be rebuilt.
  */
 import { clear } from '../slime/colour.js';
+import {
+  BY_KIND,
+  DartRushSeconds,
+  DartWindSeconds,
+  type Kind,
+  RootPulseReach,
+  RootPulseSeconds,
+  RootTellSeconds,
+  RootTravelSeconds,
+  SplitInto,
+  WeaveRadius,
+  WeaveSeconds,
+  pacing,
+  rollBreed,
+} from './menaces.js';
 
 /** How long a run lasts, in seconds. */
 export const RunSeconds = 90;
@@ -42,48 +57,46 @@ export function rung(realm: number): number {
 }
 
 /**
- * Both sides of the fight, one row per rung — a table rather than a pair of exponentials.
+ * The door: how much arrives, how fast it closes, and how much the body can take.
  *
- * They *were* exponentials, and the formulas were the problem. A stepped `volley` over a smoothly
- * shortening `fire` makes the thing that actually matters — kills per second — come out as a
- * sawtooth, and whether the quotient of two exponentials stays monotone is a question you have to
- * do algebra to answer. Here the answer is a column you can read, and the checks walk it.
+ * One row per rung, and **only the door.** It had two more columns once — talismans per volley and
+ * seconds between them — because the pet's whole offence used to be one number this file owned.
+ * It is a drafted build now (`schools.ts`), so there is nothing here to compare against and the
+ * comparison moved to where it can actually be made: a whole run, fought frame by frame in the
+ * checks, with a real build in it.
  *
- * `ratio` is kills per second over arrivals per second, and it is the whole design:
- *
- * | rung | realm | per volley | seconds | kills/s | arrivals/s | ratio | arrivals per run |
+ * | rung | realm | arrivals/s | over a run | opens at | ends at | speed | vitality |
  * |---|---|---|---|---|---|---|---|
- * | 0 | 筑基 | 1 | 0.95 | 1.05 | 1.28 | **0.82** | 115 |
- * | 1 | 金丹 | 1 | 0.82 | 1.22 | 1.45 | 0.84 | 130 |
- * | 2 | 元婴 | 2 | 0.78 | 2.56 | 2.96 | 0.87 | 267 |
- * | 3 | 化神 | 2 | 0.66 | 3.03 | 3.42 | 0.89 | 308 |
- * | 4 | 炼虚 | 3 | 0.66 | 4.55 | 4.96 | 0.92 | 447 |
- * | 5 | 合体 | 3 | 0.56 | 5.36 | 5.70 | 0.94 | 513 |
- * | 6 | 大乘 | 4 | 0.56 | 7.14 | 7.33 | **0.98** | 659 |
+ * | 0 | 筑基 | 7.0 | 629 | 4.0/s | 26.8/s | 52 | 5 |
+ * | 1 | 金丹 | 7.6 | 682 | 4.4/s | 29.2/s | 61 | 6.2 |
+ * | 2 | 元婴 | 8.2 | 738 | 4.7/s | 31.4/s | 70 | 7.4 |
+ * | 3 | 化神 | 8.8 | 793 | 5.1/s | 33.8/s | 79 | 8.6 |
+ * | 4 | 煉虚 | 9.6 | 865 | 5.5/s | 36.8/s | 88 | 9.8 |
+ * | 5 | 合体 | 10.4 | 938 | 6.0/s | 39.8/s | 97 | 11 |
+ * | 6 | 大乘 | 11.5 | 1034 | 6.6/s | 44.1/s | 106 | 12.2 |
  *
- * **The ratio never reaches one, and that is the whole design.** It took three versions and two
- * rounds of driving the real fight frame by frame to believe it. The first table had the player's
- * side running away to 2.9 at 大乘; the second pulled it back to 1.16. Both measured the same way:
- * from about halfway up the ladder, a run finished at **full health with the body never moving.**
+ * The spread across the ladder is much narrower than the 115-to-1034 it used to be, and that is
+ * not the ladder going soft: what a realm mostly buys you in here now is **exchanges** — nine over
+ * a 筑基 run against twelve at 大乘 — so the difference moved into the build. The arrival column
+ * only has to keep up with what a build of that depth can kill.
  *
- * The reason is the turret, not the ratio. Talismans fire themselves at the **nearest** 邪气, which
- * is exactly optimal defence — so the moment the fire rate can match the arrival rate, the thing
- * closest to you is always the thing dying, nothing crosses the last two hundred pixels, and
- * standing perfectly still is the best play available. A capped payout for walking away from the
- * keyboard is still an AFK button, and it was arriving precisely at the realms somebody has spent
- * days reaching.
+ * ## Three versions of this table were wrong, and the fourth one is not a number
  *
- * So the door stays ahead of the hand, everywhere. The crowd grows all run at every realm, which
- * means lasting ninety seconds always means **moving away from where it is thickest** — the one
- * thing the turret cannot do for you. What the realm changes is not whether you can win but what
- * winning looks like: a hundred-odd things arrive at 筑基, slowly, one at a time, answered one
- * talisman a second. Six hundred and fifty arrive at 大乘 at twice the speed, answered four at a
- * time, twice a second. Same arithmetic at both ends, and nothing alike about the two minutes.
+ * The first two set the player's side ahead of the door (a ratio of 2.9, then 1.16) and argued it
+ * from these columns. Both passed their checks while a real run, driven frame by frame, finished at
+ * **full health with the body never moving** — because the attacks aim at the nearest 邪气, which is
+ * optimal defence, so the moment the fire rate matches the arrival rate nothing crosses the last
+ * two hundred pixels and standing still is the best play there is.
  *
- * (I wrote "both sides scale, and the player's side scales faster" in the first version of this
- * file and put it in both design documents. It was a nice sentence and it was wrong — measurement
- * killed it twice before I stopped defending it. The player's side does still gain, which is why
- * 筑基 is the realm most likely to end early; it simply never gets to the front.)
+ * The third fought a whole run, which at least caught that. Then the schools arrived, four slots
+ * turned out to kill five to eight times what one talisman had, and out-scaling *that* with the
+ * door needed about two thousand arrivals in ninety seconds, which is not a fight.
+ *
+ * So the guard is structural instead: **the draft pauses the run**, `through` counts only elapsed
+ * seconds, and four cards are owed before the first arrival — an unattended run earns nothing, at
+ * any build strength, with nothing tuned for it. These columns are tuned against the case in
+ * between, somebody who drafts and then ignores the meter, and what closed that last gap was not a
+ * column either: it was giving 邪气 six breeds instead of one (`menaces.ts`).
  */
 interface Rung {
   /** Seconds between arrivals, at the start of a run and at the end of it. */
@@ -138,6 +151,7 @@ export const GraceSeconds = 0.9;
 export const StrikeRadius = 26;
 
 export interface Menace {
+  kind: Kind;
   x: number;
   y: number;
   vx: number;
@@ -146,6 +160,21 @@ export interface Menace {
   phase: number;
   /** Counts up from 0 as it arrives, so nothing pops into existence at full size. */
   arrival: number;
+  /** Hits left. Only 重煎 and 钉煎 have more than one, and both are drawn visibly bigger. */
+  health: number;
+  /** Seconds this one has been alive, which is what every breed's own clock runs off. */
+  age: number;
+  /**
+   * The one number a breed gets to itself.
+   *
+   * 奔煎 counts down to its next rush, 缠魂 counts down to cutting in, 钉煎 counts down to its
+   * next pulse. Sharing a field rather than giving each breed its own keeps `Menace` a flat record
+   * that a thousand of them can exist as without a second allocation each — there are a thousand
+   * arrivals in a 大乘 run.
+   */
+  timer: number;
+  /** Which way 缠魂 is going round, and the heading 奔煎 committed to. */
+  bearing: number;
 }
 
 export type Outcome = 'running' | 'survived' | 'overwhelmed';
@@ -255,11 +284,17 @@ export class Trial {
   }
 
   /**
-   * Kills up to `most` within a radius, nearest first. Returns how many died.
+   * Lands up to `most` hits within a radius, nearest first. Returns how many **landed**.
    *
-   * Nearest first rather than in list order, because list order is arrival order and an area
-   * effect that kills the three oldest things in a radius instead of the three closest looks
-   * broken in exactly the situation it matters — a crowd pressed against the body.
+   * Hits rather than kills, and the distinction only appeared with 重煎: a talisman that strikes
+   * something with four hit points has connected, and a caller asking "did I hit anything" — which
+   * is what every projectile in `Attacks` asks before it detonates — would otherwise be told no and
+   * sail straight through. Deaths are counted separately, in `killCount`, which is what the meter
+   * spends.
+   *
+   * Nearest first rather than in list order, because list order is arrival order, and an area
+   * effect that hits the three oldest things in a radius instead of the three closest looks broken
+   * in exactly the situation where it matters — a crowd pressed against the body.
    */
   cull(x: number, y: number, radius: number, most: number): number {
     if (most <= 0) return 0;
@@ -268,13 +303,36 @@ export class Trial {
       const away = Math.hypot(this.menaces[i].x - x, this.menaces[i].y - y);
       if (away <= radius) inside.push({ index: i, away });
     }
+    if (inside.length === 0) return 0;
     inside.sort((a, b) => a.away - b.away);
-    const doomed = inside.slice(0, most).map((e) => e.index);
-    if (doomed.length === 0) return 0;
-    const dead = new Set(doomed);
-    this.menaces = this.menaces.filter((_, i) => !dead.has(i));
-    this.kills += doomed.length;
-    return doomed.length;
+
+    const struck = inside.slice(0, most);
+    const dead = new Set<number>();
+    const spawned: Menace[] = [];
+    for (const { index } of struck) {
+      const m = this.menaces[index];
+      m.health -= 1;
+      if (m.health > 0) continue;
+      dead.add(index);
+      this.kills += 1;
+      // 裂魄 comes apart. Spawned here rather than in `update` so that a crowd cleared in one
+      // sweep is immediately replaced by what the sweep should have left behind — the whole point
+      // of the breed is that clearing a press all at once is the wrong move.
+      if (m.kind === 'split') {
+        for (let i = 0; i < SplitInto; i++) {
+          const away = (i / SplitInto) * Math.PI * 2 + m.phase;
+          spawned.push(
+            born('dart', m.x + Math.cos(away) * 18, m.y + Math.sin(away) * 18, {
+              arrival: 1,
+              timer: DartWindSeconds * 0.4,
+            }),
+          );
+        }
+      }
+    }
+    if (dead.size > 0) this.menaces = this.menaces.filter((_, i) => !dead.has(i));
+    if (spawned.length > 0) this.menaces = this.menaces.concat(spawned);
+    return struck.length;
   }
 
   /**
@@ -317,12 +375,17 @@ export class Trial {
       this.spawn(width, height);
     }
 
-    const speed = menaceSpeed(this.realm);
+    // A quarter faster by the end of a run. Deliberately small — speed is the cheapest difficulty
+    // curve there is, and the roster is supposed to be doing the work.
+    const speed = menaceSpeed(this.realm) * pacing(this.through);
     const fields = guard?.fields() ?? [];
     const survivors: Menace[] = [];
     for (const m of this.menaces) {
       m.arrival = Math.min(1, m.arrival + dt * 2.2);
       m.phase += dt * 2.6;
+      m.age += dt;
+      m.timer -= dt;
+      const breed = BY_KIND[m.kind];
       const dx = body.x - m.x;
       const dy = body.y - m.y;
       const away = Math.hypot(dx, dy) || 1;
@@ -332,22 +395,85 @@ export class Trial {
       for (const field of fields) {
         if (Math.hypot(m.x - field.x, m.y - field.y) <= field.radius) drag = Math.min(drag, field.factor);
       }
+
+      const pace = speed * breed.pace * drag;
+      // How hard it corrects toward where it wants to be. Low is heavy, high is nimble; the
+      // difference between 重煎 and 奔煎 is mostly this number.
+      let grip = 2.6;
+      let goalX = dx / away;
+      let goalY = dy / away;
+      let want = pace;
+
+      if (m.kind === 'heavy') {
+        // Slow and hard to turn: it commits to a line and you go round it.
+        grip = 0.8;
+      } else if (m.kind === 'dart') {
+        // Gathers, then rushes along a heading it picked when it started. It cannot correct
+        // mid-rush, which is the whole point — a straight-line kite gets caught, a sidestep does
+        // not.
+        if (m.timer <= 0) {
+          const rushing = m.age % (DartWindSeconds + DartRushSeconds) >= DartWindSeconds;
+          m.timer = rushing ? DartRushSeconds : DartWindSeconds;
+          if (!rushing) m.bearing = Math.atan2(dy, dx);
+        }
+        const rushing = m.age % (DartWindSeconds + DartRushSeconds) >= DartWindSeconds;
+        if (rushing) {
+          goalX = Math.cos(m.bearing);
+          goalY = Math.sin(m.bearing);
+          want = pace * 2.1;
+          grip = 5;
+        } else {
+          want = pace * 0.12;
+          grip = 3.5;
+        }
+      } else if (m.kind === 'weave') {
+        // Circles at a distance and then cuts in. Until it commits it is steering at a point
+        // tangential to you, so it builds up on the edges of the screen while you watch the middle.
+        if (m.age < WeaveSeconds) {
+          const around = Math.atan2(-dy, -dx) + m.bearing * 0.9;
+          const ring = { x: body.x + Math.cos(around) * WeaveRadius, y: body.y + Math.sin(around) * WeaveRadius };
+          const to = Math.hypot(ring.x - m.x, ring.y - m.y) || 1;
+          goalX = (ring.x - m.x) / to;
+          goalY = (ring.y - m.y) / to;
+          grip = 1.8;
+        } else {
+          want = pace * 1.7;
+          grip = 4;
+        }
+      } else if (m.kind === 'root') {
+        // Travels for a moment, then plants itself for good and starts pulsing. It cannot be
+        // kited, so it has to be killed — and it takes the ground you were standing on.
+        if (m.age >= RootTravelSeconds) {
+          want = 0;
+          m.vx = 0;
+          m.vy = 0;
+          if (m.timer <= 0) {
+            m.timer = RootPulseSeconds;
+            if (away <= RootPulseReach + body.radius && this.grace <= 0 && !guard?.absorb()) {
+              this.hurt += ContactDamage;
+              this.grace = GraceSeconds;
+            }
+          }
+        }
+      }
+
       // Steered rather than teleported along the line: a bit of inertia means a dodge actually
       // works, because they overshoot instead of turning on the spot.
-      m.vx += ((dx / away) * speed * drag - m.vx) * Math.min(1, dt * 2.6);
-      m.vy += ((dy / away) * speed * drag - m.vy) * Math.min(1, dt * 2.6);
+      m.vx += (goalX * want - m.vx) * Math.min(1, dt * grip);
+      m.vy += (goalY * want - m.vy) * Math.min(1, dt * grip);
       m.x += m.vx * dt;
       m.y += m.vy * dt;
 
-      if (away <= body.radius + 14) {
+      if (away <= body.radius + breed.size) {
         // 山岳 first. A shell that only works after the wound is not a shell.
         if (this.grace <= 0 && !guard?.absorb()) {
           this.hurt += ContactDamage;
           this.grace = GraceSeconds;
         }
-        // Consumed on contact either way. Something that lands a hit and then sits inside the body
-        // draining it is not a fight, it is a leak.
-        continue;
+        // 钉煎 is the exception: it stays. It does its damage from where it stands, so being
+        // walked into cannot be what removes it — otherwise the breed that cannot be kited would
+        // be cleared by kiting into it once.
+        if (m.kind !== 'root') continue;
       }
       survivors.push(m);
     }
@@ -357,11 +483,11 @@ export class Trial {
     else if (this.elapsed >= RunSeconds) this.outcome = 'survived';
   }
 
-  /** Arrives from a random point on the border, just outside it. */
+  /** Arrives from a random point on the border, just outside it, as whatever is due. */
   private spawn(width: number, height: number): void {
     const side = Math.floor(Math.random() * 4);
     const along = Math.random();
-    const out = 24;
+    const out = 30;
     const at =
       side === 0
         ? { x: along * width, y: -out }
@@ -370,14 +496,8 @@ export class Trial {
           : side === 2
             ? { x: along * width, y: height + out }
             : { x: -out, y: along * height };
-    this.menaces.push({
-      x: at.x,
-      y: at.y,
-      vx: 0,
-      vy: 0,
-      phase: Math.random() * Math.PI * 2,
-      arrival: 0,
-    });
+    const breed = rollBreed(rung(this.realm), this.through, Math.random);
+    this.menaces.push(born(breed.kind, at.x, at.y, {}));
   }
 
   bounds(): Rect | null {
@@ -387,10 +507,15 @@ export class Trial {
     let right = -Infinity;
     let bottom = -Infinity;
     for (const m of this.menaces) {
-      left = Math.min(left, m.x - 30);
-      top = Math.min(top, m.y - 30);
-      right = Math.max(right, m.x + 30);
-      bottom = Math.max(bottom, m.y + 30);
+      // Per breed, because they are no longer one size. 重煞's halo alone reaches sixty-two pixels
+      // and 钉煞 draws a ring at ninety-six — a flat thirty would have clipped both, and a clipped
+      // dirty rect leaves a smear on the desktop rather than a missing sprite.
+      const pad =
+        m.kind === 'root' ? RootPulseReach + 8 : BY_KIND[m.kind].size * 2.6 + 6;
+      left = Math.min(left, m.x - pad);
+      top = Math.min(top, m.y - pad);
+      right = Math.max(right, m.x + pad);
+      bottom = Math.max(bottom, m.y + pad);
     }
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
@@ -402,12 +527,42 @@ export class Trial {
    * light — dust, talismans, the cocoon, the blast — so the thing that is coming for it reads at a
    * glance by being the opposite, on any wallpaper, without needing a colour anybody has to learn.
    */
+  /**
+   * 邪气, six ways.
+   *
+   * All of them dark, and they are still the only dark things in this app — everything the pet
+   * makes is light, so the things coming for it read at a glance on any wallpaper. What separates
+   * the breeds is **silhouette**, not colour: the same red eyes on six shapes, one of them twice
+   * the size of the rest and one of them all angles. A player has to be able to tell a 奔煎 from a
+   * 游魂 while looking at something else, which rules out telling them apart by hue.
+   */
   draw(context: CanvasRenderingContext2D): void {
     context.save();
     for (const m of this.menaces) {
-      const size = 13 * (0.4 + 0.6 * m.arrival);
+      const breed = BY_KIND[m.kind];
+      const size = breed.size * (0.4 + 0.6 * m.arrival);
       context.save();
       context.translate(m.x, m.y);
+
+      // 钉煎 tells you before it pulses, so standing in it is a choice rather than an ambush.
+      if (m.kind === 'root' && m.age >= RootTravelSeconds) {
+        const due = m.timer;
+        if (due <= RootTellSeconds) {
+          const swell = 1 - due / RootTellSeconds;
+          context.globalAlpha = 0.5 * swell;
+          context.strokeStyle = 'rgba(228, 88, 88, 0.9)';
+          context.lineWidth = 2 + swell * 2;
+          context.beginPath();
+          context.arc(0, 0, RootPulseReach * (0.55 + 0.45 * swell), 0, Math.PI * 2);
+          context.stroke();
+        }
+        context.globalAlpha = 0.16;
+        context.strokeStyle = 'rgba(210, 120, 120, 0.7)';
+        context.lineWidth = 1;
+        context.beginPath();
+        context.arc(0, 0, RootPulseReach, 0, Math.PI * 2);
+        context.stroke();
+      }
 
       const halo = context.createRadialGradient(0, 0, 0, 0, 0, size * 2.6);
       halo.addColorStop(0, 'rgba(24, 14, 34, 0.5)');
@@ -418,39 +573,139 @@ export class Trial {
       context.arc(0, 0, size * 2.6, 0, Math.PI * 2);
       context.fill();
 
-      // A ragged ring rather than a circle: a smooth blob reads as a bubble, and this is supposed
-      // to read as something with an intent.
+      const look = Math.atan2(m.vy, m.vx);
       context.globalAlpha = m.arrival;
-      context.fillStyle = '#1b1226';
-      context.beginPath();
-      for (let i = 0; i <= 11; i++) {
-        const angle = (i / 11) * Math.PI * 2;
-        const reach = size * (0.82 + 0.3 * Math.sin(angle * 3 + m.phase));
-        const px = Math.cos(angle) * reach;
-        const py = Math.sin(angle) * reach;
-        if (i === 0) context.moveTo(px, py);
-        else context.lineTo(px, py);
-      }
-      context.closePath();
-      context.fill();
+      context.fillStyle = m.kind === 'heavy' ? '#140c1e' : '#1b1226';
 
-      // Two eyes, because an enemy the player is meant to read as aimed at them needs a front.
+      if (m.kind === 'root') {
+        // All angles, and it does not point anywhere, because it is not going anywhere.
+        context.beginPath();
+        for (let i = 0; i <= 12; i++) {
+          const angle = (i / 12) * Math.PI * 2;
+          const reach = size * (i % 2 === 0 ? 1.15 : 0.6);
+          const px = Math.cos(angle + m.phase * 0.2) * reach;
+          const py = Math.sin(angle + m.phase * 0.2) * reach;
+          if (i === 0) context.moveTo(px, py);
+          else context.lineTo(px, py);
+        }
+        context.closePath();
+        context.fill();
+      } else {
+        // A ragged ring rather than a circle: a smooth blob reads as a bubble, and this is supposed
+        // to read as something with an intent. 奔煎 is stretched along its heading, which is the
+        // one silhouette cue that survives at ten pixels.
+        context.save();
+        context.rotate(look);
+        // 奔煎 is drawn long, with a wake behind it, because at ten pixels across a silhouette is
+        // the only cue that survives — and it is the breed you most need to recognise early.
+        if (m.kind === 'dart') {
+          context.globalAlpha = 0.34 * m.arrival;
+          context.beginPath();
+          context.moveTo(-size * 1.6, -size * 0.42);
+          context.lineTo(-size * 4.4, 0);
+          context.lineTo(-size * 1.6, size * 0.42);
+          context.closePath();
+          context.fill();
+          context.globalAlpha = m.arrival;
+        }
+        // Mass, not spikes. 重煎 gets two shallow lobes so it reads as something heavy; 钉煎 is
+        // the angular one, and the first version gave them both five deep ones, which made the two
+        // of them the same silhouette at a glance.
+        const stretch = m.kind === 'dart' ? 2.1 : 1;
+        const lobes = m.kind === 'heavy' ? 2 : 3;
+        const ripple = m.kind === 'heavy' ? 0.1 : 0.3;
+        context.beginPath();
+        for (let i = 0; i <= 15; i++) {
+          const angle = (i / 15) * Math.PI * 2;
+          const reach = size * (0.9 + ripple * Math.sin(angle * lobes + m.phase));
+          const px = Math.cos(angle) * reach * stretch;
+          const py = Math.sin(angle) * reach;
+          if (i === 0) context.moveTo(px, py);
+          else context.lineTo(px, py);
+        }
+        context.closePath();
+        context.fill();
+        context.restore();
+      }
+
+      // 裂魄 carries the seam it is going to come apart along. The tell is the whole reason the
+      // breed is fair: clearing a press all at once is a mistake you can see coming.
+      if (m.kind === 'split') {
+        context.globalAlpha = 0.75 * m.arrival;
+        context.strokeStyle = 'rgba(226, 120, 120, 0.85)';
+        context.lineWidth = 2;
+        context.beginPath();
+        context.moveTo(Math.cos(m.phase * 0.3) * size, Math.sin(m.phase * 0.3) * size);
+        context.lineTo(-Math.cos(m.phase * 0.3) * size, -Math.sin(m.phase * 0.3) * size);
+        context.stroke();
+      }
+
+      // 缠魂 wears the ring it is circling on, so a screen edge filling up with them is legible
+      // as a thing that is happening rather than as clutter.
+      if (m.kind === 'weave' && m.age < WeaveSeconds) {
+        context.globalAlpha = 0.85 * m.arrival;
+        context.strokeStyle = 'rgba(232, 140, 166, 0.95)';
+        context.lineWidth = 2.6;
+        context.beginPath();
+        context.arc(0, 0, size * 1.75, look + 0.5, look + 2.7);
+        context.stroke();
+      }
+
+      // Eyes: an enemy the player is meant to read as aimed at them needs a front. 重煎 has four,
+      // which is the cheapest way to say "this one is more than the others".
       context.globalAlpha = 0.9 * m.arrival;
       context.fillStyle = 'rgba(232, 96, 96, 0.95)';
-      const look = Math.atan2(m.vy, m.vx);
-      for (const side of [-0.42, 0.42]) {
+      if (m.kind === 'root') {
         context.beginPath();
-        context.arc(
-          Math.cos(look + side) * size * 0.4,
-          Math.sin(look + side) * size * 0.4,
-          size * 0.15,
-          0,
-          Math.PI * 2,
-        );
+        context.arc(0, 0, size * 0.3, 0, Math.PI * 2);
         context.fill();
+      } else {
+        const sides = m.kind === 'heavy' ? [-0.62, -0.2, 0.2, 0.62] : [-0.42, 0.42];
+        for (const side of sides) {
+          context.beginPath();
+          context.arc(
+            Math.cos(look + side) * size * 0.4,
+            Math.sin(look + side) * size * 0.4,
+            size * (m.kind === 'heavy' ? 0.11 : 0.15),
+            0,
+            Math.PI * 2,
+          );
+          context.fill();
+        }
       }
       context.restore();
     }
     context.restore();
   }
+}
+
+/**
+ * One of them, ready to go.
+ *
+ * A factory rather than an object literal at each call site, because there are two of those — the
+ * border spawner and 裂魄 coming apart — and a `Menace` gained four fields when the roster did.
+ * Two literals drifting apart on a record this hot is the kind of bug that shows up as one breed
+ * behaving oddly and nothing else.
+ */
+function born(
+  kind: Kind,
+  x: number,
+  y: number,
+  extra: { arrival?: number; timer?: number },
+): Menace {
+  const breed = BY_KIND[kind];
+  return {
+    kind,
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    phase: Math.random() * Math.PI * 2,
+    arrival: extra.arrival ?? 0,
+    health: breed.health,
+    age: 0,
+    timer: extra.timer ?? (kind === 'root' ? RootPulseSeconds : DartWindSeconds),
+    // 缠魂 uses this as which way round it goes; 奔煎 overwrites it with a heading.
+    bearing: Math.random() < 0.5 ? -1 : 1,
+  };
 }

@@ -1395,6 +1395,66 @@ a second at 筑基 and 11.5 at 大乘, 630 to 1030 over a run, on a much steeper
 the open, twenty-six to forty-four at the close). The spread between realms is narrower than the old
 115–1034 table, because the spread moved into the build.
 
+### 邪气: six breeds, and what escalates inside a run
+
+There used to be one of them — a blot that homed in with a little inertia — and the only thing that
+escalated across ninety seconds was how often they arrived. So the last thirty seconds were the
+first thirty with the tap opened: more of exactly what you had already solved.
+
+| | breed | what it does | what it punishes |
+|---|---|---|---|
+| 游魂 | `drift` | homes in steadily, overshoots when you dodge | nothing; it is the baseline |
+| 奔煞 | `dart` | gathers, then rushes along a heading it cannot correct | kiting in a straight line |
+| 缠魂 | `weave` | circles at 210px, then cuts in | watching the middle, not the edges |
+| 裂魄 | `split` | comes apart into two 奔煞 when killed | clearing a press all at once |
+| 重煞 | `heavy` | slow, twice the size, takes four hits | pointing everything at one thing |
+| 钉煞 | `root` | plants itself and pulses where it stands | standing still, and ignoring things |
+
+Six breeds, six verbs. They are not six rows of different numbers — each is meant to break a habit,
+and a breed you beat the same way you beat the last one is a reskin. They are told apart by
+**silhouette**, not colour: still all dark (the only dark things in the app), still red eyes, but
+one is stretched with a wake, one is a big smooth mass, one is all angles with a telegraph ring. You
+have to be able to read a 奔煞 while looking at something else, which rules out hue.
+
+#### Three things escalate now, where one did before
+
+1. **How many** — already ramped, and steeply: four a second at the open, 26–44 at the close.
+2. **What** — new. Breeds arrive on a schedule and the baseline's share falls as they do: a run
+   opens as 100% 游魂 and ends with it at **15%**. The composition at eighty seconds is not the
+   composition at ten.
+3. **How fast** — a quarter faster by the end, and no more. Speed is the cheapest difficulty curve
+   there is; it makes the same fight harder rather than making it a different fight.
+
+A realm reads the same schedule faster rather than having its own: 大乘 has met all six by 38% of
+the way in, where 筑基 is still two short and does not meet its last until second 58.
+
+#### The one-hit rule is broken twice, on purpose
+
+"One talisman, one 邪气" was written down with reasons: if *everything* has two hit points the crowd
+just has a longer time-to-kill — in a press something is always already wounded, so every shot kills
+anyway and the second point is invisible — and a bar over a thirteen-pixel blot is a number on the
+screen, which §5 forbids. Neither reason survives contact with **two rare breeds drawn conspicuously
+bigger**. You can see that 重煞 is big. That is the bar. The check pins it: exactly two breeds have
+more than one hit point, and both are at least 16px where the baseline is 13.
+
+This is also why `cull` returns hits landed rather than kills. A talisman that strikes something
+with four hit points has connected, and every projectile in `Attacks` asks "did I hit anything"
+before it detonates — told no, it would sail straight through a 重煞.
+
+#### The roster fixed the difficulty curve that three rounds of tuning could not
+
+The previous pass left a problem: a player who spent their exchanges finished **every realm
+untouched**, so the back half of a run had no tension. Six breeds fixed it with **no number
+retuned**:
+
+- 大乘 with the meter spent went from integrity 1.0 to **0.26**
+- a build drafted and then neglected now loses at **every** realm, where 筑基 used to be survivable
+  on inattention alone — so the exemption that was written for it could be deleted
+
+Worth writing down: three versions of tuning went into the arrival columns trying to buy difficulty,
+and what actually bought it was content. Two thousand arrivals a minute could not do what six
+different behaviours did on the way past.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held

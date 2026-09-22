@@ -79,6 +79,7 @@ import {
   vitality,
 } from './Trial.js';
 import { Attacks } from './Attacks.js';
+import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
 
@@ -986,6 +987,80 @@ checkTrue('an evolved school is not offered raises', !lone.offer(rng).some((c) =
 
 
 // ---------------------------------------------------------------------------------------------
+// 邪气: the roster, and whether a run actually gets worse.
+//
+// It used to be one breed that homed in, and the only thing that escalated across ninety seconds
+// was the arrival rate — so the last thirty seconds were the first thirty with the tap opened.
+// These pin the three things that move now: how many, **what**, and how fast.
+
+check('six breeds', BREEDS.length, 6);
+check('six distinct kinds', new Set(BREEDS.map((b) => b.kind)).size, 6);
+
+// Only the two that are drawn conspicuously bigger take more than one hit. Everything a player
+// sees most of still dies to one talisman, which is the rule the roster is allowed to bend and
+// not to break.
+const tough = BREEDS.filter((b) => b.health > 1);
+check('two breeds take more than one hit', tough.length, 2);
+checkTrue('and both are drawn bigger than anything else', tough.every((b) => b.size >= 16));
+
+// Everything is in play before a run ends, at every realm — a breed nobody meets is content that
+// does not exist.
+let allArrive = true;
+for (let rung = 0; rung <= 6; rung++) {
+  for (const breed of BREEDS) {
+    if (weightAt(breed, schedule(rung, 1)) <= 0) allArrive = false;
+  }
+}
+checkTrue('every breed is in play by the end of a run, at every realm', allArrive);
+
+// The composition changes, which is the whole point. Early on it is the baseline and nothing else;
+// late on the baseline is a minority of what arrives.
+const shareOf = (kind: string, point: number) => {
+  let total = 0;
+  let mine = 0;
+  for (const breed of BREEDS) {
+    const w = weightAt(breed, point);
+    total += w;
+    if (breed.kind === kind) mine += w;
+  }
+  return total > 0 ? mine / total : 0;
+};
+check('a run opens as nothing but 游魂', shareOf('drift', 0), 1);
+checkTrue(
+  `and 游魂 is a minority by the end: ${(shareOf('drift', 1) * 100).toFixed(0)}%`,
+  shareOf('drift', 1) < 0.35,
+);
+let thinning = true;
+for (let t = 0.1; t <= 1.0001; t += 0.1) {
+  if (shareOf('drift', t) > shareOf('drift', t - 0.1) + 1e-9) thinning = false;
+}
+checkTrue('the baseline never regains ground', thinning);
+
+const availableAt = (rung: number, t: number) =>
+  BREEDS.filter((b) => weightAt(b, schedule(rung, t)) > 0).length;
+checkTrue('a tenth of the way in, most of the roster is still unseen', availableAt(0, 0.1) <= 2);
+check('by the end, all of it', availableAt(0, 1), 6);
+
+// A high realm reads the same schedule faster rather than having a different one.
+checkTrue('大乘 is further along the roster at the same moment', schedule(6, 0.3) > schedule(0, 0.3));
+checkTrue('and has met everything by 38% of the way in', availableAt(6, 0.38) === 6);
+checkTrue('where 筑基 is still two breeds short', availableAt(0, 0.38) <= 4);
+
+// Nothing arrives before it is due, however the dice fall.
+let early = 0;
+for (let i = 0; i < 5000; i++) {
+  const breed = rollBreed(0, 0.1, rng);
+  if (breed.from > schedule(0, 0.1)) early++;
+}
+check('nothing arrives ahead of its schedule', early, 0);
+
+// Speed rises too, and only a little: it is the cheapest difficulty curve there is, and making the
+// same fight faster is not the same as making it a different fight.
+check('everything closes at its own pace to begin with', pacing(0), 1);
+check('and a quarter faster by the end', pacing(1), 1.25);
+check('clamped past the end', pacing(4), 1.25);
+
+// ---------------------------------------------------------------------------------------------
 // The AFK guard. Fourth version, and the first one that is not arithmetic.
 //
 // The first two compared two columns of `LADDER`, and both passed while a real run driven frame by
@@ -1008,8 +1083,16 @@ checkTrue('an evolved school is not offered raises', !lone.offer(rng).some((c) =
 // dozen flourishes inside the schools, so an unpinned run is a different fight every time — which
 // for an assertion that sits right on a balance line means a check that fails one time in five and
 // teaches everybody to re-run it. It flaked exactly once before this went in.
+// Its own stream rather than the shared `rng`. These fights are long and every draw moves them,
+// so reading from the shared one means that *adding an assertion anywhere above* silently changes
+// the outcome of a balance guard — which happened, and cost a while to see.
+let fightSeed = 990722;
+const fightRandom = () => {
+  fightSeed = (fightSeed * 1103515245 + 12345) & 0x7fffffff;
+  return fightSeed / 0x7fffffff;
+};
 const wildRandom = Math.random;
-Math.random = rng;
+Math.random = fightRandom;
 
 interface Standing {
   outcome: string;
@@ -1102,33 +1185,38 @@ check('and is worth nothing', harvest(waiting.through, waiting.outcome), 0);
 //    anything tried — 6 a second at level one, 23 at level five, 33 evolved. Drafted and then
 //    neglected, it stays at six, and six has to lose at every realm.
 //
-//    筑基 is exempt, and deliberately: it is the first trial anybody plays, and a mode that
-//    punishes you for not yet understanding its upgrade system on the very first run teaches the
-//    wrong thing. From 金丹 up, ignoring the meter costs you the run — and it costs you more the
-//    higher you go, which is the shape a lesson should have.
+//    筑基 used to be exempt here, because a level-one build could ride out a run of nothing but
+//    游魂. The roster closed that on its own — 钉煎 cannot be kited and 裂魄 replaces itself — so
+//    neglect now loses at every realm, and earlier the higher you go. Nothing was retuned for it;
+//    six breeds did what two thousand arrivals a minute could not.
 const Strongest: School[] = ['符', '雷', '火', '冰'];
 let neglectedSurvivals = 0;
-let lastPaid = Infinity;
-let costlier = true;
+const neglectedPay: number[] = [];
 for (let realm = 1; realm <= Ascended - 1; realm++) {
-  const idle = fight(realm, 0, rng, Strongest, false);
-  if (realm > 1) {
-    if (idle.outcome === 'survived') neglectedSurvivals++;
-    if (idle.paid > lastPaid) costlier = false;
-    lastPaid = idle.paid;
-  }
+  const idle = fight(realm, 0, fightRandom, Strongest, false);
+  if (idle.outcome === 'survived') neglectedSurvivals++;
+  neglectedPay.push(idle.paid);
   console.log(
     `NOTE  realm ${realm} drafted and then neglected: ${idle.outcome} at ${idle.seconds}s, ${idle.kills} killed, paid ${idle.paid}`,
   );
 }
-check('above 筑基, a build nobody deepens loses', neglectedSurvivals, 0);
-checkTrue('and neglect costs more the higher you go', costlier);
+check('a build nobody deepens loses at every realm', neglectedSurvivals, 0);
+// Over the span rather than step by step. 筑基 and 金丹 are eight percent apart in arrival rate,
+// so which of the two dies first is noise, and a strict ordering across seven stochastic runs is a
+// check that fails one time in five and teaches everybody to re-run it.
+const lowThree = (neglectedPay[0] + neglectedPay[1] + neglectedPay[2]) / 3;
+const highThree =
+  (neglectedPay[4] + neglectedPay[5] + neglectedPay[6]) / 3;
+checkTrue(
+  `neglect costs more the higher you go: ${lowThree.toFixed(0)} paid at the bottom against ${highThree.toFixed(0)} at the top`,
+  highThree < lowThree * 0.8,
+);
 
 // 3. And the same build with its exchanges taken, which is the reward for playing: it should do
 //    markedly better. Reported at both ends rather than asserted as a survival, because whether a
 //    *person* survives is not something a potential-field bot can tell me.
 for (const realm of [1, Ascended - 1]) {
-  const spent = fight(realm, 0, rng, Strongest, true);
+  const spent = fight(realm, 0, fightRandom, Strongest, true);
   console.log(
     `NOTE  realm ${realm} with the meter spent: ${spent.outcome} at ${spent.seconds}s, ${spent.kills} killed, ${spent.exchanges} exchanges, integrity ${spent.integrity}, paid ${spent.paid}`,
   );
@@ -1138,7 +1226,7 @@ for (const realm of [1, Ascended - 1]) {
 // bad player — it corners itself, and at 700 px/s it still died to things moving at 52 — so
 // "the bot survived" is worth knowing and "the bot died" proves nothing about a person.
 for (const realm of [1, 4, Ascended - 1]) {
-  const moved = fight(realm, 260, rng, Strongest);
+  const moved = fight(realm, 260, fightRandom, Strongest);
   console.log(
     `NOTE  realm ${realm} with a crude hand: ${moved.outcome} at ${moved.seconds}s, ${moved.kills} killed, integrity ${moved.integrity}, paid ${moved.paid}`,
   );
