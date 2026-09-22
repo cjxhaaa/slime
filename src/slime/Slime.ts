@@ -168,6 +168,14 @@ const MaxThrowSpeed = 1400;
  * that commits. Drag's job here is only to stop a throw from crossing the whole screen.
  */
 const AirDragTau = 1.6;
+/**
+ * Drag in the plane, on both axes.
+ *
+ * Shorter than the side-view value, because there a throw is meant to sail and here a release is
+ * meant to settle: a body being steered wants to stop roughly where the hand left it rather than
+ * coast on for another half-second.
+ */
+const PlanarDragTau = 0.34;
 const HOP_SPEED = 780;
 const WALK_SPEED = 130;
 /** How far away the pointer can be and still be watched, in CSS pixels. */
@@ -426,8 +434,43 @@ export class Slime {
 
   private envHeight = 800;
 
+  /**
+   * True during 历练: the world is a plane seen from above rather than a side view with a floor.
+   *
+   * One flag, because the difference is genuinely that small. Gravity stops, the walls stop the
+   * body instead of bouncing it, and `groundFor` starts answering "directly underneath" — which is
+   * what makes the contact shadow, the sleep marks and the dirty rect all correct without any of
+   * them knowing a mode exists. They all ask the same question and it has a different answer.
+   */
+  planar = false;
+
+  /**
+   * Where the floor is, or — in a plane seen from above — the body's own position.
+   *
+   * A top-down world has no floor to stand on, and every caller that wanted one wanted it for the
+   * same reason: to know where "under the slime" is. Answering with the body's own y keeps the
+   * shadow tucked beneath it and collapses the `bounds` floor onto the body, instead of reserving
+   * a strip all the way down to where a screen edge used to matter.
+   */
   private groundFor(height: number): number {
-    return height - GROUND_MARGIN - this.radius;
+    return this.planar ? this.y : height - GROUND_MARGIN - this.radius;
+  }
+
+  /**
+   * Puts it in the middle and stops it dead, for the start of a trial.
+   *
+   * `teleportTo` rather than a glide: entering a mode is a cut, and a slime sliding to the centre
+   * while the first thing is already happening is a slime that arrives late to its own fight.
+   */
+  centreIn(width: number, height: number): void {
+    this.teleportTo(width / 2, height / 2);
+    this.vx = 0;
+    this.vy = 0;
+    this.hopsLeft = 0;
+    this.chaseX = null;
+    this.mood = 'idle';
+    this.moodUntil = this.clock;
+    this.blob.pulse(70);
   }
 
   /**
@@ -1363,6 +1406,40 @@ export class Slime {
       this.y = this.dragTarget.y;
       this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 8);
       this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 8);
+    } else if (this.planar) {
+      // Seen from above: nothing falls, and drag applies to both axes equally so a release glides
+      // to a stop in whatever direction it was going rather than curving downward.
+      const drag = Math.exp(-dt / PlanarDragTau);
+      this.vx *= drag;
+      this.vy *= drag;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 6);
+      this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 6);
+      if (Math.abs(this.vx) < 3) this.vx = 0;
+      if (Math.abs(this.vy) < 3) this.vy = 0;
+
+      // The walls **stop** it rather than bouncing it.
+      //
+      // Bouncing is what makes a thrown pet playful, and it is the wrong thing entirely once the
+      // body is something being steered: a bounce sends you somewhere you did not choose, at the
+      // exact moment you were trying to get away from an edge. Losing the velocity into the wall
+      // is the behaviour that leaves you in control of where you are.
+      const edge = this.radius * 0.6;
+      if (this.x < edge) {
+        this.x = edge;
+        this.vx = 0;
+      } else if (this.x > env.width - edge) {
+        this.x = env.width - edge;
+        this.vx = 0;
+      }
+      if (this.y < edge) {
+        this.y = edge;
+        this.vy = 0;
+      } else if (this.y > env.height - edge) {
+        this.y = env.height - edge;
+        this.vy = 0;
+      }
     } else {
       this.vy += GRAVITY * dt;
       // Air drag, horizontal only. Without any, a throw kept every pixel per second it was given
@@ -1451,6 +1528,16 @@ export class Slime {
     const idleFor = this.clock - this.lastInteraction;
 
     if (this.grabbed || this.devour) return;
+
+    // Nothing in the idle life belongs in a trial: not dozing off, not wandering, not the little
+    // scheduled hops. The body is being steered, and a pet that decides to take a nap mid-fight is
+    // not a difficulty spike, it is a bug with an explanation.
+    if (this.planar) {
+      this.mood = 'idle';
+      this.moodUntil = this.clock;
+      this.hopsLeft = 0;
+      return;
+    }
 
     // Keyed off the live alert rather than the current mood, so picking the slime up mid-alert
     // interrupts the performance instead of cancelling it. The mood does change while it is held

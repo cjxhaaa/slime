@@ -14,6 +14,7 @@ import { Cultivation, ExpectedKeysPerSecond, InputPollSeconds } from './game/cul
 import { Glyphs } from './game/Glyphs';
 import { Motes, StageSpread } from './game/Motes';
 import { Volley, charmsForFling } from './game/Volley';
+import { Menu } from './ui/Menu';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -54,6 +55,7 @@ const daily = new Daily();
 const charms = new Charms();
 const fortune = new Fortune();
 const volley = new Volley();
+const menu = new Menu();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -384,6 +386,17 @@ function requestClicks(wantsClicks: boolean, dragging: boolean, now: number): vo
   void invoke('release_clicks').catch(() => {});
 }
 
+const SETTINGS_ITEM = { id: 'settings', label: '设置…', enabled: true };
+
+/** Runs whatever the menu was clicked for. */
+function chooseFromMenu(id: string): void {
+  menu.hide();
+  fullRepaint = true;
+  if (id === 'settings') void invoke('open_settings');
+  else if (id === 'enter-trial') enterTrial(canvas.width, canvas.height);
+  else if (id === 'leave-trial') leaveTrial();
+}
+
 let bubbleRect: Rect | null = null;
 
 interface Rect {
@@ -517,6 +530,42 @@ let ascendUntil = 0;
  * mechanic. It is the only place the charm cost is ever spelled out.
  */
 let failUntil = 0;
+/**
+ * True while a 历练 is running.
+ *
+ * Unlocked at 筑基. 练气 is the tutorial realm — it is the first day, the body is at its smallest
+ * and weakest, and sending somebody into a fight before they have crossed a single realm teaches
+ * them the wrong thing about what the ladder is for.
+ */
+let inTrial = false;
+
+/** Where the pet was standing before the trial, so leaving puts it back rather than in the middle. */
+let trialReturn: { x: number; y: number } | null = null;
+
+function trialUnlocked(): boolean {
+  return cultivation.realm >= 1;
+}
+
+function enterTrial(width: number, height: number): void {
+  if (inTrial || !trialUnlocked()) return;
+  inTrial = true;
+  trialReturn = { x: slime.x, y: slime.y };
+  slime.planar = true;
+  slime.centreIn(width, height);
+  bubble.hide();
+  slime.clearAlert();
+  fullRepaint = true;
+}
+
+function leaveTrial(): void {
+  if (!inTrial) return;
+  inTrial = false;
+  slime.planar = false;
+  if (trialReturn) slime.teleportTo(trialReturn.x, trialReturn.y);
+  trialReturn = null;
+  bubble.hide();
+  fullRepaint = true;
+}
 /**
  * The 机缘 currently on offer: what it says, what it is worth, and when it gives up.
  *
@@ -843,6 +892,7 @@ function frame(now: number): void {
     motes.busy ||
     volley.busy ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
+    menu.isOpen ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
   if (!engaged && !slime.isAnimating && now - lastTick < IDLE_INTERVAL_MS) {
     requestAnimationFrame(frame);
@@ -910,6 +960,13 @@ function frame(now: number): void {
     motes.spawn(drawnIn.count, slime.x, slime.y, slime.blob.restRadius, drawnIn.spread);
   }
 
+  // Laid out before the bubble decides what to say, because the bubble anchors above the body and
+  // the menu opens from there — so the bubble has to know whether it is about to be covered.
+  const menuRect = menu.layout(context, width, height);
+  // Tracked every frame rather than on move: a menu can open under a stationary pointer, and the
+  // highlighted row has to be right on the first frame it is visible.
+  const overMenu = menu.isOpen && cursor !== null && menu.hover(cursor.x, cursor.y);
+
   // What the bubble says, in priority order. An alert outranks everything: it is the one thing
   // on screen asking for an answer, and it must not be displaced by an idle greeting.
   if (slime.alertText) {
@@ -937,7 +994,9 @@ function frame(now: number): void {
       (now < introUntil ? '此物似有灵性\n正吞吐天地之气' : null) ??
       // Hovering is the only way any of the cultivation is legible, and even then it is a phrase
       // rather than a figure — no number ever reaches the screen.
-      (overBody || grabbed ? hoverLines() : null);
+      // Not while the menu is up: the bubble anchors above the body and the menu opens from it,
+      // so the two land on top of each other — and the menu is the thing being read.
+      (!overMenu && (overBody || grabbed) ? hoverLines() : null);
     if (text) bubble.show(text);
     else bubble.hide();
   }
@@ -994,7 +1053,10 @@ function frame(now: number): void {
     cursor.x <= bubbleRect.x + bubbleRect.width &&
     cursor.y >= bubbleRect.y &&
     cursor.y <= bubbleRect.y + bubbleRect.height;
-  const wantsClicks = grabbed || overBody || overBubble;
+  // An open menu holds the lease on its own account: the pointer is over the menu rather than over
+  // the body, and without this the overlay would go click-through under the very thing it is
+  // showing — the menu would draw and refuse to be clicked.
+  const wantsClicks = grabbed || overBody || overBubble || menu.isOpen;
 
   // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is
@@ -1015,7 +1077,10 @@ function frame(now: number): void {
     unionRect(
       unionRect(unionRect(glyphs.bounds(), motes.bounds()), volley.bounds()),
       unionRect(
-        bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
+        unionRect(
+          bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
+          menuRect ? padRect(menuRect, 20) : null,
+        ),
         showPaw || paw.hasRipples() ? paw.bounds() : null,
       ),
     ),
@@ -1082,6 +1147,7 @@ function frame(now: number): void {
     slime.draw(context);
     volley.draw(context, slime.bodyColour);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
+    menu.draw(context);
     paw.draw(context);
 
     context.restore();
@@ -1237,6 +1303,18 @@ function wirePointer(): void {
     }
     // A short press that barely moved is a poke, not a throw.
     if (heldFor < 260 && moved < 6) {
+      if (menu.isOpen) {
+        const picked = menu.click(event.clientX, event.clientY);
+        // An `inert` hit is a disabled row, and it leaves the menu up: closing it would look as
+        // though the click had worked.
+        if (picked.kind === 'dismiss') {
+          menu.hide();
+          fullRepaint = true;
+        } else if (picked.kind === 'chose') {
+          chooseFromMenu(picked.id);
+        }
+        return;
+      }
       if (slime.hasLiveAlert) {
         // The bubble is part of the alert's target, so a click anywhere on it answers it.
         slime.poke(event.clientX, event.clientY);
@@ -1263,7 +1341,31 @@ function wirePointer(): void {
 
   canvas.addEventListener('contextmenu', (event) => {
     event.preventDefault();
-    void invoke('open_settings');
+    // Only on the body. A right-click anywhere else on a full-screen transparent overlay is a
+    // right-click on whatever the user can see there, and stealing it would make the desktop feel
+    // broken.
+    if (!slime.hitTest(event.clientX, event.clientY)) {
+      menu.hide();
+      return;
+    }
+    menu.show(
+      inTrial
+        ? [{ id: 'leave-trial', label: '结束历练', enabled: true }, SETTINGS_ITEM]
+        : [
+            {
+              id: 'enter-trial',
+              label: '入历练',
+              enabled: trialUnlocked(),
+              // Shown greyed rather than hidden: a menu item that appears out of nowhere at 筑基
+              // is a surprise, and one that is visibly waiting for you is a goal.
+              note: trialUnlocked() ? undefined : '筑基可开',
+            },
+            SETTINGS_ITEM,
+          ],
+      event.clientX,
+      event.clientY,
+    );
+    fullRepaint = true;
   });
 }
 
