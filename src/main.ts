@@ -16,6 +16,9 @@ import { Motes, StageSpread } from './game/Motes';
 import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
+import { Arsenal } from './game/Arsenal';
+import { Attacks } from './game/Attacks';
+import { Draft } from './ui/Draft';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -58,6 +61,11 @@ const fortune = new Fortune();
 const volley = new Volley();
 const menu = new Menu();
 const trial = new Trial();
+const arsenal = new Arsenal();
+const attacks = new Attacks();
+const draft = new Draft();
+/** Kills already paid into the meter, so the frame loop can spend only the new ones. */
+let killsSeen = 0;
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -559,8 +567,32 @@ function enterTrial(width: number, height: number): void {
   slime.planar = true;
   slime.centreIn(width, height);
   trial.start(cultivation.realm);
+  arsenal.start();
+  attacks.reset();
+  killsSeen = 0;
   bubble.hide();
   slime.clearAlert();
+  // Four cards before the first 邪气 arrives. A survivors run normally earns its build over
+  // twenty minutes; this one lasts ninety seconds, so the ramp everybody means when they say the
+  // early game drags is simply not affordable — you start with a whole build on the screen.
+  offerDraft();
+  fullRepaint = true;
+}
+
+/** Puts three cards up, which also stops the clock until one is taken. */
+function offerDraft(): void {
+  draft.show(arsenal.offer(Math.random), arsenal.held);
+  fullRepaint = true;
+}
+
+/** Spends a card and starts the fight again. */
+function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
+  const { mend } = arsenal.take(card);
+  if (mend > 0) trial.mend(mend);
+  attacks.carry(arsenal.held, arsenal.combos());
+  draft.hide();
+  // Another one may already be owed: the four opening cards are drafted back to back.
+  if (arsenal.due) offerDraft();
   fullRepaint = true;
 }
 
@@ -586,6 +618,8 @@ function settleTrial(): void {
 function leaveTrial(): void {
   if (!inTrial) return;
   inTrial = false;
+  draft.hide();
+  attacks.reset();
   slime.planar = false;
   if (trialReturn) slime.teleportTo(trialReturn.x, trialReturn.y);
   trialReturn = null;
@@ -918,6 +952,7 @@ function frame(now: number): void {
     motes.busy ||
     volley.busy ||
     inTrial ||
+    draft.isOpen ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
     menu.isOpen ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
@@ -973,29 +1008,25 @@ function frame(now: number): void {
     fortuneUntil = 0;
   }
 
-  // The fight, and then the projectiles — in that order, so a talisman fired this frame is tested
-  // against where things are now rather than where they were before they moved.
-  if (inTrial) {
-    // One talisman per target, because the volley picked one target per talisman.
-    for (const aim of trial.update(
-      elapsed,
-      { x: slime.x, y: slime.y, radius: slime.blob.restRadius },
-      width,
-      height,
-    )) {
-      volley.fireAt(1, slime.x, slime.y, aim.x, aim.y);
-    }
+  // The fight, and then what the pet is doing about it — in that order, so an effect fired this
+  // frame is tested against where things are now rather than where they were before they moved.
+  //
+  // **A draft stops all of it.** Not as a courtesy: the payout counts seconds that elapsed, so a
+  // paused run earns nothing, and that is what makes an unattended trial worthless without a
+  // single number being tuned for it.
+  draft.advance(elapsed);
+  if (inTrial && !draft.isOpen) {
+    const body = { x: slime.x, y: slime.y, radius: slime.blob.restRadius };
+    trial.update(elapsed, body, width, height, attacks);
+    attacks.update(elapsed, body, trial);
+
+    for (let i = killsSeen; i < trial.killCount; i++) arsenal.countKill();
+    killsSeen = trial.killCount;
     if (trial.outcome !== 'running') settleTrial();
+    else if (arsenal.due) offerDraft();
   }
 
-  volley.update(
-    elapsed,
-    width,
-    height,
-    // Only while a trial is running. Outside one there is nothing to hit, and 御符 thrown at the
-    // desktop should reach the wall it was aimed at.
-    inTrial ? { at: (x, y) => trial.strike(x, y) } : undefined,
-  );
+  volley.update(elapsed, width, height);
 
   const readyToSwallow = slime.takeSwallowRequest();
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
@@ -1106,7 +1137,14 @@ function frame(now: number): void {
   // An open menu holds the lease on its own account: the pointer is over the menu rather than over
   // the body, and without this the overlay would go click-through under the very thing it is
   // showing — the menu would draw and refuse to be clicked.
-  const wantsClicks = grabbed || overBody || overBubble || menu.isOpen;
+  // The draft dims the whole screen, so nothing under it can be repainted from a dirty rect.
+  if (draft.isOpen) {
+    draft.layout(width, height);
+    if (cursor !== null) draft.hover(cursor.x, cursor.y);
+    fullRepaint = true;
+  }
+
+  const wantsClicks = grabbed || overBody || overBubble || menu.isOpen || draft.isOpen;
 
   // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is
@@ -1127,7 +1165,7 @@ function frame(now: number): void {
     unionRect(
       unionRect(
         unionRect(unionRect(glyphs.bounds(), motes.bounds()), volley.bounds()),
-        inTrial ? trial.bounds() : null,
+        inTrial ? unionRect(trial.bounds(), attacks.bounds()) : null,
       ),
       unionRect(
         unionRect(
@@ -1169,6 +1207,7 @@ function frame(now: number): void {
     motes.busy ||
     volley.busy ||
     inTrial ||
+    draft.isOpen ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged);
   // The frame the body stops moving is the frame its resting place becomes final, so that is the
   // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
@@ -1196,13 +1235,17 @@ function frame(now: number): void {
     }
     context.clip(clip);
 
-    if (inTrial) trial.draw(context);
+    if (inTrial) {
+      trial.draw(context);
+      attacks.draw(context);
+    }
     motes.draw(context, slime.bodyColour);
     glyphs.draw(context, slime.bodyColour);
     slime.draw(context);
     volley.draw(context, slime.bodyColour);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     menu.draw(context);
+    draft.draw(context, width, height);
     paw.draw(context);
 
     context.restore();
@@ -1358,6 +1401,14 @@ function wirePointer(): void {
     }
     // A short press that barely moved is a poke, not a throw.
     if (heldFor < 260 && moved < 6) {
+      // Ahead of the menu and the body both: while three cards are up, the run is stopped and
+      // there is nothing else on the screen worth clicking.
+      if (draft.isOpen) {
+        const card = draft.click(event.clientX, event.clientY);
+        if (card) takeCard(card);
+        paw.ping(event.clientX, event.clientY);
+        return;
+      }
       if (menu.isOpen) {
         const picked = menu.click(event.clientX, event.clientY);
         // An `inert` hit is a disabled row, and it leaves the menu up: closing it would look as

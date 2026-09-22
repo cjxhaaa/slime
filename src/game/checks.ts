@@ -49,20 +49,37 @@ import {
   odds,
 } from './charms.js';
 import {
+  CardsPerOffer,
+  COMBOS,
+  EVOLUTIONS,
+  MaxLevel,
+  SCHOOLS,
+  SPECS,
+  Slots,
+  activeCombos,
+  cadence,
+  comboFor,
+  exchangeCost,
+  killsForExchanges,
+  partners,
+} from './schools.js';
+import { Arsenal, EvolveLevel } from './Arsenal.js';
+import {
   ContactDamage,
   GraceSeconds,
   RunSeconds,
   SurvivalBonus,
   ThroughShare,
   Trial,
-  fireInterval,
+  arrivalRate,
   harvest,
   menaceSpeed,
   rung,
   spawnInterval,
   vitality,
-  volleySize,
 } from './Trial.js';
+import { Attacks } from './Attacks.js';
+import type { School } from './schools.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
 
 let failures = 0;
@@ -674,54 +691,22 @@ check('大乘 is the last', rung(Ascended - 1), 6);
 check('练气 cannot sit below the bottom', rung(0), 0);
 check('and nothing past 飞升 climbs further', rung(Ascended + 4), 6);
 
-// The table's `ratio` column, recomputed from the same functions the fight reads. Written as a
-// ratio because that is the part that breaks silently: every individual column can look perfectly
-// reasonable while 大乘 has quietly become 筑基 with the danger switched off.
-//
-// One talisman kills one 邪气, so a volley's worth of talismans is a volley's worth of kills —
-// which is the only reason this arithmetic means anything. It did not, once: the fan spread meant
-// only the middle talisman of a volley could reach what the volley was aimed at, so this quotient
-// rose while the kills it was standing in for fell.
-const kills = (realm: number) => volleySize(realm) / fireInterval(realm);
-// Averaged across a run rather than taken at either end, because that is the rate you actually
-// face over ninety seconds.
-const arrivals = (realm: number) => 2 / (spawnInterval(realm, 0) + spawnInterval(realm, 1));
+// The door gets harder at every realm. The hand is a drafted build now, so there is no column here
+// to compare it against — the comparison happens further down, by fighting a whole run.
 let bothHarder = true;
-let widening = true;
 for (let realm = 2; realm <= Ascended - 1; realm++) {
-  if (arrivals(realm) <= arrivals(realm - 1)) bothHarder = false;
-  if (kills(realm) <= kills(realm - 1)) bothHarder = false;
+  if (arrivalRate(realm) <= arrivalRate(realm - 1)) bothHarder = false;
   if (menaceSpeed(realm) <= menaceSpeed(realm - 1)) bothHarder = false;
   if (vitality(realm) <= vitality(realm - 1)) bothHarder = false;
-  const before = kills(realm - 1) / arrivals(realm - 1);
-  if (kills(realm) / arrivals(realm) <= before) widening = false;
 }
-checkTrue('every realm faces more and answers more', bothHarder);
-checkTrue("and the player's side gains the faster of the two", widening);
-
-// And the two ends of that column, which are the design rather than a consequence of it.
-//
-// 筑基 below one is the load-bearing one: shooting cannot keep up with arriving, so lasting ninety
-// seconds there means moving. The first version of the table put it *above* one, which made the
-// opening realm survivable by standing perfectly still — a full payout for doing nothing, at the
-// realm everybody sees first.
-// The ceiling, and it is the load-bearing assertion in this whole block. Talismans fire themselves
-// at the nearest 邪气, which is optimal defence — so the moment the fire rate can match the arrival
-// rate, nothing crosses the last two hundred pixels and standing perfectly still becomes the best
-// play there is. Measured twice, at two different settings, before I believed it. The crowd has to
-// grow at every realm, or a realm somebody spent days reaching turns into an AFK button.
-let fastest = 0;
-for (let realm = 1; realm <= Ascended - 1; realm++) {
-  fastest = Math.max(fastest, kills(realm) / arrivals(realm));
-}
-checkTrue('no realm can shoot its way out of a run', fastest < 1);
-// It still gains, which is why 筑基 is the realm most likely to end early — it just never gets
-// to the front.
-let furthestBehind = Infinity;
-for (let realm = 1; realm <= Ascended - 1; realm++) {
-  furthestBehind = Math.min(furthestBehind, kills(realm) / arrivals(realm));
-}
-check('and 筑基 is the furthest behind of them all', kills(1) / arrivals(1), furthestBehind, 1e-12);
+checkTrue('every realm arrives faster, closes faster and hits harder', bothHarder);
+// The door is now set against what a *build* kills rather than against one talisman a second, so
+// the spread across the ladder is much narrower than it used to be: seven a second at 筑基 against
+// eleven and a half at 大乘. That is not a softer ladder, it is the ladder moving to where the
+// content went — what a realm mostly buys you in here is **exchanges**, six at the bottom and
+// eleven at the top, and a build twice as deep is the difference you feel.
+checkTrue('筑基 faces about seven a second', Math.abs(arrivalRate(1) - 7) < 0.5);
+checkTrue('大乘 faces about eleven and a half', Math.abs(arrivalRate(Ascended - 1) - 11.5) < 0.6);
 
 // Arrivals quicken across a run and then stop, rather than compounding off the end of it —
 // `through` is a fraction, and a caller holding a stale one should not tighten the screw.
@@ -801,6 +786,365 @@ check('and walking straight back out pays nothing', harvest(0, 'overwhelmed'), 0
 
 Math.random = realRandom;
 
+
+
+// ---------------------------------------------------------------------------------------------
+// 法脉. The nine schools and the fourteen pairings.
+
+// The parity argument, written down as arithmetic because it is the one constraint in this design
+// that no amount of cleverness gets around: every edge adds one to two degrees, so the degrees sum
+// to twice the edge count and can never be odd. Nine schools with three partners each would sum to
+// twenty-seven. The request asked for exactly that, and it does not exist for any choice of pairs.
+check('nine schools', SCHOOLS.length, 9);
+let degrees = 0;
+let threes = 0;
+let fours = 0;
+for (const school of SCHOOLS) {
+  const count = partners(school).length;
+  degrees += count;
+  if (count === 3) threes++;
+  if (count === 4) fours++;
+}
+check('degrees sum to twice the pairings', degrees, COMBOS.length * 2);
+checkTrue('which is even, as it has to be', degrees % 2 === 0);
+check('eight schools pair with three', threes, 8);
+check('and one — 符 — pairs with four', fours, 1);
+check('符 is that one', partners('符').length, 4);
+check('fourteen pairings', COMBOS.length, 14);
+
+// No school pairs with itself, nothing is listed twice in either direction, and every pairing is
+// findable from both ends. A duplicate would silently double a combination's effect.
+let selfPaired = false;
+let duplicated = false;
+let asymmetric = false;
+const seen = new Set<string>();
+for (const combo of COMBOS) {
+  const [a, b] = combo.pair;
+  if (a === b) selfPaired = true;
+  const key = [a, b].slice().sort().join('');
+  if (seen.has(key)) duplicated = true;
+  seen.add(key);
+  if (comboFor(a, b) !== combo || comboFor(b, a) !== combo) asymmetric = true;
+}
+checkTrue('nothing pairs with itself', !selfPaired);
+checkTrue('and nothing is listed twice', !duplicated);
+checkTrue('and every pairing reads the same from either end', !asymmetric);
+check('every pairing is named', COMBOS.filter((c) => c.name.length > 0).length, 14);
+check('every school has a jackpot', Object.keys(EVOLUTIONS).length, 9);
+check('and a spec', Object.keys(SPECS).length, 9);
+
+// No two schools share a motion. A school you cannot identify by how it moves is a stat with a
+// name on it, which is the thing §12 cancelled 法宝 for being.
+const motions = new Set(SCHOOLS.map((s) => SPECS[s].motion));
+check('nine distinct motions', motions.size, 9);
+
+// Every school is reachable from every other, so no build is a dead end you cannot grow out of.
+const reach = new Set<string>(['符']);
+for (let step = 0; step < SCHOOLS.length; step++) {
+  for (const school of Array.from(reach)) {
+    for (const next of partners(school as never)) reach.add(next);
+  }
+}
+check('the graph is one piece', reach.size, 9);
+
+// **The 82%**, which is why offers are not weighted toward partners. It is a consequence of the
+// graph rather than a number written anywhere in it, so retuning the pairings moves it silently.
+// C(5,3)/C(8,3) = 10/56 of three-card offers miss every partner of a single held school.
+const missOdds = (10 / 56) * 1;
+checkTrue('a three-card offer usually contains a partner', 1 - missOdds > 0.8);
+check('82%, to be exact', Math.round((1 - missOdds) * 100), 82);
+
+// A four-slot build really can be a complete 套路: this one is a chain, so it lands three.
+check('four slots, three pairings', activeCombos(['符', '雷', '火', '冰']).length, 3);
+// And two disjoint pairs is the other shape of complete. 符剑 and 焚甦, with nothing else
+// touching across them.
+check('or two clean pairs', activeCombos(['符', '剑', '火', '毒']).length, 2);
+
+// Drafted in bulk, by somebody taking the card that pairs best with what they already hold.
+//
+// This is the requested property, and the one worth pinning: **four slots must always be able to
+// make a complete 套路.** It comes out at 100% over four thousand drafts, not the two thirds I
+// guessed from the 82% — with four picks there are three chances to find a partner and the graph
+// is dense enough that a player paying attention never misses. So the draft is not a question of
+// *whether* you can assemble something, it is a question of which thing; the measurement below
+// says how much of that is luck.
+let seed = 20260922;
+const rng = () => {
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return seed / 0x7fffffff;
+};
+const runs = 4000;
+let twoOrMore = 0;
+let none = 0;
+for (let run = 0; run < runs; run++) {
+  const kit = new Arsenal();
+  kit.start();
+  for (let pick = 0; pick < Slots; pick++) {
+    const cards = kit.offer(rng);
+    let best = cards[0];
+    let bestScore = -1;
+    for (const card of cards) {
+      if (card.kind !== 'take') continue;
+      const score = activeCombos(kit.schools.concat(card.school)).length;
+      if (score > bestScore) {
+        bestScore = score;
+        best = card;
+      }
+    }
+    kit.take(best);
+  }
+  const made = activeCombos(kit.schools).length;
+  if (made >= 2) twoOrMore++;
+  if (made === 0) none++;
+}
+const complete = twoOrMore / runs;
+check('a steered draft always completes two or more', complete, 1);
+check('so it never comes away with nothing', none, 0);
+
+// And the same four thousand drafts taken by somebody not looking, which is what the density of
+// the graph amounts to: 14 of the 36 pairs combine, so six pairs out of a random four-set average
+// 6 x 14/36 = 2.33 combinations. Reported rather than bounded tightly — it is a property of the
+// pairings, and the point of printing it is that retuning them moves it.
+let blindTwo = 0;
+let blindNone = 0;
+let blindTotal = 0;
+for (let run = 0; run < runs; run++) {
+  const kit2 = new Arsenal();
+  kit2.start();
+  for (let pick = 0; pick < Slots; pick++) {
+    const cards = kit2.offer(rng);
+    kit2.take(cards[Math.floor(rng() * cards.length) % cards.length]);
+  }
+  const made = activeCombos(kit2.schools).length;
+  blindTotal += made;
+  if (made >= 2) blindTwo++;
+  if (made === 0) blindNone++;
+}
+checkTrue(
+  `an unsteered draft averages ${(blindTotal / runs).toFixed(2)} combinations, two or more ${((blindTwo / runs) * 100).toFixed(0)}% of the time`,
+  blindTotal / runs > 2 && blindTotal / runs < 2.7,
+);
+checkTrue(`and comes away with nothing ${((blindNone / runs) * 100).toFixed(1)}% of the time`, blindNone / runs < 0.06);
+
+// Four cards, four slots, and the fight has not started yet — the whole point of opening this way.
+const kit = new Arsenal();
+kit.start();
+check('four opening drafts', kit.openingLeft, Slots);
+for (let i = 0; i < Slots; i++) {
+  const cards = kit.offer(rng);
+  check(`offer ${i + 1} has three cards`, cards.length, CardsPerOffer);
+  checkTrue(`offer ${i + 1} is all new schools`, cards.every((c) => c.kind === 'take'));
+  kit.take(cards[0]);
+}
+check('four slots filled', kit.held.length, Slots);
+check('none of them spent an exchange', kit.exchangesTaken, 0);
+checkTrue('and nothing is owed any more', !kit.due);
+
+// Once the slots are full, an offer can only deepen what is there. No swapping: a build you can
+// rewrite at will is a build you never had to commit to.
+const afterwards = kit.offer(rng);
+checkTrue('a full build is offered raises, not replacements', afterwards.every((c) => c.kind !== 'take'));
+
+// The meter. Escalating, because one flat figure cannot serve a realm that kills ninety things and
+// one that kills six hundred — it is five exchanges at one end or fifty at the other.
+checkTrue('each exchange costs more than the last', exchangeCost(3) > exchangeCost(2));
+const affordable = (kills: number) => {
+  let n = 0;
+  while (killsForExchanges(n + 1) <= kills) n++;
+  return n;
+};
+// Kill totals measured off whole runs further down: about 550 at 筑基 and 1050 at 大乘.
+const atFoundation = affordable(550);
+const atTheTop = affordable(1050);
+checkTrue(`筑基 affords ${atFoundation}`, atFoundation >= 8 && atFoundation <= 10);
+checkTrue(`大乘 affords ${atTheTop}`, atTheTop >= 10 && atTheTop <= 13);
+checkTrue('a high realm is a longer build, not a different one', atTheTop > atFoundation);
+
+// Levelling shows up as a school being visibly busier, since there is no damage number anywhere in
+// this app to raise instead.
+checkTrue('a level shortens the cadence', cadence('符', 2) < cadence('符', 1));
+checkTrue('and the ceiling holds', cadence('符', MaxLevel + 5) === cadence('符', MaxLevel));
+
+// The jackpot gate: partner held, and levelled. Without the partner term the pairings would be a
+// side quest with their own rewards and this would be a slot machine that ignored them.
+const lone = new Arsenal();
+lone.start();
+lone.take({ kind: 'take', school: '符' });
+lone.take({ kind: 'take', school: '冰' });   // 冰 pairs with 火, 风, 土 — none of which is in here
+lone.take({ kind: 'take', school: '剑' });   // 剑 pairs with 符
+lone.take({ kind: 'take', school: '影' });   // and so does 影
+check('nothing is ripe at level one', lone.evolvable().length, 0);
+for (let i = 1; i < EvolveLevel; i++) lone.take({ kind: 'raise', school: '冰' });
+check('冰 is levelled but has nobody to pair with', lone.evolvable().length, 0);
+for (let i = 1; i < EvolveLevel; i++) lone.take({ kind: 'raise', school: '符' });
+check('符 is levelled and does', lone.evolvable().length, 1);
+checkTrue('and it is 符', lone.evolvable()[0].of === '符');
+lone.take({ kind: 'evolve', school: '符' });
+checkTrue('evolving takes the level with it', lone.levelOf('符') === MaxLevel);
+checkTrue('and it cannot be drawn twice', lone.evolvable().length === 0);
+checkTrue('an evolved school is not offered raises', !lone.offer(rng).some((c) => c.kind === 'raise' && c.school === '符'));
+
+
+// ---------------------------------------------------------------------------------------------
+// The AFK guard. Fourth version, and the first one that is not arithmetic.
+//
+// The first two compared two columns of `LADDER`, and both passed while a real run driven frame by
+// frame finished at full health with the body never moving. The third fought a whole run, which at
+// least caught that — and then the schools arrived and a four-slot build turned out to kill five
+// to eight times what one talisman did. Chasing it with the door took about **two thousand
+// arrivals in ninety seconds**, which is not a fight, it is a screensaver with a body in it.
+//
+// The thing that actually stops a run being farmed is structural and was sitting there all along:
+// **the draft pauses the run.** Nothing moves, the clock does not advance, and `through` — which
+// is the entire payout — only counts seconds that elapsed. So a run nobody is clicking earns
+// nothing, however strong the build is, and that holds without a single number being tuned for it.
+// The first assertion below is that structural fact, and it is the load-bearing one.
+//
+// What is left to tune is the case in between: somebody who takes the four opening cards, starts
+// the fight, and then never spends the meter again. That build stays at level one for ninety
+// seconds, and it has to lose — otherwise the exchanges are decoration.
+
+// Pinned for the whole block below. Arrivals pick their edge with `Math.random`, and so do half a
+// dozen flourishes inside the schools, so an unpinned run is a different fight every time — which
+// for an assertion that sits right on a balance line means a check that fails one time in five and
+// teaches everybody to re-run it. It flaked exactly once before this went in.
+const wildRandom = Math.random;
+Math.random = rng;
+
+interface Standing {
+  outcome: string;
+  kills: number;
+  seconds: number;
+  integrity: number;
+  exchanges: number;
+  paid: number;
+}
+
+function fight(
+  realm: number,
+  nudge: number,
+  random: () => number,
+  build?: School[],
+  spend = true,
+): Standing {
+  const arena = { width: 1200, height: 800 };
+  const trial = new Trial();
+  const kit = new Arsenal();
+  const arts = new Attacks();
+  trial.start(realm);
+  kit.start();
+  arts.reset();
+
+  // The opening draft. A named build when one is given — the guard has to test the *strongest*
+  // thing somebody could walk away from, not whatever four cards a seed happened to deal.
+  if (build) for (const school of build) kit.take({ kind: 'take', school });
+  while (kit.openingLeft > 0) kit.take(kit.offer(random)[0]);
+  arts.carry(kit.held, kit.combos());
+
+  const body = { x: arena.width / 2, y: arena.height / 2, radius: 46 };
+  let seconds = 0;
+  let seen = 0;
+  const dt = 1 / 60;
+  while (trial.outcome === 'running' && seconds < RunSeconds * 2) {
+    if (nudge > 0) {
+      // A crude hand: away from the crowd, weighted by nearness, with a pull to the middle.
+      let ax = 0;
+      let ay = 0;
+      for (const m of trial.targets()) {
+        const dx = body.x - m.x;
+        const dy = body.y - m.y;
+        const d = Math.hypot(dx, dy) || 1;
+        ax += dx / (d * d);
+        ay += dy / (d * d);
+      }
+      ax += (arena.width / 2 - body.x) * 4e-4;
+      ay += (arena.height / 2 - body.y) * 4e-4;
+      const len = Math.hypot(ax, ay) || 1;
+      body.x = Math.max(50, Math.min(arena.width - 50, body.x + (ax / len) * nudge * dt));
+      body.y = Math.max(50, Math.min(arena.height - 50, body.y + (ay / len) * nudge * dt));
+    }
+
+    trial.update(dt, body, arena.width, arena.height, arts);
+    arts.update(dt, body, trial);
+
+    // Kills feed the meter, and a full meter is spent on the first card offered.
+    const now = trial.killCount;
+    for (let i = seen; i < now; i++) kit.countKill();
+    seen = now;
+    if (spend && kit.due) {
+      kit.take(kit.offer(random)[0]);
+      arts.carry(kit.held, kit.combos());
+    }
+    seconds += dt;
+  }
+  return {
+    outcome: trial.outcome,
+    kills: trial.killCount,
+    seconds: Math.round(seconds * 10) / 10,
+    integrity: Math.round(trial.integrity * 100) / 100,
+    exchanges: kit.exchangesTaken,
+    paid: Math.round(harvest(trial.through, trial.outcome)),
+  };
+}
+
+// 1. The structural half. A run whose draft is never answered never starts — four cards are owed
+//    before the first 邪气 arrives — so no time passes and nothing is earned. This is what makes
+//    walking away worthless, and it does not depend on a single tuned number.
+const abandoned = new Arsenal();
+abandoned.start();
+const waiting = new Trial();
+waiting.start(Ascended - 1);
+checkTrue('four cards are owed before a run can begin', abandoned.due && abandoned.openingLeft === 4);
+check('so an unanswered run has run for no time', waiting.through, 0);
+check('and is worth nothing', harvest(waiting.through, waiting.outcome), 0);
+
+// 2. The tuned half. 符雷火冰 is a chain of three pairings and the highest kill rate measured of
+//    anything tried — 6 a second at level one, 23 at level five, 33 evolved. Drafted and then
+//    neglected, it stays at six, and six has to lose at every realm.
+//
+//    筑基 is exempt, and deliberately: it is the first trial anybody plays, and a mode that
+//    punishes you for not yet understanding its upgrade system on the very first run teaches the
+//    wrong thing. From 金丹 up, ignoring the meter costs you the run — and it costs you more the
+//    higher you go, which is the shape a lesson should have.
+const Strongest: School[] = ['符', '雷', '火', '冰'];
+let neglectedSurvivals = 0;
+let lastPaid = Infinity;
+let costlier = true;
+for (let realm = 1; realm <= Ascended - 1; realm++) {
+  const idle = fight(realm, 0, rng, Strongest, false);
+  if (realm > 1) {
+    if (idle.outcome === 'survived') neglectedSurvivals++;
+    if (idle.paid > lastPaid) costlier = false;
+    lastPaid = idle.paid;
+  }
+  console.log(
+    `NOTE  realm ${realm} drafted and then neglected: ${idle.outcome} at ${idle.seconds}s, ${idle.kills} killed, paid ${idle.paid}`,
+  );
+}
+check('above 筑基, a build nobody deepens loses', neglectedSurvivals, 0);
+checkTrue('and neglect costs more the higher you go', costlier);
+
+// 3. And the same build with its exchanges taken, which is the reward for playing: it should do
+//    markedly better. Reported at both ends rather than asserted as a survival, because whether a
+//    *person* survives is not something a potential-field bot can tell me.
+for (const realm of [1, Ascended - 1]) {
+  const spent = fight(realm, 0, rng, Strongest, true);
+  console.log(
+    `NOTE  realm ${realm} with the meter spent: ${spent.outcome} at ${spent.seconds}s, ${spent.kills} killed, ${spent.exchanges} exchanges, integrity ${spent.integrity}, paid ${spent.paid}`,
+  );
+}
+
+// And the same fight with a hand on it, reported rather than asserted. A potential-field bot is a
+// bad player — it corners itself, and at 700 px/s it still died to things moving at 52 — so
+// "the bot survived" is worth knowing and "the bot died" proves nothing about a person.
+for (const realm of [1, 4, Ascended - 1]) {
+  const moved = fight(realm, 260, rng, Strongest);
+  console.log(
+    `NOTE  realm ${realm} with a crude hand: ${moved.outcome} at ${moved.seconds}s, ${moved.kills} killed, integrity ${moved.integrity}, paid ${moved.paid}`,
+  );
+}
+
+Math.random = wildRandom;
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

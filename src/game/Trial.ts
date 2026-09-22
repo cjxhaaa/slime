@@ -1,9 +1,10 @@
 /**
  * 历练 — the survivors run, and what makes each realm feel different to play.
  *
- * 邪气 drift in from the edges of the desktop toward the slime. The slime throws talismans at them
- * on its own. You steer by dragging, which is the gesture that already moved the pet, so the mode
- * adds no controls. Ninety seconds, then it is over.
+ * 邪气 drift in from the edges of the desktop toward the slime. What the slime does about them is
+ * whatever it drafted — see `schools.ts` for the nine, and `Attacks.ts` for them running. You steer
+ * by dragging, which is the gesture that already moved the pet, so the mode adds no controls.
+ * Ninety seconds, then it is over.
  *
  * **It costs nothing but time.** No charms — those are realm insurance now, and a play mode that
  * quietly eats your 渡劫 odds is the same trap the automatic stages and the 御符 throw each set
@@ -20,10 +21,15 @@
  * is the same experience without the interesting part.
  *
  * So **both sides scale hard, and the door stays a little ahead of the hand at every realm.** 筑基
- * is a handful of things closing in slowly, answered one talisman at a time. 大乘 is six hundred
- * arrivals at twice the speed, answered four at a time twice a second. Neither can be won by
- * standing still, and nothing else about them is alike. `LADDER` has the numbers and the two
- * versions of this that measurement threw out.
+ * is a handful of things closing in slowly. 大乘 is six hundred arrivals at twice the speed.
+ * Neither can be won by standing still, and nothing else about them is alike.
+ *
+ * What changed when the schools arrived: the hand is no longer one number this file owns, it is a
+ * drafted build that gets stronger over the run. So the door is not tuned against a column here
+ * any more — it is tuned against a **whole run driven frame by frame in the checks**, with a real
+ * build fighting it, and the thing being asserted is that standing still still loses. That is a
+ * better guard than any arithmetic I could do on two columns, and it is the third time this
+ * particular guard has had to be rebuilt.
  */
 import { clear } from '../slime/colour.js';
 
@@ -80,10 +86,6 @@ export function rung(realm: number): number {
  * 筑基 is the realm most likely to end early; it simply never gets to the front.)
  */
 interface Rung {
-  /** Talismans per volley, each aimed at a different 邪气. */
-  volley: number;
-  /** Seconds between volleys. */
-  fire: number;
   /** Seconds between arrivals, at the start of a run and at the end of it. */
   open: number;
   close: number;
@@ -94,23 +96,19 @@ interface Rung {
 }
 
 const LADDER: Rung[] = [
-  { volley: 1, fire: 0.95, open: 1.2, close: 0.36, speed: 52, vitality: 5 },
-  { volley: 1, fire: 0.82, open: 1.06, close: 0.32, speed: 61, vitality: 6.2 },
-  { volley: 2, fire: 0.78, open: 0.52, close: 0.155, speed: 70, vitality: 7.4 },
-  { volley: 2, fire: 0.66, open: 0.45, close: 0.135, speed: 79, vitality: 8.6 },
-  { volley: 3, fire: 0.66, open: 0.31, close: 0.093, speed: 88, vitality: 9.8 },
-  { volley: 3, fire: 0.56, open: 0.27, close: 0.081, speed: 97, vitality: 11 },
-  { volley: 4, fire: 0.56, open: 0.21, close: 0.063, speed: 106, vitality: 12.2 },
+  { open: 0.2484, close: 0.0373, speed: 52, vitality: 5 },
+  { open: 0.2288, close: 0.0343, speed: 61, vitality: 6.2 },
+  { open: 0.2121, close: 0.0318, speed: 70, vitality: 7.4 },
+  { open: 0.1976, close: 0.0296, speed: 79, vitality: 8.6 },
+  { open: 0.1812, close: 0.0272, speed: 88, vitality: 9.8 },
+  { open: 0.1672, close: 0.0251, speed: 97, vitality: 11 },
+  { open: 0.1512, close: 0.0227, speed: 106, vitality: 12.2 },
 ];
 
-/** Seconds between volleys. */
-export function fireInterval(realm: number): number {
-  return LADDER[rung(realm)].fire;
-}
-
-/** How many talismans a volley sends, each at a different 邪气. */
-export function volleySize(realm: number): number {
-  return LADDER[rung(realm)].volley;
+/** Arrivals a second, averaged across a run. What the door amounts to, for comparing realms. */
+export function arrivalRate(realm: number): number {
+  const { open, close } = LADDER[rung(realm)];
+  return 2 / (open + close);
 }
 
 /** How much punishment the body absorbs before the run ends. */
@@ -186,7 +184,6 @@ export interface Rect {
 export class Trial {
   private menaces: Menace[] = [];
   private nextSpawn = 0;
-  private nextVolley = 0;
   private elapsed = 0;
   private hurt = 0;
   private grace = 0;
@@ -204,7 +201,6 @@ export class Trial {
     this.outcome = 'running';
     // A beat of quiet before the first arrival, so entering the mode is not also being attacked.
     this.nextSpawn = 1.2;
-    this.nextVolley = fireInterval(realm) * 0.5;
   }
 
   get through(): number {
@@ -220,66 +216,98 @@ export class Trial {
     return this.kills;
   }
 
+  /**
+   * Gives back some 护体, for the card that does that.
+   *
+   * Clamped at whole, because a run cannot end up *better* defended than it started — the card is
+   * a way out of a bad patch, not a way to bank a bigger pool than the realm allows.
+   */
+  mend(points: number): void {
+    this.hurt = Math.max(0, this.hurt - points);
+  }
+
   get untouchable(): boolean {
     return this.grace > 0;
   }
 
-  /** Where everything is, for the projectiles to be tested against. */
+  /** Where everything is, for the schools to be tested against. */
   targets(): { x: number; y: number }[] {
     return this.menaces.map((m) => ({ x: m.x, y: m.y }));
   }
 
   /**
-   * Kills whichever 邪气 is nearest the point, if any is close enough.
+   * The nearest 邪气 within a distance, or null.
    *
-   * **One talisman, one 邪气.** An earlier version gave them two hit points and let a talisman
-   * wound everything within reach, which sounds like a detonation and played like a cheat: in a
-   * crowd something is always already wounded, so every shot killed anyway and the second hit
-   * point meant nothing. Worse, it made 筑基 — the realm that is supposed to be about moving —
-   * survivable by standing perfectly still. A health bar on a thirteen-pixel blot would also have
-   * been a number on the screen, which the guardrails rule out in any case.
-   *
-   * Takes a point rather than an index so the caller does not have to keep the two lists aligned —
-   * the projectiles live in `Volley` and are filtered there on their own schedule, and an index
-   * handed across that boundary would be stale the moment either side removed an element.
+   * Handed out as a copied point rather than the unit itself, so nothing outside this class can
+   * hold a reference to something that is about to be spliced out of the list.
    */
-  strike(x: number, y: number): boolean {
-    let found = -1;
-    let closest = StrikeRadius;
-    for (let i = 0; i < this.menaces.length; i++) {
-      const away = Math.hypot(this.menaces[i].x - x, this.menaces[i].y - y);
+  closest(x: number, y: number, within: number): { x: number; y: number } | null {
+    let best: Menace | null = null;
+    let closest = within;
+    for (const m of this.menaces) {
+      const away = Math.hypot(m.x - x, m.y - y);
       if (away <= closest) {
         closest = away;
-        found = i;
+        best = m;
       }
     }
-    if (found < 0) return false;
-    this.menaces.splice(found, 1);
-    this.kills += 1;
-    return true;
+    return best ? { x: best.x, y: best.y } : null;
   }
 
   /**
-   * Runs the clock. Returns a point per talisman the volley should send, or nothing.
+   * Kills up to `most` within a radius, nearest first. Returns how many died.
    *
-   * **A point each, rather than one point for the whole volley.** Fired along one heading they
-   * arrive at the same pixel and read as one talisman that got thicker, and the fan that fixed
-   * *that* spans a half-radian — so at any real range only the middle one could reach what the
-   * volley was aimed at, and a wider volley was measurably *worse*. Giving each its own target
-   * makes the spread come from the targets, which is both honest and better looking: four
-   * talismans leaving in four directions is what 大乘 is supposed to look like.
+   * Nearest first rather than in list order, because list order is arrival order and an area
+   * effect that kills the three oldest things in a radius instead of the three closest looks
+   * broken in exactly the situation it matters — a crowd pressed against the body.
+   */
+  cull(x: number, y: number, radius: number, most: number): number {
+    if (most <= 0) return 0;
+    const inside: { index: number; away: number }[] = [];
+    for (let i = 0; i < this.menaces.length; i++) {
+      const away = Math.hypot(this.menaces[i].x - x, this.menaces[i].y - y);
+      if (away <= radius) inside.push({ index: i, away });
+    }
+    inside.sort((a, b) => a.away - b.away);
+    const doomed = inside.slice(0, most).map((e) => e.index);
+    if (doomed.length === 0) return 0;
+    const dead = new Set(doomed);
+    this.menaces = this.menaces.filter((_, i) => !dead.has(i));
+    this.kills += doomed.length;
+    return doomed.length;
+  }
+
+  /**
+   * One hit at a point, the way a single projectile lands. Sugar over `cull`.
    *
-   * The aims come back rather than being fired from in here, because the projectiles belong to
-   * `Volley` — which the pet also uses outside a trial for 御符, and which has no business knowing
-   * that trials exist.
+   * **One talisman, one 邪气.** An earlier version gave them two hit points and let one wound
+   * everything within reach, which sounds like a detonation and played like a cheat: in a crowd
+   * something is always already wounded, so every shot killed anyway and the second hit point meant
+   * nothing. A health bar on a thirteen-pixel blot would also have been a number on the screen,
+   * which the guardrails rule out in any case. Area effects exist — several schools are nothing
+   * else — but they say so by asking to kill more than one.
+   */
+  strike(x: number, y: number): boolean {
+    return this.cull(x, y, StrikeRadius, 1) > 0;
+  }
+
+  /**
+   * Runs the clock: arrivals, closing, contact, and the two ways a run ends.
+   *
+   * `guard` is whatever is defending the body — in practice the arsenal. It is asked two things:
+   * where it is slowing 邪气 down, and whether it will eat a contact **before** that contact turns
+   * into damage. The second is why it is a parameter rather than something that fires on its own
+   * timer: 山岳 has to act between the touch and the wound, and there is no ordering of two
+   * independent update calls that puts it there.
    */
   update(
     dt: number,
     body: { x: number; y: number; radius: number },
     width: number,
     height: number,
-  ): { x: number; y: number }[] {
-    if (this.outcome !== 'running') return [];
+    guard?: { absorb(): boolean; fields(): { x: number; y: number; radius: number; factor: number }[] },
+  ): void {
+    if (this.outcome !== 'running') return;
     this.elapsed += dt;
     this.grace = Math.max(0, this.grace - dt);
 
@@ -290,6 +318,7 @@ export class Trial {
     }
 
     const speed = menaceSpeed(this.realm);
+    const fields = guard?.fields() ?? [];
     const survivors: Menace[] = [];
     for (const m of this.menaces) {
       m.arrival = Math.min(1, m.arrival + dt * 2.2);
@@ -297,15 +326,22 @@ export class Trial {
       const dx = body.x - m.x;
       const dy = body.y - m.y;
       const away = Math.hypot(dx, dy) || 1;
+      // 冰魄. The slowest field wins rather than the factors multiplying: there is only ever one
+      // of them today, and a stack that compounds is how a slow becomes a stop by accident.
+      let drag = 1;
+      for (const field of fields) {
+        if (Math.hypot(m.x - field.x, m.y - field.y) <= field.radius) drag = Math.min(drag, field.factor);
+      }
       // Steered rather than teleported along the line: a bit of inertia means a dodge actually
       // works, because they overshoot instead of turning on the spot.
-      m.vx += ((dx / away) * speed - m.vx) * Math.min(1, dt * 2.6);
-      m.vy += ((dy / away) * speed - m.vy) * Math.min(1, dt * 2.6);
+      m.vx += ((dx / away) * speed * drag - m.vx) * Math.min(1, dt * 2.6);
+      m.vy += ((dy / away) * speed * drag - m.vy) * Math.min(1, dt * 2.6);
       m.x += m.vx * dt;
       m.y += m.vy * dt;
 
       if (away <= body.radius + 14) {
-        if (this.grace <= 0) {
+        // 山岳 first. A shell that only works after the wound is not a shell.
+        if (this.grace <= 0 && !guard?.absorb()) {
           this.hurt += ContactDamage;
           this.grace = GraceSeconds;
         }
@@ -317,34 +353,8 @@ export class Trial {
     }
     this.menaces = survivors;
 
-    if (this.integrity <= 0) {
-      this.outcome = 'overwhelmed';
-      return [];
-    }
-    if (this.elapsed >= RunSeconds) {
-      this.outcome = 'survived';
-      return [];
-    }
-
-    this.nextVolley -= dt;
-    if (this.nextVolley > 0) return [];
-    this.nextVolley = fireInterval(this.realm);
-    return this.nearest(body.x, body.y, volleySize(this.realm));
-  }
-
-  /**
-   * The `count` nearest 邪气, closest first — fewer when there are fewer, rather than doubling up.
-   *
-   * A second talisman on something that dies to the first is a wasted talisman, and since the
-   * volley size is the player's whole side of the curve, wasting it quietly is the same as not
-   * having it.
-   */
-  private nearest(x: number, y: number, count: number): { x: number; y: number }[] {
-    return this.menaces
-      .map((m) => ({ x: m.x, y: m.y, away: Math.hypot(m.x - x, m.y - y) }))
-      .sort((a, b) => a.away - b.away)
-      .slice(0, count)
-      .map((m) => ({ x: m.x, y: m.y }));
+    if (this.integrity <= 0) this.outcome = 'overwhelmed';
+    else if (this.elapsed >= RunSeconds) this.outcome = 'survived';
   }
 
   /** Arrives from a random point on the border, just outside it. */

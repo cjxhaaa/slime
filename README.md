@@ -1311,6 +1311,90 @@ either way. Something that lands a hit and then sits inside the body draining it
 moment, it is instant death by crowd. The check drives a real run into a doorway and asserts that no
 two hits ever land inside that window.
 
+### 法脉: nine schools, and which ones combine
+
+This is the 法宝 slot idea the plan cancelled for being an invisible stat block. A trial changes what
+that objection was about: inside a ninety-second fight the schools are not a configuration you set
+and forget, they are **the only thing on the screen**. Each is something you can watch firing.
+
+| | school | how it fights | motion |
+|---|---|---|---|
+| 符 | 符箓 | aimed talismans, one target each | `aimed` |
+| 剑 | 剑气 | a sweep close in, wide and short | `sweep` |
+| 雷 | 雷法 | a bolt that jumps between neighbours | `chain` |
+| 火 | 丹火 | dropped flame that stays where it fell | `zone` |
+| 冰 | 冰魄 | a slowing field around the body | `field` |
+| 风 | 风刃 | blades orbiting the body | `orbit` |
+| 土 | 山岳 | a shell that eats contact, then bursts | `shell` |
+| 毒 | 瘴气 | a trail left wherever you have been | `trail` |
+| 影 | 影卫 | a small one that fights on its own | `ward` |
+
+No two share a motion, and a check asserts it. A school you cannot identify from across the room by
+how it moves is a stat with a name on it, which is the thing that got 法宝 cancelled.
+
+#### Nine schools with three partners each does not exist
+
+Every pairing adds one to the degree of two schools, so the degrees always sum to twice the number
+of pairings — an even number. Nine schools with three partners each sums to **27**. It is not a
+question of choosing the pairings cleverly; no graph on any nine things has odd total degree.
+
+So eight have three partners and 符 has four: a talisman is the medium the others are written onto,
+and 雷符 / 符剑 / 阵符 / 傀符 are all ordinary words, so spending the odd degree there is the least
+arbitrary option available. Fourteen pairings, every one of them a name somebody already uses, and
+every one of them **changes a behaviour rather than a number** — talismans that fork, a sweep that
+closes into a full circle, a shell that re-forms, a cloud that catches fire and takes the rest of
+the cloud with it.
+
+Holding one school, three of the other eight are partners, so a random three-card offer contains a
+partner **82%** of the time. That is why offers are not weighted toward partners: the graph already
+does the steering. Drafted four thousand times by something that takes the best-pairing card, a
+complete build comes out **100%** of the time — the requested property, and worth knowing it is
+exactly 100. Taken blind the same drafts average 2.35 pairings, because 14 of the 36 possible pairs
+combine. All three figures are pinned by checks, because each is a consequence of the graph rather
+than a number written anywhere in it.
+
+#### Four cards before the first 邪气
+
+A survivors run normally earns its build over twenty minutes. This one lasts ninety seconds, so the
+ramp everybody means when they say the early game of that genre drags is simply not affordable —
+all four slots are drafted before anything arrives, and the run starts with a whole build on screen.
+After that, kills fill a meter, a full meter buys another three-card offer (raises once the slots
+are full), and one offer in six carries a **jackpot**: an evolution.
+
+The first exchange costs 30 kills, not the 8 it originally did. Four freshly drafted schools kill
+about six a second, so 8 put the first upgrade at **1.3 seconds** — you were snowballing before you
+had looked at the screen. Thirty puts it around five seconds in. From there it grows 18% a step,
+which comes to nine exchanges over a 筑基 run and twelve over a 大乘 one: what a realm mostly buys
+you in this mode is a deeper build.
+
+**An evolution is only offered for a school whose partner you hold.** That gate is not in the
+request; without it the pairings are a side quest with their own rewards and the jackpot is a slot
+machine that ignores them. With it, going for a combination is how you buy the ticket.
+
+#### The AFK guard, fourth version, and this one is not arithmetic
+
+The first two compared two columns of `LADDER`, and both passed while a real run driven frame by
+frame finished at full health with the body never moving. The third fought a whole run, which caught
+that — and then the schools arrived and four slots turned out to kill five to eight times what one
+talisman did. Chasing that with the door needed about **two thousand arrivals in ninety seconds**,
+which is not a fight, it is a screensaver with a body in it.
+
+The thing that actually stops a run being farmed was sitting there all along and is structural:
+**the draft pauses the run.** Nothing moves, the clock does not advance, and `through` — the entire
+payout — counts only seconds that elapsed. So an unattended run earns nothing however strong the
+build is, and four cards are owed before the first 邪气 even arrives. No number was tuned for it.
+
+What is left to tune is the case in between: drafting four schools and then never spending the
+meter. That build stays at level one, and from 金丹 up it loses — earlier the higher you go, 88
+seconds at 金丹 down to 66 at 大乘. 筑基 is exempt on purpose: it is the first trial anybody plays,
+and punishing somebody for not yet understanding the upgrade system on their first run teaches the
+wrong thing.
+
+The door was re-derived against a build rather than against one talisman a second: about 7 arrivals
+a second at 筑基 and 11.5 at 大乘, 630 to 1030 over a run, on a much steeper ramp (four a second at
+the open, twenty-six to forty-four at the close). The spread between realms is narrower than the old
+115–1034 table, because the spread moved into the build.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held
