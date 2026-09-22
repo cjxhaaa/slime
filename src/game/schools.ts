@@ -107,7 +107,7 @@ export interface SchoolSpec {
   /** One line, in the card. Says what it does, never what it is worth. */
   blurb: string;
   motion: Motion;
-  /** `#rrggbb`. Every school is a light on a dark thing, so these are all pale and saturated. */
+  /** `#rrggbb`. The same as the palette's `body`, so a draft card matches what it fires. */
   tint: string;
   /** Seconds between activations at level 1. Levels shorten it; see `cadence`. */
   interval: number;
@@ -117,13 +117,47 @@ export interface SchoolSpec {
   bite: number;
 }
 
+/**
+ * What a school's light is made of.
+ *
+ * Three stops, not one colour, and that is most of the difference between this looking like a game
+ * and looking like a diagram. A single pastel tint drawn at some alpha is **chalk**: it has no hot
+ * centre, so it never reads as light, only as a coloured shape. Every glowing thing in the genre
+ * these are borrowed from is a ramp from a near-white core through a saturated body to a deep
+ * saturated edge, and it is the ramp that does the work.
+ *
+ * They are also far more saturated than the first set. The originals were picked to sit politely on
+ * a desktop; sitting politely is the opposite of what an attack should do, and the pet's own body
+ * colour is already the thing carrying "this is a calm object on your screen".
+ */
+export interface Palette {
+  /** The hot centre. Near white, with a trace of the hue left in it. */
+  core: string;
+  /** The saturated middle. This is the colour somebody would name the school by. */
+  body: string;
+  /** The deep outer, where the light falls off. Saturated, never grey. */
+  edge: string;
+}
+
+export const PALETTE: Record<School, Palette> = {
+  符: { core: '#fffdf0', body: '#ffd24a', edge: '#ff7a14' },
+  剑: { core: '#ffffff', body: '#8ceaff', edge: '#1f6ee0' },
+  雷: { core: '#ffffff', body: '#cba6ff', edge: '#6b28ee' },
+  火: { core: '#fff6d0', body: '#ff9a2e', edge: '#df2a18' },
+  冰: { core: '#f0fdff', body: '#79e2ff', edge: '#1f7fe0' },
+  风: { core: '#f4fff8', body: '#66ffb4', edge: '#0fa172' },
+  土: { core: '#fff4da', body: '#f2c163', edge: '#a35b1e' },
+  毒: { core: '#f2ffc4', body: '#b6f238', edge: '#3f8a0c' },
+  影: { core: '#ffeeff', body: '#d489ff', edge: '#7526d6' },
+};
+
 export const SPECS: Record<School, SchoolSpec> = {
   符: {
     key: '符',
     name: '符箓',
     blurb: '掷符，一符一敌',
     motion: 'aimed',
-    tint: '#ffe9a8',
+    tint: '#ffd24a',
     interval: 0.9,
     reach: 520,
     bite: 1,
@@ -133,7 +167,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '剑气',
     blurb: '近身横扫',
     motion: 'sweep',
-    tint: '#bfe9ff',
+    tint: '#8ceaff',
     interval: 1.15,
     reach: 132,
     bite: 3,
@@ -143,7 +177,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '雷法',
     blurb: '落雷，并及其近者',
     motion: 'chain',
-    tint: '#d9c9ff',
+    tint: '#cba6ff',
     interval: 1.5,
     reach: 300,
     bite: 2,
@@ -153,7 +187,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '丹火',
     blurb: '燃于原地',
     motion: 'zone',
-    tint: '#ffb388',
+    tint: '#ff9a2e',
     interval: 1.7,
     reach: 74,
     bite: 2,
@@ -163,7 +197,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '冰魄',
     blurb: '周身寒域，来者迟',
     motion: 'field',
-    tint: '#b9f2ff',
+    tint: '#79e2ff',
     interval: 0.55,
     reach: 118,
     bite: 1,
@@ -173,7 +207,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '风刃',
     blurb: '绕身而转',
     motion: 'orbit',
-    tint: '#c8ffe4',
+    tint: '#66ffb4',
     interval: 0.3,
     reach: 96,
     bite: 1,
@@ -183,7 +217,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '山岳',
     blurb: '受击不损，碎则荡开',
     motion: 'shell',
-    tint: '#e8d7b0',
+    tint: '#f2c163',
     interval: 6,
     reach: 128,
     bite: 4,
@@ -193,7 +227,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '瘴气',
     blurb: '所过之处成瘴',
     motion: 'trail',
-    tint: '#d6f5a8',
+    tint: '#b6f238',
     interval: 0.22,
     reach: 46,
     bite: 1,
@@ -203,7 +237,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '影卫',
     blurb: '一影自战',
     motion: 'ward',
-    tint: '#cbb6ff',
+    tint: '#d489ff',
     interval: 1.25,
     reach: 240,
     bite: 1,

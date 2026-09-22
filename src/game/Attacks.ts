@@ -18,6 +18,8 @@
 import { clear, mix } from '../slime/colour.js';
 import {
   type Combo,
+  PALETTE,
+  type Palette,
   type School,
   SPECS,
   cadence,
@@ -108,7 +110,7 @@ interface Spark {
   life: number;
   born: number;
   size: number;
-  tint: string;
+  hue: Palette;
 }
 
 /** How much of a spark's travel is drawn behind it, in seconds. Off velocity, never off the last
@@ -223,7 +225,7 @@ export class Attacks {
     battlefield.cull(this.bodyX, this.bodyY, reach, SPECS['土'].bite + level);
     this.push('土', 'burst', this.bodyX, this.bodyY, 0, 0, 0, 0.5, reach, 0);
     // A shell breaking should throw pieces of itself. Eighteen, outward, fast.
-    this.spark(this.bodyX, this.bodyY, 18, SPECS['土'].tint, 330);
+    this.spark(this.bodyX, this.bodyY, 18, '土', 330);
 
     // 幽壤: two 影卫 come out of the ground where it broke.
     if (this.paired('土', '影')) {
@@ -366,7 +368,7 @@ export class Attacks {
           this.bodyX + Math.cos(along) * wide * 0.9,
           this.bodyY + Math.sin(along) * wide * 0.9,
           2,
-          SPECS['剑'].tint,
+          '剑',
           230,
           along + Math.PI / 2,
           1.1,
@@ -405,7 +407,7 @@ export class Attacks {
       bolt.path = path;
       // Skip the first node: that one is the pet, and nothing was struck there.
       for (let i = 1; i < path.length; i++) {
-        this.spark(path[i].x, path[i].y, 8, SPECS['雷'].tint, 250);
+        this.spark(path[i].x, path[i].y, 8, '雷', 250);
       }
       return;
     }
@@ -429,7 +431,7 @@ export class Attacks {
         // Only when it actually caught something. A field that flashes on a timer teaches nothing;
         // one that flashes when it bites is telling you what it just did.
         this.push('冰', 'burst', this.bodyX, this.bodyY, 0, 0, 0, 0.42, reach, 0);
-        this.spark(this.bodyX, this.bodyY, 10, SPECS['冰'].tint, 210);
+        this.spark(this.bodyX, this.bodyY, 10, '冰', 210);
       }
       return;
     }
@@ -541,11 +543,12 @@ export class Attacks {
     x: number,
     y: number,
     count: number,
-    tint: string,
+    school: School,
     speed: number,
     aim: number | null = null,
     cone = Math.PI * 2,
   ): void {
+    const hue = PALETTE[school];
     for (let i = 0; i < count; i++) {
       if (this.sparks.length >= MaxSparks) return;
       const angle = aim === null ? Math.random() * Math.PI * 2 : aim + (Math.random() - 0.5) * cone;
@@ -559,7 +562,7 @@ export class Attacks {
         life,
         born: life,
         size: 1.1 + Math.random() * 1.5,
-        tint,
+        hue,
       });
     }
   }
@@ -612,7 +615,7 @@ export class Attacks {
             }
           }
           this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.26, 30, 0);
-          this.spark(e.x, e.y, 7, SPECS['符'].tint, 190, Math.atan2(e.vy, e.vx), 2.1);
+          this.spark(e.x, e.y, 7, '符', 190, Math.atan2(e.vy, e.vx), 2.1);
           continue;
         }
       } else if (e.kind === 'orbit') {
@@ -625,7 +628,7 @@ export class Attacks {
         e.y = this.bodyY + Math.sin(e.angle) * ring;
         if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch + 6, 1) > 0) {
           e.cool = 0.18;
-          this.spark(e.x, e.y, 6, SPECS['风'].tint, 220, e.angle + Math.PI / 2 * way, 1.4);
+          this.spark(e.x, e.y, 6, '风', 220, e.angle + Math.PI / 2 * way, 1.4);
         }
         // 风雪: the blades leave frost behind them, and the frost bites too.
         if (this.paired('风', '冰') && Math.random() < dt * 9) {
@@ -648,7 +651,7 @@ export class Attacks {
           if (killed > 0) {
             e.bite -= killed;
             e.cool = 0.3;
-            this.spark(e.x, e.y, 5, SPECS[e.school].tint, 150);
+            this.spark(e.x, e.y, 5, e.school, 150);
             // 雷火: the ground fire reaches out for a neighbour every time it catches something.
             if (e.school === '火' && this.paired('火', '雷')) {
               const next = battlefield.closest(e.x, e.y, 170);
@@ -688,7 +691,7 @@ export class Attacks {
         e.angle = Math.atan2(goal.y - e.y, goal.x - e.x);
         if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch + 8, 1) > 0) {
           e.cool = WardCool;
-          this.spark(e.x, e.y, 6, SPECS['影'].tint, 200, e.angle, 1.8);
+          this.spark(e.x, e.y, 6, '影', 200, e.angle, 1.8);
           // 影毒: everything it touches is left poisoned.
           if (this.paired('影', '毒')) {
             this.push('影', 'trail', e.x, e.y, 0, 0, 0, 1.4, 34, 1);
@@ -754,19 +757,25 @@ export class Attacks {
   /**
    * Everything the pet is doing, drawn.
    *
-   * The recipe every school follows, and the thing the first version of this file did not do at
-   * all: **glow, core, motion, grit.** A soft wide gradient so it sits on an unknown desktop; a
-   * bright narrow core so it has an edge; something that shows which way it is going; and a few
-   * specks so it is not one clean shape. One stroked path has none of those, which is why a
-   * talisman looked like a brick and 雷法 looked like a wire.
+   * Two passes. The first is `source-over` and draws only the things that need to be *dark* —
+   * outlines and backing plates, which exist so an effect has an edge on a cream wallpaper as well
+   * as a navy one. The second is `lighter`, and everything else lives in it: additive, so
+   * overlapping light climbs toward white instead of averaging out.
    *
-   * Sparks last, over everything, because they are the part that reads as force.
+   * Every lit thing follows the same recipe — **bloom, body, core** — out of the school's three-stop
+   * palette. The version before this used one pastel per school at some alpha, which is chalk: no
+   * hot centre, so it read as a coloured shape rather than as light.
    */
   draw(context: CanvasRenderingContext2D): void {
     context.save();
     context.lineCap = 'round';
     context.lineJoin = 'round';
 
+    // Structure first, while black still means something.
+    for (const e of this.live) this.drawBacking(context, e);
+    if (this.has('土') && this.shellLeft > 0) this.drawShellBacking(context);
+
+    context.globalCompositeOperation = 'lighter';
     if (this.has('冰')) this.drawField(context);
     for (const e of this.live) this.drawOne(context, e);
     if (this.has('土') && this.shellLeft > 0) this.drawShell(context);
@@ -775,45 +784,163 @@ export class Attacks {
     context.restore();
   }
 
+  /** The dark side of an effect: a silhouette under the light, so it has an edge anywhere. */
+  private drawBacking(context: CanvasRenderingContext2D, e: Effect): void {
+    context.globalAlpha = 0.5;
+    context.fillStyle = 'rgba(14, 10, 26, 0.85)';
+    if (e.kind === 'aimed' || e.kind === 'aimed-orbit') {
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(
+        e.kind === 'aimed-orbit' && e.age < 0.34 ? e.angle + e.age * 9 : Math.atan2(e.vy, e.vx),
+      );
+      context.fillRect(-13, -8, 26, 16);
+      context.restore();
+    } else if (e.kind === 'orbit') {
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(e.angle + Math.PI / 2);
+      crescent(context, 26, 12);
+      context.fill();
+      context.restore();
+    } else if (e.kind === 'ward') {
+      context.beginPath();
+      context.arc(e.x, e.y, 14, 0, Math.PI * 2);
+      context.fill();
+    } else if (e.kind === 'ward-glyph') {
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(e.angle + Math.PI / 2 + Math.sin(this.clock * 2 + e.x) * 0.06);
+      context.fillRect(-11, -15, 22, 30);
+      context.restore();
+    }
+    context.globalAlpha = 1;
+  }
+
+  private drawShellBacking(context: CanvasRenderingContext2D): void {
+    context.save();
+    context.translate(this.bodyX, this.bodyY);
+    context.rotate(this.clock * 0.5);
+    context.globalAlpha = 0.42;
+    context.strokeStyle = 'rgba(14, 10, 26, 0.9)';
+    const plates = 6;
+    for (let i = 0; i < plates * Math.min(this.shellLeft, 3); i++) {
+      const ring = 62 + Math.floor(i / plates) * 11;
+      const from = ((i % plates) / plates) * Math.PI * 2 + 0.16;
+      context.lineWidth = 9;
+      context.beginPath();
+      context.arc(0, 0, ring, from, from + (Math.PI * 2) / plates - 0.32);
+      context.stroke();
+    }
+    context.globalAlpha = 1;
+    context.restore();
+  }
+
   /**
-   * 冰魄: a cold floor with a crisp rim and crystals standing on it.
+   * A bloom: wide and faint, then narrower and brighter, then a hot point.
    *
-   * It was a ring gradient and a stroked circle, which on a pale desktop was a faint hoop nobody
-   * could see the inside of. The floor makes the area legible — the whole point of the school is
-   * that things inside it are slower — and the crystals turning slowly give it the one thing a
-   * persistent effect most needs, which is any motion at all.
+   * Three gradients rather than one. One gradient gives a soft ball; three nested give something
+   * with a centre, and the centre is what the eye reads as brightness.
+   */
+  private bloom(
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    hue: Palette,
+    alpha: number,
+  ): void {
+    if (radius <= 0 || alpha <= 0) return;
+    const ring = (r: number, colour: string, a: number) => {
+      const ramp = context.createRadialGradient(x, y, 0, x, y, r);
+      ramp.addColorStop(0, colour);
+      ramp.addColorStop(0.5, mix(colour, hue.edge, 0.45));
+      ramp.addColorStop(1, clear(hue.edge));
+      context.globalAlpha = a;
+      context.fillStyle = ramp;
+      context.beginPath();
+      context.arc(x, y, r, 0, Math.PI * 2);
+      context.fill();
+    };
+    ring(radius, hue.edge, alpha * 0.34);
+    ring(radius * 0.55, hue.body, alpha * 0.55);
+    ring(radius * 0.24, hue.core, alpha * 0.9);
+    context.globalAlpha = 1;
+  }
+
+  /**
+   * 冰魄: a cold rim with crystals standing on it and frost drifting inside.
+   *
+   * Almost nothing in the middle, still — a wide translucent fill is the background with the
+   * contrast taken out, whatever the blend mode. What additive buys here is that the rim, the
+   * crystals and the frost all brighten where they cross.
    */
   private drawField(context: CanvasRenderingContext2D): void {
     const r = span('冰', this.levelOf('冰'));
-    const tint = SPECS['冰'].tint;
+    const hue = PALETTE['冰'];
     const deep = this.evolved('冰');
     context.save();
     context.translate(this.bodyX, this.bodyY);
 
-    // Almost nothing in the middle. The first version filled it at nineteen percent and the field
-    // came out as a grey disc the size of a saucer — a wide translucent pale fill is the background
-    // with the contrast removed, on any background.
-    const floor = context.createRadialGradient(0, 0, r * 0.5, 0, 0, r);
-    floor.addColorStop(0, clear(tint));
-    floor.addColorStop(0.88, `rgba(190, 240, 255, ${deep ? 0.1 : 0.05})`);
-    floor.addColorStop(1, clear(tint));
-    context.fillStyle = floor;
+    // No floor. Three versions have now tried to fill this area — at 19% in source-over, at 18%
+    // additive — and every one came out as a wash of haze over the desktop, because what a wide
+    // faint fill mostly contributes is alpha. The rim, the crystals and the frost carry it, and
+    // they brighten where they cross, which is the whole reason for drawing additively.
+    const lip = context.createRadialGradient(0, 0, r * 0.82, 0, 0, r * 1.1);
+    lip.addColorStop(0, clear(hue.edge));
+    lip.addColorStop(0.55, hue.edge);
+    lip.addColorStop(1, clear(hue.edge));
+    context.globalAlpha = deep ? 0.55 : 0.36;
+    context.fillStyle = lip;
     context.beginPath();
-    context.arc(0, 0, r, 0, Math.PI * 2);
+    context.arc(0, 0, r * 1.1, 0, Math.PI * 2);
     context.fill();
 
-    // The rim carries it instead, and it is drawn dark-under-pale so it has an edge on a pale
-    // desktop as well as a dark one.
-    this.twice(context, mix(tint, '#ffffff', 0.3), 5, 2.2, () => {
-      context.beginPath();
-      context.arc(0, 0, r, 0, Math.PI * 2);
-    }, 0.95);
-
-    // Frost drifting inside, so the area has motion in it rather than just extent.
     context.globalAlpha = 0.5;
-    context.strokeStyle = mix(tint, '#ffffff', 0.4);
-    context.lineWidth = 1.6;
-    for (let i = 0; i < 14; i++) {
+    context.strokeStyle = hue.body;
+    context.lineWidth = 6;
+    context.beginPath();
+    context.arc(0, 0, r, 0, Math.PI * 2);
+    context.stroke();
+    context.globalAlpha = 0.95;
+    context.strokeStyle = hue.core;
+    context.lineWidth = 1.8;
+    context.beginPath();
+    context.arc(0, 0, r, 0, Math.PI * 2);
+    context.stroke();
+
+    const spin = this.clock * 0.35;
+    const points = deep ? 12 : 8;
+    for (let i = 0; i < points; i++) {
+      const angle = spin + (i / points) * Math.PI * 2;
+      const tall = 10 + 5 * Math.sin(this.clock * 2 + i);
+      context.save();
+      context.rotate(angle);
+      context.translate(r, 0);
+      context.globalAlpha = 0.85;
+      context.fillStyle = hue.body;
+      context.beginPath();
+      context.moveTo(tall, 0);
+      context.lineTo(-2, 4.6);
+      context.lineTo(-6, 0);
+      context.lineTo(-2, -4.6);
+      context.closePath();
+      context.fill();
+      context.globalAlpha = 1;
+      context.fillStyle = hue.core;
+      context.beginPath();
+      context.moveTo(tall * 0.64, 0);
+      context.lineTo(-1, 1.7);
+      context.lineTo(-1, -1.7);
+      context.closePath();
+      context.fill();
+      context.restore();
+    }
+
+    context.globalAlpha = 0.7;
+    context.strokeStyle = hue.core;
+    context.lineWidth = 1.5;
+    for (let i = 0; i < 16; i++) {
       const drift = this.clock * 0.6 + i * 2.4;
       const at = (i * 0.618) % 1;
       const rr = r * (0.2 + 0.72 * at);
@@ -821,223 +948,180 @@ export class Attacks {
       const py = Math.sin(drift * 1.13) * rr;
       context.beginPath();
       context.moveTo(px, py);
-      context.lineTo(px - Math.sin(drift) * 5, py + Math.cos(drift) * 5);
+      context.lineTo(px - Math.sin(drift) * 6, py + Math.cos(drift) * 6);
       context.stroke();
     }
     context.globalAlpha = 1;
-
-    // Crystals on the rim, turning. Drawn as filled shards rather than stroked, because a stroked
-    // triangle at this size is three lines and reads as clutter.
-    const spin = this.clock * 0.35;
-    const points = deep ? 12 : 8;
-    for (let i = 0; i < points; i++) {
-      const angle = spin + (i / points) * Math.PI * 2;
-      const tall = 9 + 4 * Math.sin(this.clock * 2 + i);
-      context.save();
-      context.rotate(angle);
-      context.translate(r, 0);
-      context.globalAlpha = 0.72;
-      context.fillStyle = tint;
-      context.beginPath();
-      context.moveTo(tall, 0);
-      context.lineTo(-2, 4.2);
-      context.lineTo(-5, 0);
-      context.lineTo(-2, -4.2);
-      context.closePath();
-      context.fill();
-      context.globalAlpha = 0.5;
-      context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      context.beginPath();
-      context.moveTo(tall * 0.66, 0);
-      context.lineTo(-1, 1.6);
-      context.lineTo(-1, -1.6);
-      context.closePath();
-      context.fill();
-      context.restore();
-    }
-    context.globalAlpha = 1;
     context.restore();
   }
 
-  /**
-   * 山岳: plates, not hoops.
-   *
-   * Concentric stroked circles were the worst of the lot — on a busy desktop they read as a
-   * targeting reticle rather than as armour. Segmented plates with gaps between them turn slowly,
-   * so it is obviously a shell around something, and a plate leaving as a hit is absorbed is
-   * visible without any number.
-   */
+  /** 山岳: plates that turn, lit along their length. */
   private drawShell(context: CanvasRenderingContext2D): void {
-    const tint = SPECS['土'].tint;
+    const hue = PALETTE['土'];
     context.save();
     context.translate(this.bodyX, this.bodyY);
     context.rotate(this.clock * 0.5);
-    const radius = 62;
     const plates = 6;
-    for (let i = 0; i < plates * this.shellLeft && i < plates * 3; i++) {
-      const ring = radius + Math.floor(i / plates) * 11;
+    for (let i = 0; i < plates * Math.min(this.shellLeft, 3); i++) {
+      const ring = 62 + Math.floor(i / plates) * 11;
       const from = ((i % plates) / plates) * Math.PI * 2 + 0.16;
       const to = from + (Math.PI * 2) / plates - 0.32;
-      context.globalAlpha = 0.22;
-      context.fillStyle = tint;
+      context.globalAlpha = 0.34;
+      context.strokeStyle = hue.edge;
+      context.lineWidth = 11;
       context.beginPath();
-      context.arc(0, 0, ring + 5, from, to);
-      context.arc(0, 0, ring - 5, to, from, true);
-      context.closePath();
-      context.fill();
-      this.twice(context, tint, 5, 2, () => {
-        context.beginPath();
-        context.arc(0, 0, ring, from, to);
-      }, 0.95);
+      context.arc(0, 0, ring, from, to);
+      context.stroke();
+      context.globalAlpha = 0.72;
+      context.strokeStyle = hue.body;
+      context.lineWidth = 4.5;
+      context.beginPath();
+      context.arc(0, 0, ring, from, to);
+      context.stroke();
+      context.globalAlpha = 1;
+      context.strokeStyle = hue.core;
+      context.lineWidth = 1.4;
+      context.beginPath();
+      context.arc(0, 0, ring + 2.4, from + 0.04, to - 0.04);
+      context.stroke();
     }
-    context.globalAlpha = 1;
     context.restore();
   }
 
-  /** Strokes the same path twice: a dark rim, then a pale core inside it. */
-  private twice(
-    context: CanvasRenderingContext2D,
-    tint: string,
-    rim: number,
-    core: number,
-    path: () => void,
-    alpha = 1,
-  ): void {
-    context.globalAlpha = alpha * 0.5;
-    context.strokeStyle = 'rgba(18, 24, 38, 0.75)';
-    context.lineWidth = rim;
-    path();
-    context.stroke();
-    context.globalAlpha = alpha;
-    context.strokeStyle = tint;
-    context.lineWidth = core;
-    path();
-    context.stroke();
-    context.globalAlpha = 1;
-  }
-
-  /** A soft round glow. The first of the four layers every effect gets. */
-  private glow(
-    context: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    radius: number,
-    tint: string,
-    alpha: number,
-  ): void {
-    if (radius <= 0 || alpha <= 0) return;
-    const ramp = context.createRadialGradient(x, y, 0, x, y, radius);
-    ramp.addColorStop(0, tint);
-    ramp.addColorStop(0.45, mix(tint, '#ffffff', 0.15));
-    // Never to transparent black: a ramp that ends there passes through half-alpha grey, which on
-    // a dark wallpaper is darker than the wallpaper. It is the oldest bug in this codebase.
-    ramp.addColorStop(1, clear(tint));
-    context.globalAlpha = alpha;
-    context.fillStyle = ramp;
-    context.beginPath();
-    context.arc(x, y, radius, 0, Math.PI * 2);
-    context.fill();
-    context.globalAlpha = 1;
-  }
-
   private drawSparks(context: CanvasRenderingContext2D): void {
-    context.save();
-    context.lineCap = 'round';
     for (const s of this.sparks) {
       const fade = Math.max(0, s.life / s.born);
-      // A streak along its own velocity, exactly like the dust. A round-capped line of zero length
-      // draws as a dot, so a spark that has slowed to nothing needs no separate case.
-      context.globalAlpha = 0.9 * fade * fade;
-      context.strokeStyle = s.tint;
-      context.lineWidth = s.size * 2 * (0.4 + 0.6 * fade);
+      // Two strokes: a fat soft one in the body colour and a thin hot one over it. One stroke is a
+      // scratch; two is an ember.
+      context.globalAlpha = 0.5 * fade;
+      context.strokeStyle = s.hue.body;
+      context.lineWidth = s.size * 3.2 * (0.4 + 0.6 * fade);
       context.beginPath();
       context.moveTo(s.x - s.vx * SparkTail, s.y - s.vy * SparkTail);
       context.lineTo(s.x, s.y);
       context.stroke();
+      context.globalAlpha = fade * fade;
+      context.strokeStyle = s.hue.core;
+      context.lineWidth = s.size * 1.2 * (0.4 + 0.6 * fade);
+      context.beginPath();
+      context.moveTo(s.x - s.vx * SparkTail * 0.7, s.y - s.vy * SparkTail * 0.7);
+      context.lineTo(s.x, s.y);
+      context.stroke();
     }
     context.globalAlpha = 1;
-    context.restore();
   }
 
   private drawOne(context: CanvasRenderingContext2D, e: Effect): void {
-    const tint = SPECS[e.school].tint;
+    const hue = PALETTE[e.school];
     const fade = e.life > 0 ? Math.max(0, 1 - e.age / e.life) : 1;
     const grown = e.life > 0 ? Math.min(1, e.age / Math.max(0.0001, e.life * 0.25)) : 1;
 
     if (e.kind === 'aimed' || e.kind === 'aimed-orbit') {
-      // A talisman with a written mark on it, and three ghosts of itself behind it. The ghosts are
-      // what make it read as fast; the rectangle it used to be read as a brick sliding along.
       const heading = Math.atan2(e.vy, e.vx);
-      this.glow(context, e.x, e.y, 26, tint, 0.5);
-      for (let ghost = 3; ghost >= 0; ghost--) {
-        const back = ghost * 0.018;
+      const held = e.kind === 'aimed-orbit' && e.age < 0.34;
+      // A ribbon of afterimages, brightening toward the head, then the talisman itself with a lit
+      // face and a mark on it.
+      for (let ghost = 4; ghost >= 0; ghost--) {
+        const back = ghost * 0.016;
         const gx = e.x - e.vx * back;
         const gy = e.y - e.vy * back;
-        context.save();
-        context.translate(gx, gy);
-        context.rotate(e.kind === 'aimed-orbit' && e.age < 0.34 ? e.angle + e.age * 9 : heading);
-        context.globalAlpha = ghost === 0 ? 1 : 0.24 / ghost;
-        context.fillStyle = 'rgba(16, 20, 34, 0.55)';
-        context.fillRect(-12, -7.5, 24, 15);
-        context.fillStyle = tint;
-        context.fillRect(-10.5, -6, 21, 12);
-        if (ghost === 0) {
-          context.fillStyle = 'rgba(190, 40, 40, 0.85)';
-          context.fillRect(-7, -4.5, 3, 9);
-          context.fillRect(-1.5, -3.5, 2.2, 7);
-          context.fillRect(3.5, -4.5, 2.2, 9);
-        }
-        context.restore();
+        const heat = 1 - ghost / 5;
+        this.bloom(context, gx, gy, 14 + 10 * heat, hue, 0.3 * heat + 0.12);
       }
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(held ? e.angle + e.age * 9 : heading);
+      context.globalAlpha = 0.85;
+      const face = context.createLinearGradient(-11, 0, 11, 0);
+      face.addColorStop(0, hue.edge);
+      face.addColorStop(0.55, hue.body);
+      face.addColorStop(1, hue.core);
+      context.fillStyle = face;
+      context.fillRect(-11, -6.5, 22, 13);
       context.globalAlpha = 1;
+      context.fillStyle = hue.core;
+      context.fillRect(-11, -6.5, 22, 1.4);
+      context.fillRect(-11, 5.1, 22, 1.4);
+      context.fillStyle = '#ff5a4a';
+      context.fillRect(-6.5, -4.6, 2.6, 9.2);
+      context.fillRect(-1, -3.6, 2, 7.2);
+      context.fillRect(3.6, -4.6, 2, 9.2);
+      context.restore();
       return;
     }
 
     if (e.kind === 'pop' || e.kind === 'burst') {
-      // An expanding ring with a hot centre, rather than a disc that fades. The ring is what says
-      // something happened *here*; a fading disc says something is here.
       const swell = e.age / Math.max(0.01, e.life);
       const r = e.reach * (0.25 + 0.95 * swell);
-      this.glow(context, e.x, e.y, r * 0.85, tint, 0.55 * fade);
+      this.bloom(context, e.x, e.y, r * 0.8, hue, 0.7 * fade);
+      // A ring with the ramp across its thickness, so the shockwave has a hot inside edge.
+      const ring = context.createRadialGradient(e.x, e.y, r * 0.7, e.x, e.y, r * 1.15);
+      ring.addColorStop(0, clear(hue.edge));
+      ring.addColorStop(0.5, hue.core);
+      ring.addColorStop(1, clear(hue.edge));
       context.globalAlpha = fade * fade;
-      context.strokeStyle = mix(tint, '#ffffff', 0.4);
-      context.lineWidth = 3.5 * fade + 0.8;
+      context.fillStyle = ring;
       context.beginPath();
-      context.arc(e.x, e.y, r, 0, Math.PI * 2);
-      context.stroke();
+      context.arc(e.x, e.y, r * 1.15, 0, Math.PI * 2);
+      context.fill();
       context.globalAlpha = 1;
       return;
     }
 
     if (e.kind === 'sweep' || e.kind === 'sweep-arc') {
-      // A filled crescent with smear arcs behind it, instead of one stroked arc. A sweep is a
-      // *volume* of air being moved; a line is a line.
       const arc = SweepArc;
       const reach = e.reach * (0.74 + 0.3 * grown);
-      const spread = e.kind === 'sweep-arc' ? 0.16 : 0.34;
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle);
 
-      const band = context.createRadialGradient(0, 0, reach * 0.55, 0, 0, reach * 1.06);
-      band.addColorStop(0, clear(tint));
-      band.addColorStop(0.75, tint);
-      band.addColorStop(1, clear(tint));
-      context.globalAlpha = 0.5 * fade;
-      context.fillStyle = band;
+      // The band is one path that **thins to a point at both ends**, rather than a sector.
+      //
+      // A filled sector has a hard straight edge at each end — the two radii — and a slash does not
+      // stop at a straight line. Fading it out by cutting the sector into twenty-two slices of
+      // decreasing alpha fixed the ends and introduced spokes: every slice is anti-aliased against
+      // its neighbours and the seams show. So the taper is in the geometry. Thickness follows a
+      // sine along the sweep, the outer and inner edges converge, and it is one fill with no seams
+      // in it at all.
+      const mid = reach * 0.82;
+      const fat = reach * 0.6;
+      const steps = 26;
+      const thickness = (t: number) => fat * Math.pow(Math.sin(t * Math.PI), 0.5);
       context.beginPath();
-      context.arc(0, 0, reach * 1.06, -arc / 2, arc / 2);
-      context.arc(0, 0, reach * 0.52, arc / 2, -arc / 2, true);
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const angle = -arc / 2 + t * arc;
+        const rr = mid + thickness(t) / 2;
+        const px = Math.cos(angle) * rr;
+        const py = Math.sin(angle) * rr;
+        if (i === 0) context.moveTo(px, py);
+        else context.lineTo(px, py);
+      }
+      for (let i = steps; i >= 0; i--) {
+        const t = i / steps;
+        const angle = -arc / 2 + t * arc;
+        const rr = mid - thickness(t) / 2;
+        context.lineTo(Math.cos(angle) * rr, Math.sin(angle) * rr);
+      }
       context.closePath();
+      const band = context.createRadialGradient(0, 0, mid - fat / 2, 0, 0, mid + fat / 2);
+      band.addColorStop(0, clear(hue.edge));
+      band.addColorStop(0.35, hue.edge);
+      band.addColorStop(0.82, hue.body);
+      band.addColorStop(0.96, hue.core);
+      band.addColorStop(1, clear(hue.core));
+      context.globalAlpha = 0.7 * fade;
+      context.fillStyle = band;
       context.fill();
 
-      for (let i = 0; i < 3; i++) {
-        const lag = i * spread;
-        context.globalAlpha = fade * (0.85 - i * 0.26);
-        context.strokeStyle = i === 0 ? mix(tint, '#ffffff', 0.45) : tint;
-        context.lineWidth = 3.2 - i * 0.9;
+      // Smear arcs behind it, hot to cool, each a little shorter than the last.
+      for (let i = 0; i < 4; i++) {
+        const trim = 0.1 + i * 0.13;
+        context.globalAlpha = fade * (0.9 - i * 0.2);
+        context.strokeStyle = i === 0 ? hue.core : i === 1 ? hue.body : hue.edge;
+        context.lineWidth = 4 - i * 0.85;
         context.beginPath();
-        context.arc(0, 0, reach * (1 - i * 0.07), -arc / 2 + lag, arc / 2 + lag);
+        context.arc(0, 0, reach * (1 - i * 0.055), -arc / 2 + trim + i * 0.26, arc / 2 - trim + i * 0.26);
         context.stroke();
       }
       context.globalAlpha = 1;
@@ -1048,145 +1132,137 @@ export class Attacks {
     if (e.kind === 'chain') {
       const path = e.path;
       if (!path || path.length < 2) return;
-      // A real bolt: midpoint displacement, three passes wide-to-narrow, a flash at every node and
-      // a few dead-end forks. It was a polyline with one kink, which is a wire.
       const jitter = seeded(Math.round(e.x * 7 + e.y * 13));
+      const points: { x: number; y: number }[] = [];
+      for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1];
+        const b = path[i];
+        if (i === 1) points.push(a);
+        const steps = 6;
+        const nx = -(b.y - a.y);
+        const ny = b.x - a.x;
+        const len = Math.hypot(nx, ny) || 1;
+        for (let step = 1; step <= steps; step++) {
+          const t = step / steps;
+          const wobble = step === steps ? 0 : (jitter() - 0.5) * 30 * Math.sin(t * Math.PI);
+          points.push({
+            x: a.x + (b.x - a.x) * t + (nx / len) * wobble,
+            y: a.y + (b.y - a.y) * t + (ny / len) * wobble,
+          });
+        }
+      }
       const trace = () => {
         context.beginPath();
-        for (let i = 1; i < path.length; i++) {
-          const a = path[i - 1];
-          const b = path[i];
-          context.moveTo(a.x, a.y);
-          const steps = 5;
-          const nx = -(b.y - a.y);
-          const ny = b.x - a.x;
-          const len = Math.hypot(nx, ny) || 1;
-          for (let s = 1; s <= steps; s++) {
-            const t = s / steps;
-            const wobble = s === steps ? 0 : (jitter() - 0.5) * 26 * Math.sin(t * Math.PI);
-            context.lineTo(
-              a.x + (b.x - a.x) * t + (nx / len) * wobble,
-              a.y + (b.y - a.y) * t + (ny / len) * wobble,
-            );
-          }
-        }
+        context.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) context.lineTo(points[i].x, points[i].y);
       };
-      // Flicker, because lightning that holds still for a quarter second is a neon sign.
-      const flare = 0.65 + 0.35 * Math.abs(Math.sin(e.age * 90));
-      context.globalAlpha = fade * 0.5 * flare;
-      context.strokeStyle = tint;
-      context.lineWidth = 11;
-      trace();
-      context.stroke();
-      context.globalAlpha = fade * 0.85 * flare;
-      context.strokeStyle = mix(tint, '#ffffff', 0.5);
-      context.lineWidth = 4.5;
-      trace();
-      context.stroke();
-      context.globalAlpha = fade * flare;
-      context.strokeStyle = '#ffffff';
-      context.lineWidth = 1.6;
-      trace();
-      context.stroke();
-      for (const node of path) this.glow(context, node.x, node.y, 30 * fade + 6, tint, 0.65 * fade);
+      // Four passes, wide and deep to thin and white. Flicker, because lightning that holds still
+      // for a quarter second is a neon sign.
+      const flare = 0.62 + 0.38 * Math.abs(Math.sin(e.age * 95));
+      const passes: [string, number, number][] = [
+        [hue.edge, 20, 0.3],
+        [hue.edge, 11, 0.55],
+        [hue.body, 5, 0.85],
+        [hue.core, 1.7, 1],
+      ];
+      for (const [colour, width, alpha] of passes) {
+        context.globalAlpha = fade * alpha * flare;
+        context.strokeStyle = colour;
+        context.lineWidth = width;
+        trace();
+        context.stroke();
+      }
+      // Dead-end forks, off the joints, so it branches like the real thing.
+      context.globalAlpha = fade * 0.7 * flare;
+      context.strokeStyle = hue.body;
+      context.lineWidth = 2;
+      for (let i = 2; i < points.length - 1; i += 3) {
+        const from = points[i];
+        const angle = Math.atan2(points[i + 1].y - from.y, points[i + 1].x - from.x);
+        const off = angle + (jitter() - 0.5) * 2.4;
+        const reach = 14 + jitter() * 26;
+        context.beginPath();
+        context.moveTo(from.x, from.y);
+        context.lineTo(from.x + Math.cos(off) * reach, from.y + Math.sin(off) * reach);
+        context.stroke();
+      }
+      for (let i = 1; i < path.length; i++) {
+        this.bloom(context, path[i].x, path[i].y, 34 * fade + 10, hue, 0.9 * fade);
+      }
       context.globalAlpha = 1;
       return;
     }
 
     if (e.kind === 'zone') {
-      // One wavering body, not a ring of petals.
-      //
-      // Version one was a flat translucent disc, which is a smudge. Version two put nine evenly
-      // spaced tongues of flame around the rim, which — evenly spaced, same size, gap in the
-      // middle — came out as a **flower**. Fire is a single silhouette that will not hold still,
-      // so it is drawn as one closed path whose radius is three sine waves of different periods
-      // beating against each other, filled hot in the centre and gone at the edge.
+      // One wavering body — three sine waves of different periods beating against each other — in
+      // three nested sizes, deep outside and white in the middle. Nested is what gives it heat;
+      // one filled shape at one colour is a puddle.
       const r = e.reach * (0.6 + 0.4 * grown);
       const t = this.clock;
-      const edge = (angle: number, scale: number) =>
-        r *
-        scale *
-        (0.74 +
-          0.12 * Math.sin(angle * 3 + t * 4.2) +
-          0.09 * Math.sin(angle * 5 - t * 6.1) +
-          0.06 * Math.sin(angle * 8 + t * 9.3));
-
-      context.save();
-      context.translate(e.x, e.y);
-      const body = (scale: number) => {
+      // Through the midpoints as quadratics rather than straight between the samples. A polygon
+      // of twenty-odd sides is obviously a polygon at ninety pixels across, and fire has no
+      // corners in it.
+      const body = (scale: number, phase: number) => {
+        const steps = 22;
+        const at = (i: number) => {
+          const angle = ((i % steps) / steps) * Math.PI * 2;
+          const reach =
+            r *
+            scale *
+            (0.74 +
+              0.13 * Math.sin(angle * 3 + t * 4.2 + phase) +
+              0.09 * Math.sin(angle * 5 - t * 6.1) +
+              0.06 * Math.sin(angle * 8 + t * 9.3));
+          return { x: Math.cos(angle) * reach, y: Math.sin(angle) * reach };
+        };
         context.beginPath();
-        for (let i = 0; i <= 26; i++) {
-          const angle = (i / 26) * Math.PI * 2;
-          const reach = edge(angle, scale);
-          const px = Math.cos(angle) * reach;
-          const py = Math.sin(angle) * reach;
-          if (i === 0) context.moveTo(px, py);
-          else context.lineTo(px, py);
+        let previous = at(0);
+        let middle = { x: (previous.x + at(1).x) / 2, y: (previous.y + at(1).y) / 2 };
+        context.moveTo(middle.x, middle.y);
+        for (let i = 1; i <= steps; i++) {
+          const here = at(i);
+          const next = at(i + 1);
+          middle = { x: (here.x + next.x) / 2, y: (here.y + next.y) / 2 };
+          context.quadraticCurveTo(here.x, here.y, middle.x, middle.y);
+          previous = here;
         }
         context.closePath();
       };
 
-      this.glow(context, 0, 0, r * 1.15, tint, 0.34 * fade);
-
-      // Hot in the middle and gone at the rim, so it has depth rather than being one flat colour.
-      const heat = context.createRadialGradient(0, 0, 0, 0, 0, r);
-      heat.addColorStop(0, 'rgba(255, 246, 214, 0.95)');
-      heat.addColorStop(0.32, 'rgba(255, 176, 74, 0.9)');
-      heat.addColorStop(0.72, 'rgba(240, 108, 48, 0.62)');
-      heat.addColorStop(1, clear('#f06c30'));
-      context.globalAlpha = fade;
-      context.fillStyle = heat;
-      body(1);
+      context.save();
+      context.translate(e.x, e.y);
+      this.bloom(context, 0, 0, r * 1.25, hue, 0.5 * fade);
+      context.globalAlpha = 0.55 * fade;
+      context.fillStyle = hue.edge;
+      body(1, 0);
       context.fill();
-
-      // An outline, because everything in this app is drawn over a desktop nobody described and a
-      // soft orange shape on a cream wallpaper has no edge at all.
-      context.globalAlpha = 0.4 * fade;
-      context.strokeStyle = 'rgba(96, 32, 8, 0.8)';
-      context.lineWidth = 2;
-      body(1.02);
-      context.stroke();
-
-      // An inner core on its own beat, so the middle is never still.
-      context.globalAlpha = 0.8 * fade;
-      context.fillStyle = 'rgba(255, 250, 232, 0.95)';
-      body(0.36 + 0.05 * Math.sin(t * 7));
+      context.globalAlpha = 0.6 * fade;
+      context.fillStyle = hue.body;
+      body(0.68, 1.7);
+      context.fill();
+      context.globalAlpha = 0.75 * fade;
+      context.fillStyle = hue.core;
+      body(0.3 + 0.05 * Math.sin(t * 7), 3.4);
       context.fill();
       context.globalAlpha = 1;
       context.restore();
 
-      // Embers, on their own slow schedule rather than every frame, so a long-lived pool does not
-      // turn into a column of smoke.
-      if (Math.random() < 0.3) {
+      if (Math.random() < 0.34) {
         const angle = Math.random() * Math.PI * 2;
-        this.spark(
-          e.x + Math.cos(angle) * r * 0.6,
-          e.y + Math.sin(angle) * r * 0.6,
-          1,
-          '#ffd79a',
-          80,
-          -Math.PI / 2,
-          1.4,
-        );
+        this.spark(e.x + Math.cos(angle) * r * 0.6, e.y + Math.sin(angle) * r * 0.6, 1, '火', 85, -Math.PI / 2, 1.4);
       }
       return;
     }
 
     if (e.kind === 'trail' || e.kind === 'trail-fire' || e.kind === 'frost') {
-      // Very faint per puff, because they overlap and alpha compounds.
-      //
-      // A drop every fifth of a second with a two-and-a-half second life means fifteen of these
-      // sitting on top of each other along the path. At the alpha a single puff wants, the trail
-      // came out as an **opaque bright green tube** following the pet around the screen. So each
-      // one is barely there, the stack is what makes it visible, and the colour is pulled toward
-      // something sickly rather than the card's bright green.
+      // Very faint per puff: fifteen of these overlap along the path, and additive stacking is
+      // exactly what turns fifteen faint ones into a glowing bank instead of a flat tube.
       const hot = e.kind === 'trail-fire';
       const r = e.reach * (0.5 + 0.5 * grown);
-      const murk = hot ? mix(tint, '#ff7a3a', 0.5) : mix(tint, '#4d6b2c', 0.45);
       context.save();
       context.translate(e.x, e.y);
-      context.globalAlpha = (hot ? 0.3 : 0.15) * fade;
-      context.fillStyle = murk;
+      context.globalAlpha = (hot ? 0.24 : 0.13) * fade;
+      context.fillStyle = hue.edge;
       for (let i = 0; i < 3; i++) {
         const angle = e.angle + i * 2.09 + this.clock * (hot ? 1.6 : 0.4);
         const lobe = r * (0.5 + 0.22 * Math.sin(this.clock * 1.6 + i * 2.1 + e.x * 0.03));
@@ -1194,14 +1270,12 @@ export class Attacks {
         context.arc(Math.cos(angle) * r * 0.34, Math.sin(angle) * r * 0.34, lobe, 0, Math.PI * 2);
         context.fill();
       }
-      // A couple of brighter motes per puff. They are what actually reads at a glance — the haze
-      // is only there to tell you the ground is not clean.
-      context.globalAlpha = (hot ? 0.75 : 0.5) * fade;
-      context.fillStyle = hot ? mix(tint, '#ffe0a0', 0.5) : tint;
+      context.globalAlpha = (hot ? 0.9 : 0.6) * fade;
+      context.fillStyle = hue.core;
       for (let i = 0; i < 2; i++) {
         const angle = e.angle * 1.7 + i * 3.1 + this.clock * 0.8;
         context.beginPath();
-        context.arc(Math.cos(angle) * r * 0.55, Math.sin(angle) * r * 0.55, 1.9, 0, Math.PI * 2);
+        context.arc(Math.cos(angle) * r * 0.55, Math.sin(angle) * r * 0.55, 2.1, 0, Math.PI * 2);
         context.fill();
       }
       context.globalAlpha = 1;
@@ -1210,35 +1284,37 @@ export class Attacks {
     }
 
     if (e.kind === 'orbit') {
-      // A filled crescent with an arc of its own path smeared behind it. The old one was a single
-      // quadratic curve, which at this size is a comma.
+      // The trail is a real ribbon: an arc of its own path, ramped from gone to hot along its
+      // length, with the blade at the bright end.
       context.save();
       context.translate(this.bodyX, this.bodyY);
       const ring = Math.hypot(e.x - this.bodyX, e.y - this.bodyY) || e.reach;
-      context.globalAlpha = 0.34;
-      context.strokeStyle = tint;
-      context.lineWidth = 5;
-      context.beginPath();
-      context.arc(0, 0, ring, e.angle - 0.85, e.angle);
-      context.stroke();
+      for (let i = 0; i < 5; i++) {
+        const span = 1.1 * (1 - i / 5);
+        context.globalAlpha = 0.16 + 0.12 * i;
+        context.strokeStyle = i < 2 ? hue.edge : i < 4 ? hue.body : hue.core;
+        context.lineWidth = 9 - i * 1.5;
+        context.beginPath();
+        context.arc(0, 0, ring, e.angle - span, e.angle);
+        context.stroke();
+      }
+      context.globalAlpha = 1;
       context.restore();
 
-      // Tight glow, big blade. The first version had a 22px glow around a 15px crescent, so what
-      // was actually on screen was a soft dot with a tail — a comet, not a blade.
-      this.glow(context, e.x, e.y, 13, tint, 0.34);
+      this.bloom(context, e.x, e.y, 20, hue, 0.55);
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle + Math.PI / 2);
-      context.globalAlpha = 0.6;
-      context.fillStyle = 'rgba(16, 20, 34, 0.65)';
-      crescent(context, 25, 11);
+      const blade = context.createLinearGradient(0, -24, 9, 24);
+      blade.addColorStop(0, hue.core);
+      blade.addColorStop(0.5, hue.body);
+      blade.addColorStop(1, hue.edge);
+      context.globalAlpha = 0.95;
+      context.fillStyle = blade;
+      crescent(context, 24, 10);
       context.fill();
       context.globalAlpha = 1;
-      context.fillStyle = tint;
-      crescent(context, 23, 9.5);
-      context.fill();
-      // The cutting edge, along the leading side only, so it has a front.
-      context.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+      context.strokeStyle = hue.core;
       context.lineWidth = 1.8;
       context.beginPath();
       context.moveTo(0, -22);
@@ -1249,51 +1325,47 @@ export class Attacks {
     }
 
     if (e.kind === 'ward') {
-      // A small one of the pet, because that is what an 影卫 is. It gets afterimages when it moves,
-      // which is the only thing on screen that says it is quick.
       const heading = e.angle;
       const speed = Math.hypot(e.vx, e.vy);
-      this.glow(context, e.x, e.y, 26, tint, 0.5);
-      for (let ghost = 2; ghost >= 0; ghost--) {
-        const back = ghost * 0.05;
+      for (let ghost = 3; ghost >= 0; ghost--) {
+        const back = ghost * 0.045;
         const gx = e.x - Math.cos(heading) * speed * back;
         const gy = e.y - Math.sin(heading) * speed * back;
-        context.globalAlpha = ghost === 0 ? 1 : 0.2 / ghost;
-        context.fillStyle = 'rgba(16, 20, 34, 0.5)';
-        context.beginPath();
-        context.arc(gx, gy, 13, 0, Math.PI * 2);
-        context.fill();
-        context.fillStyle = tint;
-        context.beginPath();
-        context.arc(gx, gy, 10.5, 0, Math.PI * 2);
-        context.fill();
-        if (ghost === 0) {
-          context.fillStyle = 'rgba(30, 22, 48, 0.9)';
-          for (const side of [-0.45, 0.45]) {
-            context.beginPath();
-            context.arc(gx + Math.cos(heading + side) * 4.5, gy + Math.sin(heading + side) * 4.5, 1.8, 0, Math.PI * 2);
-            context.fill();
-          }
-        }
+        const heat = 1 - ghost / 4;
+        this.bloom(context, gx, gy, 12 + 12 * heat, hue, 0.22 * heat + 0.12);
       }
+      context.globalAlpha = 0.95;
+      const skin = context.createRadialGradient(e.x - 3, e.y - 4, 1, e.x, e.y, 12);
+      skin.addColorStop(0, hue.core);
+      skin.addColorStop(0.6, hue.body);
+      skin.addColorStop(1, hue.edge);
+      context.fillStyle = skin;
+      context.beginPath();
+      context.arc(e.x, e.y, 11.5, 0, Math.PI * 2);
+      context.fill();
       context.globalAlpha = 1;
       return;
     }
 
     if (e.kind === 'ward-glyph') {
-      // A standing talisman post with its own little glow, and it leans as it settles.
-      this.glow(context, e.x, e.y, 24, tint, 0.4 * (e.bite > 0 ? 1 : 0.3));
+      this.bloom(context, e.x, e.y, 22, hue, (e.bite > 0 ? 0.6 : 0.2));
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle + Math.PI / 2 + Math.sin(this.clock * 2 + e.x) * 0.06);
+      const face = context.createLinearGradient(-9, 0, 9, 0);
+      face.addColorStop(0, hue.edge);
+      face.addColorStop(0.55, hue.body);
+      face.addColorStop(1, hue.core);
+      context.globalAlpha = fade * 0.9;
+      context.fillStyle = face;
+      context.fillRect(-9, -13, 18, 26);
       context.globalAlpha = fade;
-      context.fillStyle = 'rgba(16, 20, 34, 0.55)';
-      context.fillRect(-10, -14, 20, 28);
-      context.fillStyle = tint;
-      context.fillRect(-8, -12, 16, 24);
-      context.fillStyle = 'rgba(190, 40, 40, 0.8)';
+      context.fillStyle = hue.core;
+      context.fillRect(-9, -13, 18, 1.3);
+      context.fillRect(-9, 11.7, 18, 1.3);
+      context.fillStyle = '#ff5a4a';
       context.fillRect(-4.5, -8, 2.4, 16);
-      context.fillRect(0.5, -6, 2, 12);
+      context.fillRect(0.6, -6, 2, 12);
       context.globalAlpha = 1;
       context.restore();
     }

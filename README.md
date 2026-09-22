@@ -1490,6 +1490,39 @@ moving detail, never on broad translucent fill.** A wide soft shape is invisible
 and a smudge on a dark one. "Better to be gone than to be grey" was written for the breakthrough
 wisps and it applies to all of it.
 
+#### And then it still looked chalky, which was a compositing problem
+
+Fixing the shapes was not enough, and the reason is that **alpha compositing cannot make light.**
+Drawing a pale colour over whatever is underneath can only ever land somewhere between the two, so
+two overlapping glows are no brighter than one and nothing ever has a hot centre. That is what
+"chalky" is.
+
+Every game this borrows from draws light with `globalCompositeOperation = 'lighter'`. Colour adds,
+overlaps climb toward white, and a dozen things happening in one place blow out the way a dozen
+bright things actually do. Three consequences, and all three are the point:
+
+- **Ramps, not tints.** Each school now has a three-stop `Palette`: a near-white `core`, a saturated
+  `body`, a deep saturated `edge`. One flat pastel at some alpha is chalk however it is blended, and
+  the original nine were picked to sit *politely* on a desktop — which is the opposite of what an
+  attack should do. The pet's own colour is already the thing saying "this is a calm object".
+- **Bloom.** Three nested gradients — wide and faint, narrower and brighter, a hot point — instead
+  of one. One gradient is a soft ball; three give it a centre, and the centre is what the eye reads
+  as brightness.
+- **Dark first, light after.** Additive ignores black, so outlines and backing plates (which exist
+  so an effect has an edge on a cream wallpaper as well as a navy one) are drawn in `source-over`
+  before the mode flips. Structure, then light.
+
+Two more that took a second attempt each. The 剑气 slash was a filled sector, which has a hard
+straight edge at each end where the radii are; fading it by cutting the sector into twenty-two
+slices of decreasing alpha fixed the ends and introduced **spokes**, because every slice is
+anti-aliased against its neighbours and the seams show. The taper is now in the geometry — one path
+whose thickness follows a sine and closes to a point at both tips, with no seams in it at all. And
+丹火's outline was a twenty-six-sided polygon, which at ninety pixels across is obviously a polygon;
+it is drawn through the midpoints as quadratics now, because fire has no corners.
+
+Cost after all of it: **0.59ms to paint** a 大乘 frame, 0.02ms to simulate one. A thirtieth of the
+frame budget.
+
 Cost: 0.29 ms to paint a 大乘 frame with 17 邪气, 28 live effects and 80 sparks — a sixtieth of the
 frame budget. Sparks are capped at 170 and dispersals at 60, so the worst case is a fixed cost
 rather than one proportional to how well the run is going.
