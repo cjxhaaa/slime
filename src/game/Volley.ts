@@ -110,6 +110,20 @@ export class Volley {
   }
 
   /**
+   * Fires `count` at a point, flat and fast.
+   *
+   * Separate from `launch` because the two have different jobs: a thrown 御符 inherits the hand's
+   * velocity and arcs, while covering fire has to actually arrive. Aiming is done here rather than
+   * by the caller working out a velocity, so the speed stays this class's business. Callers who
+   * want several talismans to go several ways pass one target each and `count` of 1 — the fan in
+   * `launch` is for fireworks, and it is far too wide to hit anything with.
+   */
+  fireAt(count: number, x: number, y: number, tx: number, ty: number): void {
+    const away = Math.hypot(tx - x, ty - y) || 1;
+    this.launch(count, x, y, ((tx - x) / away) * Speed, ((ty - y) / away) * Speed);
+  }
+
+  /**
    * Sends `count` charms out from (x, y), fanned around the direction of the throw.
    *
    * Fanned rather than launched along one line, because several charms on exactly the same heading
@@ -141,13 +155,32 @@ export class Volley {
    * The edge is the work area this canvas covers, which is the desktop — so "it hit the edge of the
    * screen" needs no window list and no compositor question, just the canvas size.
    */
-  update(dt: number, width: number, height: number): void {
+  update(
+    dt: number,
+    width: number,
+    height: number,
+    /**
+     * Anything a talisman should detonate on before it reaches a wall, and what counts as a hit.
+     *
+     * Passed in rather than known about. This class is the pet's 御符 throw as well as a trial's
+     * covering fire, and it has no business knowing that trials exist — so the caller answers
+     * “is there something at this pixel” and owns what counts as close enough.
+     */
+    hit?: { at: (x: number, y: number) => boolean },
+  ): void {
     const survivors: Flying[] = [];
     for (const charm of this.flying) {
       charm.vy += Gravity * dt;
       charm.x += charm.vx * dt;
       charm.y += charm.vy * dt;
       charm.angle += charm.spin * dt;
+
+      // Targets before walls: something standing against the edge should be struck rather than
+      // watched as the talisman sails past it into the wall behind.
+      if (hit && hit.at(charm.x, charm.y)) {
+        this.blasts.push({ x: charm.x, y: charm.y, life: 0 });
+        continue;
+      }
       const offLeft = charm.x <= 2;
       const offRight = charm.x >= width - 2;
       const offTop = charm.y <= 2;

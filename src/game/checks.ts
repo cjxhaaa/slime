@@ -48,6 +48,21 @@ import {
   charmsForCertainty,
   odds,
 } from './charms.js';
+import {
+  ContactDamage,
+  GraceSeconds,
+  RunSeconds,
+  SurvivalBonus,
+  ThroughShare,
+  Trial,
+  fireInterval,
+  harvest,
+  menaceSpeed,
+  rung,
+  spawnInterval,
+  vitality,
+  volleySize,
+} from './Trial.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
 
 let failures = 0;
@@ -649,6 +664,140 @@ const thin = new Charms();
 thin.gather(charmsForCertainty(0, 0) + 2);
 check('asking for five when two are spare throws two', thin.takeSpare(0, 5), 2);
 checkTrue('and never digs below certainty', thin.shortfallAt(0) === 0);
+
+// ---------------------------------------------------------------------------------------------
+// 历练. The mode's claim is that a realm changes what the fight *is* rather than how easy it is,
+// and that claim lives entirely in the shape of five curves.
+
+check('筑基 is the first rung', rung(1), 0);
+check('大乘 is the last', rung(Ascended - 1), 6);
+check('练气 cannot sit below the bottom', rung(0), 0);
+check('and nothing past 飞升 climbs further', rung(Ascended + 4), 6);
+
+// The table's `ratio` column, recomputed from the same functions the fight reads. Written as a
+// ratio because that is the part that breaks silently: every individual column can look perfectly
+// reasonable while 大乘 has quietly become 筑基 with the danger switched off.
+//
+// One talisman kills one 邪气, so a volley's worth of talismans is a volley's worth of kills —
+// which is the only reason this arithmetic means anything. It did not, once: the fan spread meant
+// only the middle talisman of a volley could reach what the volley was aimed at, so this quotient
+// rose while the kills it was standing in for fell.
+const kills = (realm: number) => volleySize(realm) / fireInterval(realm);
+// Averaged across a run rather than taken at either end, because that is the rate you actually
+// face over ninety seconds.
+const arrivals = (realm: number) => 2 / (spawnInterval(realm, 0) + spawnInterval(realm, 1));
+let bothHarder = true;
+let widening = true;
+for (let realm = 2; realm <= Ascended - 1; realm++) {
+  if (arrivals(realm) <= arrivals(realm - 1)) bothHarder = false;
+  if (kills(realm) <= kills(realm - 1)) bothHarder = false;
+  if (menaceSpeed(realm) <= menaceSpeed(realm - 1)) bothHarder = false;
+  if (vitality(realm) <= vitality(realm - 1)) bothHarder = false;
+  const before = kills(realm - 1) / arrivals(realm - 1);
+  if (kills(realm) / arrivals(realm) <= before) widening = false;
+}
+checkTrue('every realm faces more and answers more', bothHarder);
+checkTrue("and the player's side gains the faster of the two", widening);
+
+// And the two ends of that column, which are the design rather than a consequence of it.
+//
+// 筑基 below one is the load-bearing one: shooting cannot keep up with arriving, so lasting ninety
+// seconds there means moving. The first version of the table put it *above* one, which made the
+// opening realm survivable by standing perfectly still — a full payout for doing nothing, at the
+// realm everybody sees first.
+// The ceiling, and it is the load-bearing assertion in this whole block. Talismans fire themselves
+// at the nearest 邪气, which is optimal defence — so the moment the fire rate can match the arrival
+// rate, nothing crosses the last two hundred pixels and standing perfectly still becomes the best
+// play there is. Measured twice, at two different settings, before I believed it. The crowd has to
+// grow at every realm, or a realm somebody spent days reaching turns into an AFK button.
+let fastest = 0;
+for (let realm = 1; realm <= Ascended - 1; realm++) {
+  fastest = Math.max(fastest, kills(realm) / arrivals(realm));
+}
+checkTrue('no realm can shoot its way out of a run', fastest < 1);
+// It still gains, which is why 筑基 is the realm most likely to end early — it just never gets
+// to the front.
+let furthestBehind = Infinity;
+for (let realm = 1; realm <= Ascended - 1; realm++) {
+  furthestBehind = Math.min(furthestBehind, kills(realm) / arrivals(realm));
+}
+check('and 筑基 is the furthest behind of them all', kills(1) / arrivals(1), furthestBehind, 1e-12);
+
+// Arrivals quicken across a run and then stop, rather than compounding off the end of it —
+// `through` is a fraction, and a caller holding a stale one should not tighten the screw.
+checkTrue('a run starts slower than it ends', spawnInterval(1, 0) > spawnInterval(1, 1));
+check('and the pace is flat past the finish', spawnInterval(1, 2), spawnInterval(1, 1));
+
+// A beat of quiet on entry: choosing the mode must not also be the first hit.
+const opening = new Trial();
+opening.start(1);
+opening.update(0.5, { x: 400, y: 300, radius: 40 }, 800, 600);
+checkTrue('nothing arrives the instant a run begins', opening.bounds() === null);
+checkTrue('and leaving at once is worth nothing', harvest(opening.through, opening.outcome) < 1);
+
+// With the random stub pinned at 0.5 every 邪气 arrives at the same point on the bottom edge, which
+// is what makes the two runs below reproducible: one stands in the doorway, one shoots it.
+
+// 1. Swarmed. However many pile onto the body, hits cannot outpace the grace window — without it a
+//    crowd arriving together is not a hard moment, it is instant death.
+const swarm = new Trial();
+swarm.start(Ascended - 1);
+let previous = swarm.integrity;
+let afterOne = 1;
+let swarmClock = 0;
+let lastHit = -Infinity;
+let hits = 0;
+let tooSoon = false;
+while (swarm.outcome === 'running' && swarmClock < 200) {
+  swarm.update(0.05, { x: 400, y: 600, radius: 40 }, 800, 600);
+  swarmClock += 0.05;
+  if (swarm.integrity < previous - 1e-9) {
+    hits++;
+    if (hits === 1) afterOne = swarm.integrity;
+    if (swarmClock - lastHit < GraceSeconds - 1e-6) tooSoon = true;
+    lastHit = swarmClock;
+    previous = swarm.integrity;
+  }
+}
+checkTrue('standing in the doorway does get the body swarmed', hits > 1);
+check('the first contact costs one', afterOne, 1 - ContactDamage / vitality(Ascended - 1), 1e-9);
+checkTrue('and no two hits land inside the grace window', !tooSoon);
+checkTrue('so a swarm is what ends the run, not the clock', swarm.outcome === 'overwhelmed');
+checkTrue('an ended run pays less than a finished one', harvest(swarm.through, swarm.outcome) < harvest(1, 'survived'));
+
+// 2. Answered. Every arrival is struck down where it lands, so nothing reaches the body and the
+//    swarmClock is the only thing left that can end it.
+const clean = new Trial();
+clean.start(1);
+let ticks = 0;
+while (clean.outcome === 'running' && ticks < 4000) {
+  clean.update(0.05, { x: 400, y: 300, radius: 40 }, 800, 600);
+  ticks++;
+  // Twice over: one talisman is a wound, two is a kill.
+  clean.strike(400, 624);
+  clean.strike(400, 624);
+}
+check('nothing reached the body', clean.integrity, 1);
+checkTrue('so the clock is what ended it', clean.outcome === 'survived');
+checkTrue('and the kills were counted', clean.killCount > 0);
+check('a survived run pays its whole share', harvest(clean.through, clean.outcome), RunSeconds * (ThroughShare + SurvivalBonus), 1e-9);
+
+// The ceiling, which is the whole reason the payout stopped counting kills. `harvest` takes no
+// realm at all — that is the structural half of the guarantee — and what it can pay is capped near
+// the time the run actually took, so grinding the minigame cannot become the fastest way up a
+// ladder whose premise is that it fills while you are busy with something else.
+const best = harvest(1, 'survived');
+checkTrue('a run cannot outrun its own ninety seconds by much', best <= RunSeconds * 1.5);
+// And it is worth strictly less than a 机缘, which arrives for free every couple of hours: the
+// thing you play for should not out-earn the thing you are handed.
+checkTrue('nor out-earn a 机缘', best < MostSeconds);
+
+// Being overwhelmed near the end has to be worth nearly finishing, or the lesson is not to try.
+checkTrue(
+  'dying at eighty seconds still pays most of the share',
+  harvest(80 / RunSeconds, 'overwhelmed') > RunSeconds * ThroughShare * 0.8,
+);
+check('and walking straight back out pays nothing', harvest(0, 'overwhelmed'), 0);
 
 Math.random = realRandom;
 

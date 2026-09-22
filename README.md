@@ -1211,6 +1211,106 @@ rather than time on Earth — otherwise leaving it running overnight would mean 
 queue, and a queue is the one shape this must never take. Seclusion suppresses finds entirely: that
 switch means nothing asks for anything, and a bubble offering something is still a bubble.
 
+### 历练: the survivors run
+
+Everything else the pet does, it does by itself while you are working. This is the one thing you
+do. It unlocks at 筑基 — 练气 is the first day, the body is at its smallest, and sending somebody
+into a fight before they have crossed a single realm teaches them the wrong thing about what the
+ladder is for. Right-click the body and the menu has 入历练, greyed with 筑基可开 under it until
+then: an item that appears out of nowhere at 筑基 is a surprise, and one that is visibly waiting
+for you is a goal.
+
+Entering walks the pet to the middle of the window and **turns gravity off** — side view becomes a
+plane. That is not a camera choice. The window is already the whole desktop, so without gravity the
+arena is your entire screen rather than the strip along the bottom of it. `Slime.planar` swaps the
+ground for wherever the body is and the air drag for a much stiffer one (`PlanarDragTau = 0.34`
+against `1.6`), so a shove glides and then stops dead instead of sailing. Dragging is the only
+control, and it is the same gesture that already moved the pet, so the mode adds nothing to learn.
+
+邪气 drift in from the edges and home in, steered rather than aimed so that a dodge actually works
+— they overshoot instead of turning on the spot. They are **dark, and they are the only dark thing
+in this app**: everything the pet makes is light, so the thing coming for it reads at a glance on
+any wallpaper without anybody having to learn a colour. Talismans fire themselves at the nearest
+one. Ninety seconds.
+
+#### Both sides scale hard, and the door stays ahead of the hand
+
+The obvious way to make a realm feel different is to make the player stronger, and on its own it is
+wrong: 大乘 would be 筑基 with the difficulty switched off, which is not a different experience, it
+is the same experience without the interesting part.
+
+| rung | realm | per volley | sec/volley | kills/s | arrivals/s | ratio | arrivals per run |
+|---|---|---|---|---|---|---|---|
+| 0 | 筑基 | 1 | 0.95 | 1.05 | 1.28 | **0.82** | 115 |
+| 1 | 金丹 | 1 | 0.82 | 1.22 | 1.45 | 0.84 | 130 |
+| 2 | 元婴 | 2 | 0.78 | 2.56 | 2.96 | 0.87 | 267 |
+| 3 | 化神 | 2 | 0.66 | 3.03 | 3.42 | 0.89 | 308 |
+| 4 | 炼虚 | 3 | 0.66 | 4.55 | 4.96 | 0.92 | 447 |
+| 5 | 合体 | 3 | 0.56 | 5.36 | 5.70 | 0.94 | 513 |
+| 6 | 大乘 | 4 | 0.56 | 7.14 | 7.33 | **0.98** | 659 |
+
+邪气 speed goes 52 → 106 px/s and vitality 5 → 12.2 alongside.
+
+**The ratio never reaches one, and that is the whole design.** It took three versions of this table
+and two rounds of driving the real fight frame by frame. The first had the player's side running
+away to 2.9 at 大乘; the second pulled it back to 1.16. Both measured the same: from halfway up the
+ladder, a run finished at **full health with the body never moving.**
+
+The reason is the turret, not the ratio. Talismans fire themselves at the **nearest** 邪气, which is
+exactly optimal defence — so the moment the fire rate can match the arrival rate, the thing closest
+to you is always the thing dying, nothing crosses the last two hundred pixels, and standing
+perfectly still is the best play there is. A capped payout for walking away from the keyboard is
+still an AFK button, and it was arriving precisely at the realms somebody has spent days reaching.
+
+So the door stays ahead everywhere. The crowd grows all run at every realm, which means lasting
+ninety seconds always means **moving away from where it is thickest** — the one thing the turret
+cannot do for you. What the realm changes is not whether you can win but what winning looks like: a
+hundred-odd arrivals at 筑基, slowly, one at a time, answered one talisman a second; six hundred and
+fifty at 大乘 at twice the speed, answered four at a time twice a second.
+
+I wrote "both sides scale, and the player's side scales faster" in the first version of this and put
+it in both documents. It was a nice sentence and it was wrong — measurement killed it twice before I
+stopped defending it. The player's side does still gain, which is why 筑基 is the realm most likely
+to end early; it simply never gets to the front.
+
+The assertion is written **as a ratio** rather than per column, because that is the part that breaks
+silently. It only means anything because one talisman kills one 邪气, and an earlier version fanned a
+volley across half a radian — so at any real range only the middle talisman could reach what the
+volley was aimed at, and **a wider volley was measurably worse**: 化神 landed 6 kills from 128 shots
+while 筑基, firing one, dead on, cleared the field without the player moving. Each talisman now gets
+its own target, so the fan comes from the targets. That is also better looking, which is the usual
+way round: four talismans leaving in four directions is what 大乘 was supposed to be.
+
+#### It pays for time survived, not for kills
+
+The first version paid 8 seconds a kill plus 45 for finishing. A per-kill rate **scales with the
+realm on both terms at once** — 大乘 meets more 邪气 *and* shreds them faster — so a run at the top
+came to twenty-five minutes of output for ninety seconds of play. That quietly makes grinding a
+minigame the fastest way up a ladder whose whole premise is that it fills while you get on with
+something else.
+
+So it pays `90 × (0.7 × through + 0.6 if survived)`, capping at **117 seconds of working flat out,
+identically at every realm**. Time is bounded by the clock, so it cannot be farmed faster than real
+time, and `harvest` takes no realm argument at all — that is the structural half of the guarantee.
+Kills still decide the payout, because a badly fought run ends early; they are simply not currency.
+And the share is paid **on progress rather than on arriving**, so being overwhelmed at eighty
+seconds pays 77% of what surviving does instead of the same as never having entered — which is the
+shape that teaches people not to try. For scale, a 机缘 hands you five to fifteen minutes for
+nothing every couple of hours; the thing you play for should not out-earn the thing you are given.
+
+#### It costs no charms, and failing costs nothing
+
+Charms are realm insurance now. **A play mode that quietly eats your 渡劫 odds is the same trap the
+automatic stages and the 御符 throw each set once** — convenience drawn from the insurance pot,
+spent where the player is not looking. Failing takes nothing either; you simply do not collect. A
+desk pet does not get to take your progress because a fight went badly.
+
+One more rule worth stating because it is the difference between a fight and a leak: contact costs
+one point of vitality and then makes the body **untouchable for 0.9s**, and the 邪气 is consumed
+either way. Something that lands a hit and then sits inside the body draining it is not a hard
+moment, it is instant death by crowd. The check drives a real run into a doorway and asserts that no
+two hits ever land inside that window.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held
@@ -1280,10 +1380,15 @@ breakthrough needed no new animation code at all.
 ### `npm run check`
 
 The numbers in `realms.ts` will be re-tuned repeatedly, and `settle` is the piece most likely to be
-quietly wrong while still looking plausible. Sixteen assertions, no test framework, two seconds:
-accrual rate, the bottleneck split, one settle against ten over the same gap, a clock that jumps
-backwards, overflow carried across a breakthrough, and a full walk of the ladder that has to land
-on exactly 72 breakthroughs and about 3.8 days.
+quietly wrong while still looking plausible. 179 assertions, no test framework, two seconds: accrual
+rate, the bottleneck split, one settle against ten over the same gap, a clock that jumps backwards,
+overflow carried across a breakthrough, a full walk of the ladder that has to land on exactly 72
+breakthroughs and about 3.8 days, the charm odds and the hoard the 御符 throw must not dig into, and
+two whole 历练 runs driven frame by frame against a pinned `Math.random`.
+
+It compiles with `--rootDir src` pinned, which is not cosmetic: adding an import from `src/slime`
+once moved tsc's output from `.check/checks.js` to `.check/game/checks.js` while the script went on
+executing the old path, so two commits' worth of new assertions silently did not run at all.
 
 ## The save
 

@@ -15,6 +15,7 @@ import { Glyphs } from './game/Glyphs';
 import { Motes, StageSpread } from './game/Motes';
 import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
+import { Trial, harvest } from './game/Trial';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -56,6 +57,7 @@ const charms = new Charms();
 const fortune = new Fortune();
 const volley = new Volley();
 const menu = new Menu();
+const trial = new Trial();
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -538,6 +540,10 @@ let failUntil = 0;
  * them the wrong thing about what the ladder is for.
  */
 let inTrial = false;
+/** What to say once a run is over, and until when. */
+let trialSaid: string | null = null;
+let trialUntil = 0;
+const TrialBubbleMs = 7_000;
 
 /** Where the pet was standing before the trial, so leaving puts it back rather than in the middle. */
 let trialReturn: { x: number; y: number } | null = null;
@@ -552,9 +558,29 @@ function enterTrial(width: number, height: number): void {
   trialReturn = { x: slime.x, y: slime.y };
   slime.planar = true;
   slime.centreIn(width, height);
+  trial.start(cultivation.realm);
   bubble.hide();
   slime.clearAlert();
   fullRepaint = true;
+}
+
+/** Ends the run and pays out what it came to. `harvest` holds the reasoning about how much. */
+function settleTrial(): void {
+  const earned = harvest(trial.through, trial.outcome);
+  if (earned > 0) {
+    // Settled first, so the granted seconds land on top of what the clock already owed rather
+    // than being folded into the next tick's integration.
+    cultivation.settle();
+    cultivation.bestow(earned);
+    applyLook();
+  }
+  trialUntil = performance.now() + TrialBubbleMs;
+  trialSaid =
+    trial.outcome === 'survived'
+      ? `历练已成\n除邪 ${trial.killCount} · 修为大进`
+      : `护体尽碎\n除邪 ${trial.killCount} · 修为略进`;
+  leaveTrial();
+  requestSave(currentSave());
 }
 
 function leaveTrial(): void {
@@ -891,6 +917,7 @@ function frame(now: number): void {
     glyphs.busy ||
     motes.busy ||
     volley.busy ||
+    inTrial ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
     menu.isOpen ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
@@ -946,7 +973,29 @@ function frame(now: number): void {
     fortuneUntil = 0;
   }
 
-  volley.update(elapsed, width, height);
+  // The fight, and then the projectiles — in that order, so a talisman fired this frame is tested
+  // against where things are now rather than where they were before they moved.
+  if (inTrial) {
+    // One talisman per target, because the volley picked one target per talisman.
+    for (const aim of trial.update(
+      elapsed,
+      { x: slime.x, y: slime.y, radius: slime.blob.restRadius },
+      width,
+      height,
+    )) {
+      volley.fireAt(1, slime.x, slime.y, aim.x, aim.y);
+    }
+    if (trial.outcome !== 'running') settleTrial();
+  }
+
+  volley.update(
+    elapsed,
+    width,
+    height,
+    // Only while a trial is running. Outside one there is nothing to hit, and 御符 thrown at the
+    // desktop should reach the wall it was aimed at.
+    inTrial ? { at: (x, y) => trial.strike(x, y) } : undefined,
+  );
 
   const readyToSwallow = slime.takeSwallowRequest();
   if (readyToSwallow !== null) void runSwallow(readyToSwallow);
@@ -988,6 +1037,7 @@ function frame(now: number): void {
       // on offer hides the find and a click goes to the alert — and the find then expires unseen.
       // Left that way on purpose rather than queued: a queue is the shape §4.4 forbids, the
       // collision is eight moments in a run, and missing a find is defined to cost nothing.
+      (trialSaid !== null && now < trialUntil ? trialSaid : null) ??
       fortuneText ??
       (now < failUntil ? '渡劫未成\n符箓尽散 · 修为有损' : null) ??
       (now < ascendUntil ? '此身已证大道\n设置中可转生重历' : null) ??
@@ -1075,7 +1125,10 @@ function frame(now: number): void {
   const painted = unionRect(
     slime.bounds(),
     unionRect(
-      unionRect(unionRect(glyphs.bounds(), motes.bounds()), volley.bounds()),
+      unionRect(
+        unionRect(unionRect(glyphs.bounds(), motes.bounds()), volley.bounds()),
+        inTrial ? trial.bounds() : null,
+      ),
       unionRect(
         unionRect(
           bubbleRect && bubble.opacity > 0.01 ? padRect(bubbleRect, 22) : null,
@@ -1115,6 +1168,7 @@ function frame(now: number): void {
     glyphs.busy ||
     motes.busy ||
     volley.busy ||
+    inTrial ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged);
   // The frame the body stops moving is the frame its resting place becomes final, so that is the
   // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
@@ -1142,6 +1196,7 @@ function frame(now: number): void {
     }
     context.clip(clip);
 
+    if (inTrial) trial.draw(context);
     motes.draw(context, slime.bodyColour);
     glyphs.draw(context, slime.bodyColour);
     slime.draw(context);
@@ -1423,7 +1478,7 @@ async function main(): Promise<void> {
     // 机缘. Not while in seclusion — that switch means nothing asks for anything, and a bubble
     // offering something is still a bubble.
     const unix = Date.now() / 1000;
-    if (!quiet) {
+    if (!quiet && !inTrial) {
       fortune.arm(unix, Math.random);
       if (fortuneText === null && fortune.due(unix) && !slime.hasLiveAlert) {
         fortuneText = findText(Math.random);
