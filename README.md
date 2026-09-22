@@ -1527,6 +1527,33 @@ Cost: 0.29 ms to paint a 大乘 frame with 17 邪气, 28 live effects and 80 spa
 frame budget. Sparks are capped at 170 and dispersals at 60, so the worst case is a fixed cost
 rather than one proportional to how well the run is going.
 
+### 演武场: building a loadout by hand
+
+The effects are the part of this mode that needs looking at repeatedly, and until now the only way
+to see a particular pairing fire was to keep entering trials and hope the draft dealt it. Settings
+now has a **演武场**: pick any of the nine schools (up to four), drag each one's level, tick
+evolution, and the pairings you have made are named on the spot with what they do — "雷符（符落处再
+分一道，击其近者）". Then 开打. No realm gate, no draft. The realm is a dropdown, because it decides
+the arrival pace and which breeds turn up. 护体不损 is on by default, since being killed while
+looking at an effect is only annoying. Moving a slider **applies mid-bout**, so you can watch a
+level change without restarting.
+
+**It pays nothing and writes nothing.** That is what makes it safe to ship in the release build
+instead of hiding it behind a dev flag: it is a preview window, not a shortcut up the ladder. The
+debug hooks that shipped by accident once (`__setStage` and friends on `window`) were dangerous
+precisely because they *could* put the save into states the game itself cannot reach. A preview that
+writes nothing cannot.
+
+One implementation note worth keeping: 护体不损 is a **wrapper around the guard** handed to the
+trial, whose `absorb()` always returns true. The trial already asks permission before every wound,
+because 山岳 needs to act between the touch and the damage — so nothing inside the fight has to know
+that a preview mode exists.
+
+Settings also learned to survive a dead pipe while this went in. `render` ends by sending the
+loadout, so an IPC that throws took the whole screen down with it — which is how a broken pipe turns
+into "the settings window is blank". Every message out of that file is wrapped now: a control that
+cannot reach the overlay should stop working, not stop drawing.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held

@@ -21,6 +21,35 @@
         <p id="rebirth-warn" class="muted"></p>
       </section>
 
+      <section id="arena-box">
+        <h2>演武场</h2>
+        <p class="muted">
+          自己搭一套法脉直接开打，用来看特效。不论境界都能进，不抽卡，
+          <strong>也不结算任何修为</strong> —— 它是个预览窗口，不是一条损道。
+        </p>
+
+        <div id="arena-schools" class="chips"></div>
+        <div id="arena-picked" class="picked"></div>
+        <p id="arena-combos" class="muted combos"></p>
+
+        <div class="row">
+          <label class="field">
+            <span>境界</span>
+            <select id="arena-realm"></select>
+          </label>
+          <label class="check inline">
+            <input id="arena-safe" type="checkbox" checked />
+            <span>护体不损</span>
+          </label>
+        </div>
+
+        <div class="row">
+          <button id="arena-start">开打</button>
+          <button id="arena-stop" class="secondary">结束</button>
+        </div>
+        <p class="muted">开打后可以用鼠标拖动史莱姆躲避。右键身体也能结束。</p>
+      </section>
+
       <section>
         <h2>Quiet</h2>
         <label class="check">

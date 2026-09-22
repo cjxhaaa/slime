@@ -16,7 +16,8 @@ import { Motes, StageSpread } from './game/Motes';
 import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
-import { Arsenal } from './game/Arsenal';
+import { Arsenal, type Holding } from './game/Arsenal';
+import { activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
 import { Draft } from './ui/Draft';
 import { requirement, stageName } from './game/realms';
@@ -66,6 +67,17 @@ const attacks = new Attacks();
 const draft = new Draft();
 /** Kills already paid into the meter, so the frame loop can spend only the new ones. */
 let killsSeen = 0;
+
+/**
+ * 演武场: a bout started from Settings with a loadout built by hand.
+ *
+ * Null outside one. When it is set, the run skips the draft entirely — the build is given rather
+ * than dealt — and **pays nothing at all**: no 修为, no save. That is what makes it safe to ship
+ * in the release build instead of hiding it behind a dev flag. The debug hooks this app shipped by
+ * accident once were dangerous because they could put the save into states the game itself could
+ * not reach; a preview that writes nothing cannot.
+ */
+let arena: { safe: boolean } | null = null;
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -579,6 +591,31 @@ function enterTrial(width: number, height: number): void {
   fullRepaint = true;
 }
 
+/**
+ * Starts a bout with a given loadout, from anywhere on the ladder.
+ *
+ * Deliberately not gated on 筑基. The gate exists so that somebody meets the mode after they have
+ * crossed a realm; it has nothing to say about looking at an effect on purpose.
+ */
+function startArena(realm: number, loadout: Holding[], safe: boolean): void {
+  if (inTrial) leaveTrial();
+  const { width, height } = canvas;
+  inTrial = true;
+  arena = { safe };
+  trialReturn = { x: slime.x, y: slime.y };
+  slime.planar = true;
+  slime.centreIn(width, height);
+  trial.start(realm);
+  attacks.reset();
+  attacks.carry(loadout, activeCombos(loadout.map((slot) => slot.school)));
+  killsSeen = 0;
+  bubble.hide();
+  slime.clearAlert();
+  menu.hide();
+  draft.hide();
+  fullRepaint = true;
+}
+
 /** Puts three cards up, which also stops the clock until one is taken. */
 function offerDraft(): void {
   draft.show(arsenal.offer(Math.random), arsenal.held);
@@ -598,6 +635,15 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
 
 /** Ends the run and pays out what it came to. `harvest` holds the reasoning about how much. */
 function settleTrial(): void {
+  // A bout in the 演武场 is worth nothing and is not written down. Checked first so that no
+  // later edit to this function can accidentally give it something.
+  if (arena !== null) {
+    arena = null;
+    trialUntil = performance.now() + TrialBubbleMs;
+    trialSaid = `演武已毕\n除邪 ${trial.killCount} · 修为无增`;
+    leaveTrial();
+    return;
+  }
   const earned = harvest(trial.through, trial.outcome);
   if (earned > 0) {
     // Settled first, so the granted seconds land on top of what the clock already owed rather
@@ -618,6 +664,7 @@ function settleTrial(): void {
 function leaveTrial(): void {
   if (!inTrial) return;
   inTrial = false;
+  arena = null;
   draft.hide();
   attacks.reset();
   slime.planar = false;
@@ -1017,13 +1064,22 @@ function frame(now: number): void {
   draft.advance(elapsed);
   if (inTrial && !draft.isOpen) {
     const body = { x: slime.x, y: slime.y, radius: slime.blob.restRadius };
-    trial.update(elapsed, body, width, height, attacks);
+    // In the arena with 护体不损 on, the shell simply always catches it. Wrapping the guard is
+    // enough — the trial already asks permission before every wound, so nothing in it has to know
+    // that a preview mode exists.
+    const guard =
+      arena?.safe === true
+        ? { absorb: () => (attacks.absorb(), true), fields: () => attacks.fields() }
+        : attacks;
+    trial.update(elapsed, body, width, height, guard);
     attacks.update(elapsed, body, trial);
 
-    for (let i = killsSeen; i < trial.killCount; i++) arsenal.countKill();
-    killsSeen = trial.killCount;
+    if (arena === null) {
+      for (let i = killsSeen; i < trial.killCount; i++) arsenal.countKill();
+      killsSeen = trial.killCount;
+    }
     if (trial.outcome !== 'running') settleTrial();
-    else if (arsenal.due) offerDraft();
+    else if (arena === null && arsenal.due) offerDraft();
   }
 
   volley.update(elapsed, width, height);
@@ -1718,6 +1774,25 @@ async function main(): Promise<void> {
 
   // Settings has no state of its own: it asks, and this window — which owns the save — answers.
   await listen('want-state', () => emitPetState());
+
+  await listen<{ realm: number; loadout: Holding[]; safe: boolean }>('arena-start', (event) => {
+    const { realm, loadout, safe } = event.payload;
+    if (!Array.isArray(loadout) || loadout.length === 0) return;
+    startArena(realm, loadout, safe);
+  });
+
+  // Sent on every slider and checkbox, so a change is felt without restarting the bout. Ignored
+  // outside one, which is why Settings can fire it freely.
+  await listen<{ loadout: Holding[] }>('arena-loadout', (event) => {
+    if (arena === null || !inTrial) return;
+    const { loadout } = event.payload;
+    if (!Array.isArray(loadout) || loadout.length === 0) return;
+    attacks.carry(loadout, activeCombos(loadout.map((slot) => slot.school)));
+  });
+
+  await listen('arena-stop', () => {
+    if (arena !== null && inTrial) settleTrial();
+  });
 
   await listen('rebirth', () => {
     cultivation.settle();
