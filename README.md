@@ -1581,6 +1581,35 @@ One real bug fell out of it: 不动明山's unbroken band was sitting on top of 
 shadows**, because the dark pass is drawn separately and had not been changed with it. A thing's lit
 side and its dark side have to agree about what shape it is.
 
+### Levels you can see
+
+Same mistake as the evolutions, other half. Levelling changed the cadence and a 9%-per-level reach.
+"More often" is not something you can see in a still frame and barely something you can see in
+motion, and 36% bigger across four levels is inside the noise.
+
+Only **three** of the nine read at all: 风, 土 and 影, because they put another blade, plate or ward
+on the screen. Those three are the proof — **what a player reads is how many things there are.**
+
+So every school now spends its level on something **countable**, and this layer is purely visual:
+not one of these changes what anything kills. 符箓 gains afterimages and lines of script (3 → 7);
+剑气 gains layers in the sheaf (2 → 6); 雷法 thickens its trunk and forks at every joint instead of
+every third; 丹火 goes from three tongues to seven; 冰魄 from 5 crystals on the rim to 13, which you
+can count without meaning to; 瘴气 gains lobes; 影卫 gains size.
+
+That separation matters. The damage curve was measured and tuned against a whole run; the job here
+was to make the same curve legible, not to steepen it.
+
+One deliberate **trade** on top: reach goes from 9% to 13% a level, and the cadence eases from 0.82
+to 0.85 to pay for it. Across four levels the old pair came to 2.21× the rate over 1.36× the reach,
+the new one to 1.92× over 1.52× — near enough a wash, and the whole-run guard confirms it (a
+neglected build still loses at every realm, now from 75s at 筑基 down to 45s at 大乘). The trade is
+worth making because of **which half is visible**: nobody can see a shorter interval, everybody can
+see a bigger circle.
+
+The general lesson, and it is the same one two commits running: **a level you cannot perceive is a
+reward that did not arrive.** Both times I had written the reward into the numbers and not into the
+picture.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held

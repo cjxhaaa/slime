@@ -369,13 +369,24 @@ export const CardsPerOffer = 3;
  */
 export function cadence(school: School, level: number): number {
   const held = Math.max(1, Math.min(MaxLevel, level));
-  return SPECS[school].interval * 0.82 ** (held - 1);
+  return SPECS[school].interval * 0.85 ** (held - 1);
 }
 
-/** How far it reaches at a given level. Grows gently — reach is the thing that trivialises a fight. */
+/**
+ * How far it reaches at a given level.
+ *
+ * 13% a level rather than 9%, and the cadence eased from 0.82 to 0.85 to pay for it. The two very
+ * nearly cancel — across four levels the old pair came to 2.21× the rate over 1.36× the reach, the
+ * new one to 1.92× over 1.52× — so this is a trade rather than a buff, and the whole-run guard is
+ * what says so.
+ *
+ * The trade is worth making because of which half is **visible**. Nobody can see a shorter interval;
+ * everybody can see a bigger circle. 36% across a whole climb was inside the noise, and a level you
+ * cannot perceive is a reward that did not arrive.
+ */
 export function span(school: School, level: number): number {
   const held = Math.max(1, Math.min(MaxLevel, level));
-  return SPECS[school].reach * (1 + 0.09 * (held - 1));
+  return SPECS[school].reach * (1 + 0.13 * (held - 1));
 }
 
 /** Everything that pairs with a school. */

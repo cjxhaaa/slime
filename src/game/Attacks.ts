@@ -180,6 +180,16 @@ export class Attacks {
   }
 
   /**
+   * How far up a school is, as 0 through 4.
+   *
+   * Every density below is driven off this and nothing else, so "a level looks like something"
+   * lives in one expression rather than in nine scattered `levelOf` calls that can drift apart.
+   */
+  private rung(school: School): number {
+    return Math.max(0, Math.min(4, this.levelOf(school) - 1));
+  }
+
+  /**
    * The colours this school is drawn in right now.
    *
    * One call rather than nine `evolved ? ... : ...` at every draw site. The evolved ramp is hotter
@@ -1006,7 +1016,8 @@ export class Attacks {
     context.stroke();
 
     const spin = this.clock * 0.35;
-    const points = deep ? 12 : 8;
+    // Crystals are the countable thing on this school, so they are what the level is spent on.
+    const points = (deep ? 10 : 5) + this.rung('冰') * 2;
     for (let i = 0; i < points; i++) {
       const angle = spin + (i / points) * Math.PI * 2;
       const tall = 10 + 5 * Math.sin(this.clock * 2 + i);
@@ -1194,33 +1205,43 @@ export class Attacks {
     if (e.kind === 'aimed' || e.kind === 'aimed-orbit') {
       const heading = Math.atan2(e.vy, e.vx);
       const held = e.kind === 'aimed-orbit' && e.age < 0.34;
+      const rung = this.rung(e.school);
       // A ribbon of afterimages, brightening toward the head, then the talisman itself with a lit
-      // face and a mark on it.
-      for (let ghost = 4; ghost >= 0; ghost--) {
+      // face and a mark on it. The ribbon lengthens with the level: a thing that visibly *drags
+      // more of itself along* is the cheapest possible reading of "this got stronger".
+      const ghosts = 3 + rung;
+      for (let ghost = ghosts; ghost >= 0; ghost--) {
         const back = ghost * 0.016;
         const gx = e.x - e.vx * back;
         const gy = e.y - e.vy * back;
-        const heat = 1 - ghost / 5;
-        this.bloom(context, gx, gy, 14 + 10 * heat, hue, 0.3 * heat + 0.12);
+        const heat = 1 - ghost / (ghosts + 1);
+        this.bloom(context, gx, gy, (14 + 10 * heat) * (1 + rung * 0.07), hue, 0.3 * heat + 0.12);
       }
       context.save();
       context.translate(e.x, e.y);
       context.rotate(held ? e.angle + e.age * 9 : heading);
+      // The plate itself grows, and gains a line of script for every level. Three marks at one
+      // 重 and seven at five is something you can count without meaning to.
+      const wide = 11 * (1 + rung * 0.1);
+      const tall = 6.5 * (1 + rung * 0.1);
       context.globalAlpha = 0.85;
-      const face = context.createLinearGradient(-11, 0, 11, 0);
+      const face = context.createLinearGradient(-wide, 0, wide, 0);
       face.addColorStop(0, hue.edge);
       face.addColorStop(0.55, hue.body);
       face.addColorStop(1, hue.core);
       context.fillStyle = face;
-      context.fillRect(-11, -6.5, 22, 13);
+      context.fillRect(-wide, -tall, wide * 2, tall * 2);
       context.globalAlpha = 1;
       context.fillStyle = hue.core;
-      context.fillRect(-11, -6.5, 22, 1.4);
-      context.fillRect(-11, 5.1, 22, 1.4);
+      context.fillRect(-wide, -tall, wide * 2, tall * 0.22);
+      context.fillRect(-wide, tall * 0.78, wide * 2, tall * 0.22);
       context.fillStyle = '#ff5a4a';
-      context.fillRect(-6.5, -4.6, 2.6, 9.2);
-      context.fillRect(-1, -3.6, 2, 7.2);
-      context.fillRect(3.6, -4.6, 2, 9.2);
+      const marks = 3 + rung;
+      for (let i = 0; i < marks; i++) {
+        const at = -wide * 0.62 + (i / Math.max(1, marks - 1)) * wide * 1.24;
+        const high = tall * (i % 2 === 0 ? 0.72 : 0.56);
+        context.fillRect(at - 1, -high, 2, high * 2);
+      }
       context.restore();
       // 万符朝元 trails a gold streamer and carries the mark, so a wall of them reads as one
       // thing happening rather than as the ordinary school running faster.
@@ -1316,14 +1337,17 @@ export class Attacks {
         }
       }
 
-      // Smear arcs behind it, hot to cool, each a little shorter than the last.
-      for (let i = 0; i < 4; i++) {
-        const trim = 0.1 + i * 0.13;
-        context.globalAlpha = fade * (0.9 - i * 0.2);
+      // Smear arcs behind it, hot to cool, each a little shorter than the last — and one more of
+      // them for every level, so a five-重 sweep is visibly a stack of blades where a one-重 sweep
+      // is a single stroke.
+      const smears = 2 + this.rung(e.school);
+      for (let i = 0; i < smears; i++) {
+        const trim = 0.1 + i * 0.1;
+        context.globalAlpha = fade * (0.9 - i * 0.13);
         context.strokeStyle = i === 0 ? hue.core : i === 1 ? hue.body : hue.edge;
-        context.lineWidth = 4 - i * 0.85;
+        context.lineWidth = 4.4 - i * 0.6;
         context.beginPath();
-        context.arc(0, 0, reach * (1 - i * 0.055), -arc / 2 + trim + i * 0.26, arc / 2 - trim + i * 0.26);
+        context.arc(0, 0, reach * (1 - i * 0.05), -arc / 2 + trim + i * 0.2, arc / 2 - trim + i * 0.2);
         context.stroke();
       }
       context.globalAlpha = 1;
@@ -1361,11 +1385,14 @@ export class Attacks {
       // Four passes, wide and deep to thin and white. Flicker, because lightning that holds still
       // for a quarter second is a neon sign.
       const flare = 0.62 + 0.38 * Math.abs(Math.sin(e.age * 95));
+      // The trunk thickens with the level. A bolt is one of the few things where "more of it" and
+      // "heavier" are the same reading.
+      const heft = 1 + this.rung(e.school) * 0.22;
       const passes: [string, number, number][] = [
-        [hue.edge, 20, 0.3],
-        [hue.edge, 11, 0.55],
-        [hue.body, 5, 0.85],
-        [hue.core, 1.7, 1],
+        [hue.edge, 20 * heft, 0.3],
+        [hue.edge, 11 * heft, 0.55],
+        [hue.body, 5 * heft, 0.85],
+        [hue.core, 1.7 * heft, 1],
       ];
       for (const [colour, width, alpha] of passes) {
         context.globalAlpha = fade * alpha * flare;
@@ -1378,7 +1405,9 @@ export class Attacks {
       context.globalAlpha = fade * 0.7 * flare;
       context.strokeStyle = hue.body;
       context.lineWidth = 2;
-      for (let i = 2; i < points.length - 1; i += 3) {
+      // Forks every third joint at one 重, every joint at five.
+      const forkEvery = Math.max(1, 4 - this.rung(e.school));
+      for (let i = 2; i < points.length - 1; i += forkEvery) {
         const from = points[i];
         const angle = Math.atan2(points[i + 1].y - from.y, points[i + 1].x - from.x);
         const off = angle + (jitter() - 0.5) * 2.4;
@@ -1424,17 +1453,20 @@ export class Attacks {
       // Through the midpoints as quadratics rather than straight between the samples. A polygon
       // of twenty-odd sides is obviously a polygon at ninety pixels across, and fire has no
       // corners in it.
+      // The number of tongues in the silhouette is the lowest sine's frequency, so raising it with
+      // the level makes the fire visibly busier without making the pool any bigger.
+      const licks = 3 + this.rung(e.school);
       const body = (scale: number, phase: number) => {
-        const steps = 22;
+        const steps = 22 + this.rung(e.school) * 4;
         const at = (i: number) => {
           const angle = ((i % steps) / steps) * Math.PI * 2;
           const reach =
             r *
             scale *
             (0.74 +
-              0.13 * Math.sin(angle * 3 + t * 4.2 + phase) +
-              0.09 * Math.sin(angle * 5 - t * 6.1) +
-              0.06 * Math.sin(angle * 8 + t * 9.3));
+              0.13 * Math.sin(angle * licks + t * 4.2 + phase) +
+              0.09 * Math.sin(angle * (licks + 2) - t * 6.1) +
+              0.06 * Math.sin(angle * (licks + 5) + t * 9.3));
           return { x: Math.cos(angle) * reach, y: Math.sin(angle) * reach };
         };
         context.beginPath();
@@ -1513,8 +1545,9 @@ export class Attacks {
       context.translate(e.x, e.y);
       context.globalAlpha = (hot ? 0.24 : 0.13) * fade;
       context.fillStyle = hue.edge;
-      for (let i = 0; i < 3; i++) {
-        const angle = e.angle + i * 2.09 + this.clock * (hot ? 1.6 : 0.4);
+      const lobes = 3 + this.rung(e.school);
+      for (let i = 0; i < lobes; i++) {
+        const angle = e.angle + (i / lobes) * Math.PI * 2 + this.clock * (hot ? 1.6 : 0.4);
         const lobe = r * (0.5 + 0.22 * Math.sin(this.clock * 1.6 + i * 2.1 + e.x * 0.03));
         context.beginPath();
         context.arc(Math.cos(angle) * r * 0.34, Math.sin(angle) * r * 0.34, lobe, 0, Math.PI * 2);
@@ -1624,13 +1657,14 @@ export class Attacks {
         this.bloom(context, gx, gy, 12 + 12 * heat, hue, 0.22 * heat + 0.12);
       }
       context.globalAlpha = 0.95;
-      const skin = context.createRadialGradient(e.x - 3, e.y - 4, 1, e.x, e.y, 12);
+      const fat = 11.5 * (1 + this.rung('影') * 0.13);
+      const skin = context.createRadialGradient(e.x - 3, e.y - 4, 1, e.x, e.y, fat + 0.5);
       skin.addColorStop(0, hue.core);
       skin.addColorStop(0.6, hue.body);
       skin.addColorStop(1, hue.edge);
       context.fillStyle = skin;
       context.beginPath();
-      context.arc(e.x, e.y, 11.5, 0, Math.PI * 2);
+      context.arc(e.x, e.y, fat, 0, Math.PI * 2);
       context.fill();
       // 影卫三重: each wears a gold halo, and they are tied to one another, so three of them read
       // as a formation rather than as three copies of the same thing wandering about.
