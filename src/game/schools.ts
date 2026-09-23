@@ -83,7 +83,7 @@ export type School = (typeof SCHOOLS)[number];
 export type Motion =
   /** Flies to a target and is spent on it. */
   | 'aimed'
-  /** A cone swept close to the body. */
+  /** A crescent thrown out from the body, cutting through what it passes. */
   | 'sweep'
   /** Strikes a target instantly, then jumps to a neighbour. */
   | 'chain'
@@ -113,6 +113,15 @@ export interface SchoolSpec {
   interval: number;
   /** How far it works, in pixels. What that means depends on the motion. */
   reach: number;
+  /**
+   * How much the reach grows per level, as a fraction. Defaults to 0.13.
+   *
+   * 风刃 sets it low, and the reason is worth keeping: for everything else `reach` is coverage, so
+   * more of it is more kills. For an **orbit** it is the radius the blades ride at, and the 邪气 are
+   * all walking *inward* — so a bigger radius is not wider coverage, it is further from where
+   * everything is. Measured, 风刃 peaked at two 重 and got worse every level after it.
+   */
+  grow?: number;
   /** How many things one activation can kill. `field` and `trail` use it per tick. */
   bite: number;
 }
@@ -214,11 +223,13 @@ export const SPECS: Record<School, SchoolSpec> = {
   剑: {
     key: '剑',
     name: '剑气',
-    blurb: '近身横扫',
+    blurb: '斩出一道，沿途尽断',
     motion: 'sweep',
     tint: '#8ceaff',
     interval: 1.15,
-    reach: 132,
+    // How far the crescent travels, not how far the body reaches. It was a 132px swing close in;
+    // 剑气 is the one school whose whole name says it leaves the hand.
+    reach: 360,
     bite: 3,
   },
   雷: {
@@ -259,6 +270,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     tint: '#66ffb4',
     interval: 0.3,
     reach: 96,
+    grow: 0.04,
     bite: 1,
   },
   土: {
@@ -386,7 +398,7 @@ export function cadence(school: School, level: number): number {
  */
 export function span(school: School, level: number): number {
   const held = Math.max(1, Math.min(MaxLevel, level));
-  return SPECS[school].reach * (1 + 0.13 * (held - 1));
+  return SPECS[school].reach * (1 + (SPECS[school].grow ?? 0.13) * (held - 1));
 }
 
 /** Everything that pairs with a school. */

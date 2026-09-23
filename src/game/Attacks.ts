@@ -84,8 +84,16 @@ const LIFE: Record<string, number> = {
 
 /** How fast an aimed talisman flies. */
 const AimedSpeed = 980;
-/** Radians a 剑气 sweep covers at level one. A combination opens it to the full circle. */
-const SweepArc = 1.9;
+/**
+ * How fast a 剑气 crescent travels, how long it lives, and how wide the cut is.
+ *
+ * It used to be a cone swept close to the body — a 132-pixel arc that appeared and vanished in a
+ * fifth of a second. That is a *swing*, and 剑气 is the one school whose name says the opposite:
+ * the qi leaves the sword. So it is thrown now, cuts through whatever it passes, and keeps going.
+ */
+const ArcSpeed = 660;
+const ArcSeconds = 0.75;
+const ArcWidth = 88;
 /** How fast 风刃 goes round, in radians a second. */
 const OrbitRate = 3.1;
 /** How fast an 影卫 moves, and how often it can kill. */
@@ -408,44 +416,44 @@ export class Attacks {
     }
 
     if (school === '剑') {
-      const mark = battlefield.closest(this.bodyX, this.bodyY, reach * 3);
+      const mark = battlefield.closest(this.bodyX, this.bodyY, reach * 1.4);
       const heading = mark
         ? Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX)
         : Math.random() * Math.PI * 2;
-      // 风剑 closes the sweep into a full circle; 万剑归宗 does too, and bites far harder.
-      const full = this.paired('剑', '风') || this.evolved('剑');
-      const arc = full ? Math.PI * 2 : SweepArc;
-      const bite = this.evolved('剑') ? spec.bite * 4 : spec.bite + level;
-      const wide = full ? reach * 1.25 : reach;
-      this.push('剑', 'sweep', this.bodyX, this.bodyY, 0, 0, heading, LIFE.sweep, wide, bite);
-      // Thrown along the arc rather than out from the middle, so the sparks say which way it swept.
-      for (let i = 0; i < 6; i++) {
-        const along = heading + (full ? Math.random() * Math.PI * 2 : (Math.random() - 0.5) * arc);
-        this.spark(
-          this.bodyX + Math.cos(along) * wide * 0.9,
-          this.bodyY + Math.sin(along) * wide * 0.9,
-          2,
-          '剑',
-          230,
-          along + Math.PI / 2,
-          1.1,
-        );
+      const headings: number[] = [];
+      if (this.evolved('剑')) {
+        // 万剑归宗: a fan of five.
+        for (let i = 0; i < 5; i++) headings.push(heading + (i - 2) * 0.5);
+      } else if (this.paired('剑', '风')) {
+        // 风剑: all four quarters at once, which is what "合成整圈" becomes once it is thrown
+        // rather than swung.
+        for (let i = 0; i < 4; i++) headings.push(heading + (i * Math.PI) / 2);
+      } else {
+        headings.push(heading);
       }
-      battlefield
-        .targets()
-        .filter((t) => {
-          const away = Math.hypot(t.x - this.bodyX, t.y - this.bodyY);
-          if (away > wide) return false;
-          if (arc >= Math.PI * 2) return true;
-          const to = Math.atan2(t.y - this.bodyY, t.x - this.bodyX);
-          return Math.abs(wrap(to - heading)) <= arc / 2;
-        })
-        .slice(0, bite)
-        .forEach((t) => battlefield.cull(t.x, t.y, Touch, 1));
 
-      // 雷剑 leaves the arc behind as lightning.
-      if (this.paired('剑', '雷')) {
-        this.push('剑', 'sweep-arc', this.bodyX, this.bodyY, 0, 0, heading, 0.5, wide, 0);
+      // **The cut is shared out between the crescents.** Giving each its own full bite made the
+      // count multiply by how many went out, and measuring it showed the result: an evolved 剑气
+      // killed 30 a second against 1.2 for the same school one card short of it, a twenty-five-fold
+      // cliff. Extra crescents buy *coverage*; the total this school can cut in one swing is one
+      // number, and the evolution adds two to it rather than multiplying it by five.
+      const total = spec.bite + level + (this.evolved('剑') ? 2 : 0);
+      const bite = Math.max(1, Math.ceil(total / headings.length));
+      for (const way of headings) {
+        const blade = this.push(
+          '剑',
+          'arc',
+          this.bodyX + Math.cos(way) * 34,
+          this.bodyY + Math.sin(way) * 34,
+          Math.cos(way) * ArcSpeed,
+          Math.sin(way) * ArcSpeed,
+          way,
+          ArcSeconds,
+          reach,
+          bite,
+        );
+        // Reused as distance flown, so it can also stop at its reach rather than only at its life.
+        blade.cool = 0;
       }
       return;
     }
@@ -494,8 +502,9 @@ export class Attacks {
     }
 
     if (school === '风') {
-      // Blades are persistent, so this only tops them up to the number the level allows.
-      const want = (this.evolved('风') ? 3 : 1) * (1 + Math.floor(level / 2));
+      // Blades are persistent, so this only tops them up to the number the level allows. The level
+      // buys **blades** here rather than radius — see `grow` on the spec for why.
+      const want = (this.evolved('风') ? 3 : 1) * (1 + Math.floor((level - 1) * 0.75));
       const have = this.live.filter((e) => e.school === '风' && e.kind === 'orbit').length;
       for (let i = have; i < want; i++) {
         const blade = this.push(
@@ -547,7 +556,9 @@ export class Attacks {
     }
 
     if (school === '影') {
-      const want = this.evolved('影') ? 3 : 1 + Math.floor(level / 3);
+      // floor(level/3) gave one ward at 一重 and two from 三重 up — so 四重 and 五重 bought nothing
+      // at all, which the level sweep caught as a flat line rather than an inverted one.
+      const want = this.evolved('影') ? 3 : 1 + Math.floor((level - 1) / 2);
       const have = this.live.filter((e) => e.school === '影' && e.kind === 'ward').length;
       for (let i = have; i < want; i++) this.spawnWard(i);
       return;
@@ -731,12 +742,42 @@ export class Attacks {
           this.spark(e.x, e.y, 7, '符', 190, Math.atan2(e.vy, e.vx), 2.1);
           continue;
         }
+      } else if (e.kind === 'arc') {
+        const flew = Math.hypot(e.vx, e.vy) * dt;
+        e.x += e.vx * dt;
+        e.y += e.vy * dt;
+        e.cool += flew;
+        e.angle = Math.atan2(e.vy, e.vx);
+        // Wide across its travel rather than a point: a crescent is a *cut*, and something that
+        // only connected on its centre line would read as a thrown stick.
+        if (e.bite > 0 && battlefield.cull(e.x, e.y, (ArcWidth / 2) * (1 + this.rung('剑') * 0.1), 1) > 0) {
+          e.bite -= 1;
+          this.spark(e.x, e.y, 5, '剑', 230, e.angle + Math.PI, 2.2);
+          // 雷剑: every cut earths itself into whatever is nearest.
+          if (this.paired('剑', '雷')) {
+            const next = battlefield.closest(e.x, e.y, 160);
+            if (next) {
+              battlefield.cull(next.x, next.y, Touch, 1);
+              const bolt = this.push('剑', 'chain', e.x, e.y, 0, 0, 0, 0.22, 160, 0);
+              bolt.path = [
+                { x: e.x, y: e.y },
+                { x: next.x, y: next.y },
+              ];
+            }
+          }
+        }
+        // Spent when it has cut its fill or flown its distance, whichever comes first.
+        if (e.bite <= 0 || e.cool >= e.reach) continue;
       } else if (e.kind === 'orbit') {
-        const want = this.live.filter((x) => x.school === '风' && x.kind === 'orbit').length;
         // 罡风阵 turns its rings against each other, which is the whole reason it reads as three.
         const way = this.evolved('风') && (e.index ?? 0) % 2 === 1 ? -1 : 1;
         e.angle += OrbitRate * dt * way;
-        const ring = e.reach * (1 + 0.22 * Math.floor((e.index ?? 0) / Math.max(1, want / 3)));
+        // **Only an evolved 风刃 uses more than one ring.** This formula was written for 罡风阵's
+        // three counter-turning rings and was running for ordinary levels too, so five 重 put its
+        // three blades on orbits of 146, 178 and 210 — further out every level, while everything it
+        // was meant to hit walked inward. That is why levelling it made it *worse*.
+        const rings = this.evolved('风') ? 3 : 1;
+        const ring = e.reach * (1 + 0.22 * ((e.index ?? 0) % rings));
         e.x = this.bodyX + Math.cos(e.angle) * ring;
         e.y = this.bodyY + Math.sin(e.angle) * ring;
         if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch + 6, 1) > 0) {
@@ -1343,77 +1384,91 @@ export class Attacks {
       return;
     }
 
-    if (e.kind === 'sweep' || e.kind === 'sweep-arc') {
-      const arc = SweepArc;
-      const reach = e.reach * (0.74 + 0.3 * grown);
+    if (e.kind === 'arc') {
+      // A blade, not a saucer.
+      //
+      // The first pass made it as thick as it was long and drew the wake as three copies of itself
+      // strung out behind — which came out as a stack of concentric discs rather than as something
+      // travelling. So: long across the cut and thin along it, and the wake is one tapered band
+      // that narrows to nothing behind, the way a thrown edge actually leaves the air.
+      const rung = this.rung('剑');
+      const half = (ArcWidth / 2) * (1 + rung * 0.1);
+      const bow = 11 + rung * 1.6;
+      const shape = (scale: number, lead: number) => {
+        context.beginPath();
+        context.moveTo(lead, -half * scale);
+        context.quadraticCurveTo(lead + bow * scale, 0, lead, half * scale);
+        context.quadraticCurveTo(lead - bow * 0.55 * scale, 0, lead, -half * scale);
+        context.closePath();
+      };
+
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle);
 
-      // The band is one path that **thins to a point at both ends**, rather than a sector.
+      // The wake: speed lines, not a shape.
       //
-      // A filled sector has a hard straight edge at each end — the two radii — and a slash does not
-      // stop at a straight line. Fading it out by cutting the sector into twenty-two slices of
-      // decreasing alpha fixed the ends and introduced spokes: every slice is anti-aliased against
-      // its neighbours and the seams show. So the taper is in the geometry. Thickness follows a
-      // sine along the sweep, the outer and inner edges converge, and it is one fill with no seams
-      // in it at all.
-      const mid = reach * 0.82;
-      const fat = reach * 0.6;
-      const steps = 26;
-      const thickness = (t: number) => fat * Math.pow(Math.sin(t * Math.PI), 0.5);
-      context.beginPath();
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const angle = -arc / 2 + t * arc;
-        const rr = mid + thickness(t) / 2;
-        const px = Math.cos(angle) * rr;
-        const py = Math.sin(angle) * rr;
-        if (i === 0) context.moveTo(px, py);
-        else context.lineTo(px, py);
+      // Version one strung three copies of the blade out behind it, which came out as a stack of
+      // concentric discs. Version two joined the blade's two tips back to a point, which is a
+      // **solid triangle** — it read as a paper dart, and five of them fanned out at once read as
+      // one big fan. Lines are the answer and always were: they say "this is moving" without
+      // occupying any area, so five of them overlapping is still five things.
+      // Three, short, and very nearly parallel. Five long ones converging on a point behind the
+      // blade drew the spokes of a fan — and five blades doing that at once was a peacock.
+      const drag = 38 + rung * 5;
+      context.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        const at = i * half * 0.6;
+        const len = drag * (1 - Math.abs(i) * 0.3);
+        const streak = context.createLinearGradient(0, 0, -len, 0);
+        streak.addColorStop(0, hue.core);
+        streak.addColorStop(0.35, hue.body);
+        streak.addColorStop(1, clear(hue.edge));
+        context.globalAlpha = 0.7 - Math.abs(i) * 0.2;
+        context.strokeStyle = streak;
+        context.lineWidth = 3 - Math.abs(i) * 0.9;
+        context.beginPath();
+        context.moveTo(-2, at);
+        context.lineTo(-len, at * 0.88);
+        context.stroke();
       }
-      for (let i = steps; i >= 0; i--) {
-        const t = i / steps;
-        const angle = -arc / 2 + t * arc;
-        const rr = mid - thickness(t) / 2;
-        context.lineTo(Math.cos(angle) * rr, Math.sin(angle) * rr);
-      }
-      context.closePath();
-      const band = context.createRadialGradient(0, 0, mid - fat / 2, 0, 0, mid + fat / 2);
-      band.addColorStop(0, clear(hue.edge));
-      band.addColorStop(0.35, hue.edge);
-      band.addColorStop(0.82, hue.body);
-      band.addColorStop(0.96, hue.core);
-      band.addColorStop(1, clear(hue.core));
-      context.globalAlpha = 0.7 * fade;
-      context.fillStyle = band;
+      context.globalAlpha = 1;
+
+      this.bloom(context, bow * 0.4, 0, 24 + rung * 3, hue, 0.45);
+
+      // The blade: deep at the back, white along the leading edge.
+      const face = context.createLinearGradient(-bow * 0.6, 0, bow, 0);
+      face.addColorStop(0, clear(hue.edge));
+      face.addColorStop(0.4, hue.edge);
+      face.addColorStop(0.8, hue.body);
+      face.addColorStop(1, hue.core);
+      context.globalAlpha = 0.95;
+      context.fillStyle = face;
+      shape(1, 0);
       context.fill();
 
-      // 万剑归宗 is not one arc, it is a *sheaf*: four more at stepped radii, so the sweep has
-      // depth instead of width. The name says a thousand swords; one thicker arc does not.
-      if (risen) {
-        for (let blade = 1; blade <= 4; blade++) {
-          const at = reach * (1 - blade * 0.17);
-          context.globalAlpha = fade * (0.55 - blade * 0.09);
-          context.strokeStyle = blade % 2 === 0 ? hue.core : Crown;
-          context.lineWidth = 3.2;
-          context.beginPath();
-          context.arc(0, 0, at, -arc / 2 + blade * 0.11, arc / 2 - blade * 0.11);
-          context.stroke();
-        }
-      }
+      context.globalAlpha = 1;
+      context.strokeStyle = hue.core;
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(0, -half * 0.95);
+      context.quadraticCurveTo(bow, 0, 0, half * 0.95);
+      context.stroke();
 
-      // Smear arcs behind it, hot to cool, each a little shorter than the last — and one more of
-      // them for every level, so a five-重 sweep is visibly a stack of blades where a one-重 sweep
-      // is a single stroke.
-      const smears = 2 + this.rung(e.school);
-      for (let i = 0; i < smears; i++) {
-        const trim = 0.1 + i * 0.1;
-        context.globalAlpha = fade * (0.9 - i * 0.13);
-        context.strokeStyle = i === 0 ? hue.core : i === 1 ? hue.body : hue.edge;
-        context.lineWidth = 4.4 - i * 0.6;
+      if (this.evolved('剑')) this.mark(context, bow * 0.4, 0, 7, 0.9);
+      if (this.paired('剑', '雷')) {
+        const spark = seeded(Math.round(e.x + e.y));
+        context.globalAlpha = 0.9;
+        context.strokeStyle = PALETTE['雷'].core;
+        context.lineWidth = 1.4;
         context.beginPath();
-        context.arc(0, 0, reach * (1 - i * 0.05), -arc / 2 + trim + i * 0.2, arc / 2 - trim + i * 0.2);
+        for (let i = 0; i <= 6; i++) {
+          const t = i / 6;
+          const along = -half * 0.9 + t * half * 1.8;
+          const out = bow * Math.sin(t * Math.PI) + (spark() - 0.5) * 6;
+          if (i === 0) context.moveTo(out, along);
+          else context.lineTo(out, along);
+        }
         context.stroke();
       }
       context.globalAlpha = 1;
@@ -1807,10 +1862,4 @@ function seeded(seed: number): () => number {
 }
 
 
-/** Wraps an angle into (−π, π]. */
-function wrap(angle: number): number {
-  let a = angle;
-  while (a <= -Math.PI) a += Math.PI * 2;
-  while (a > Math.PI) a -= Math.PI * 2;
-  return a;
-}
+

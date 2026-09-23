@@ -1610,6 +1610,41 @@ The general lesson, and it is the same one two commits running: **a level you ca
 reward that did not arrive.** Both times I had written the reward into the numbers and not into the
 picture.
 
+### 剑气 leaves the sword, and two bugs fell out of measuring it
+
+剑气 was a 132px cone swept close to the body, appearing and vanishing in a fifth of a second. That
+is a *swing*, and 剑气 is the one school whose name says the opposite. It is thrown now: a crescent
+that flies 360px, **cuts through** whatever it passes, and is spent when it has cut its fill or flown
+its distance. 风剑 throws all four quarters at once, 万剑归宗 a fan of five, 雷剑 earths every cut
+into whatever is nearest.
+
+The wake took three tries. Three copies of the blade strung out behind came out as **a stack of
+concentric discs**; joining the blade's two tips back to a point is a **solid triangle**, which read
+as a paper dart and, five at once, as a peacock. **Speed lines** were the answer: they say "this is
+moving" without occupying any area, so five overlapping is still five things.
+
+Then I measured it, and two real bugs fell out that have nothing to do with swords.
+
+**One.** I had given each crescent its own full bite, so the number of crescents multiplied the kill
+count: an evolved 剑气 killed **30.7 a second against 1.2** for the same school one card short of it
+— a twenty-five-fold cliff. The cut is shared between them now. Extra crescents buy coverage, not
+damage.
+
+**Two.** Sweeping every school's kill rate at every level turned up **an inverted curve**: 风刃
+peaked at two 重 and got *worse* every level after (1.12 → 0.72 at five). The formula that splits
+the blades across three counter-turning rings was written for 罡风阵 — the evolution — and was
+running for ordinary levels too, so five 重 put its three blades on orbits of 146, 178 and 210 while
+everything they were meant to hit walked inward. Reach growing 13% a level pushed the one ring out
+as well. **For an orbit, a bigger radius is not more coverage, it is further from where everything
+is.** 风刃 now buys blades rather than radius (`grow: 0.04`) and only an evolved one uses more than
+one ring: 0.42 → 1.74 → 7.07.
+
+A third, smaller: 影卫 counted wards with `floor(level/3)`, so **四重 and 五重 bought nothing at
+all** — a flat line rather than an inverted one, which is why it took a sweep to see.
+
+The lesson: I should have swept every school at every level back when I made levelling *visible*. I
+verified that a level could be seen and never verified that it did anything.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held
