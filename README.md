@@ -1718,6 +1718,34 @@ One bug worth recording. 三才剑阵 was first implemented by adding 1000 to an
 crescent came out **eleven times its size**, a band clean across the screen. **Two meanings in one
 number is a bug with a delay on it.** It has its own field now.
 
+### 共鸣: the pet answers when a pairing fires
+
+Every combination's effect happens **somewhere else**: 雷符 forks where the talisman landed, 冰火
+goes off inside the cold field, 焚瘴 lights a trail thirty pixels behind you. All correct, and all of
+it reads as *the world doing something* rather than as **you** doing it — because the one thing on
+screen that never reacted was the pet itself.
+
+A pairing that fires now throws rings off the body in the two schools' own colours (three for a
+三合), in three beats:
+
+1. **Flash** — two frames of white over the body. The rings alone read as a pleasant ripple; **the
+   flash is what reads as a hit**, and it is the cheapest frame in the file.
+2. **Shove** — a crown of spokes kicking off the body's edge, only in the first third.
+3. **Spread** — the rings ease outward fast and thin as they go.
+
+It costs nothing and kills nothing, and it is the whole difference between watching an effect and
+having cast one.
+
+Two things it needed. A **throttle** of 0.4s per pairing: 风雪 fires nine times a second and 冰火 can
+go off several times in one frame, and without it the body strobes — which is not excitement, it is
+noise, and the ring means "that just happened" only while it is rare enough to be read. And the
+rings start at the **body's own radius**, passed in rather than hard-coded, because the slime grows
+with the realm and a fixed 44px put them *inside* a 大乘 body, which reads as the pet being hit
+rather than as it casting.
+
+All fourteen pairings and all seven 三合 are wired — verified by scanning the call sites against the
+tables, 14/14 and 7/7. Cost: 0.43ms a frame.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held

@@ -150,6 +150,39 @@ const WardCool = 0.55;
 const Touch = 22;
 
 /**
+ * 共鸣 — the pet answering, on its own body, when a pairing fires.
+ *
+ * Every combination's effect happens **somewhere else**: 雷符 forks where the talisman landed,
+ * 冰火 goes off inside the cold field, 焚瘴 lights a trail thirty pixels behind you. All correct,
+ * and all of it reads as *the world doing something* rather than as **you** doing it, because the
+ * one thing on screen that never reacted was the pet.
+ *
+ * So a pairing that fires now also throws a ring off the body, in the two schools' own colours.
+ * It costs nothing, it kills nothing, and it is the whole difference between watching an effect and
+ * having cast one.
+ */
+interface Surge {
+  x: number;
+  y: number;
+  age: number;
+  life: number;
+  /** Two colours for a pairing, three for a 三合. */
+  hues: Palette[];
+  /** The body's radius when it fired, so the rings leave its edge at any realm. */
+  from: number;
+}
+
+/**
+ * How often one pairing may answer, in seconds.
+ *
+ * 风雪 fires nine times a second and 冰火 can go off several times in one frame. Without a
+ * throttle the body would strobe, which is not excitement, it is noise — and the ring means "that
+ * just happened" only while it is rare enough to be read.
+ */
+const SurgeEvery = 0.4;
+const SurgeSeconds = 0.42;
+
+/**
  * Grit.
  *
  * The dust is the benchmark for this whole layer and the reason is not the colour — it is that a
@@ -188,6 +221,9 @@ const MaxSparks = 170;
 export class Attacks {
   private live: Effect[] = [];
   private sparks: Spark[] = [];
+  private surges: Surge[] = [];
+  /** When each pairing last answered, so a fast one cannot strobe. */
+  private lastSurge = new Map<string, number>();
   /** Seconds since this arsenal started, for anything that wants to turn or waver. */
   private clock = 0;
   private timers = new Map<School, number>();
@@ -204,6 +240,8 @@ export class Attacks {
     this.arena = null;
     this.live = [];
     this.sparks = [];
+    this.surges = [];
+    this.lastSurge.clear();
     this.clock = 0;
     this.timers.clear();
     this.shellLeft = 0;
@@ -294,6 +332,43 @@ export class Attacks {
     context.restore();
   }
 
+  /**
+   * The pet answers a pairing, on its own body.
+   *
+   * Named by the pairing so the throttle is per combination: 冰火 going off constantly must not
+   * silence 雷符. Ignored when the pairing is not actually held, so a call site cannot announce
+   * something the build does not have.
+   */
+  private surge(a: School, b: School): void {
+    if (!this.paired(a, b)) return;
+    const key = `${a}${b}`;
+    if ((this.lastSurge.get(key) ?? -99) > this.clock - SurgeEvery) return;
+    this.lastSurge.set(key, this.clock);
+    this.surges.push({
+      x: this.bodyX,
+      y: this.bodyY,
+      age: 0,
+      life: SurgeSeconds,
+      hues: [this.hueOf(a), this.hueOf(b)],
+      from: this.bodyR,
+    });
+  }
+
+  /** The same, for a 三合: three colours, and a beat longer. */
+  private surgeTriad(name: string, of: [School, School, School]): void {
+    if (!this.triad(name)) return;
+    if ((this.lastSurge.get(name) ?? -99) > this.clock - SurgeEvery * 1.4) return;
+    this.lastSurge.set(name, this.clock);
+    this.surges.push({
+      x: this.bodyX,
+      y: this.bodyY,
+      age: 0,
+      life: SurgeSeconds * 1.5,
+      hues: of.map((school) => this.hueOf(school)),
+      from: this.bodyR,
+    });
+  }
+
   /** True when a 三合 is complete. By name, so reordering `TRIADS` cannot silently rewire one. */
   private triad(name: string): boolean {
     return this.forms.has(name);
@@ -306,7 +381,9 @@ export class Attacks {
   }
 
   get busy(): boolean {
-    return this.live.length > 0 || this.sparks.length > 0 || this.held.length > 0;
+    return (
+      this.live.length > 0 || this.sparks.length > 0 || this.surges.length > 0 || this.held.length > 0
+    );
   }
 
   /** The slowing regions, for the trial to apply to its own units. */
@@ -351,6 +428,11 @@ export class Attacks {
 
     // 幽壤: two 影卫 come out of the ground where it broke. 幽都印 makes it three, and lays a ring
     // of talismans for them to step out of.
+    this.surge('土', '冰');
+    this.surge('土', '影');
+    this.surgeTriad('幽都印', ['符', '土', '影']);
+    this.surgeTriad('玄冥甲', ['土', '冰', '影']);
+    this.surgeTriad('玄霜壁', ['冰', '风', '土']);
     if (this.triad('幽都印')) {
       for (let i = 0; i < 3; i++) this.spawnWard(i + 7);
       for (let i = 0; i < 8; i++) {
@@ -384,13 +466,21 @@ export class Attacks {
   private arena: Battlefield | null = null;
   private bodyX = 0;
   private bodyY = 0;
+  private bodyR = 44;
   private lastDropX = 0;
   private lastDropY = 0;
 
-  update(dt: number, body: { x: number; y: number }, battlefield: Battlefield): void {
+  update(
+    dt: number,
+    body: { x: number; y: number; radius?: number },
+    battlefield: Battlefield,
+  ): void {
     this.arena = battlefield;
     this.bodyX = body.x;
     this.bodyY = body.y;
+    // The rings leave the body's edge, and the body grows with the realm — a hard-coded radius put
+    // them *inside* a 大乘 slime, which reads as the pet being hit rather than as it casting.
+    if (body.radius) this.bodyR = body.radius;
     this.clock += dt;
 
     if (this.has('土')) {
@@ -414,6 +504,13 @@ export class Attacks {
     }
 
     this.step(dt, battlefield);
+
+    const ringing: Surge[] = [];
+    for (const surge of this.surges) {
+      surge.age += dt;
+      if (surge.age < surge.life) ringing.push(surge);
+    }
+    this.surges = ringing;
 
     const burning: Spark[] = [];
     for (const spark of this.sparks) {
@@ -450,6 +547,7 @@ export class Attacks {
     if (school === '符') {
       // 阵符: the talismans stop flying and stand in a ring on the ground instead.
       if (this.paired('符', '土')) {
+        this.surge('符', '土');
         const count = 8;
         for (let i = 0; i < count; i++) {
           const angle = (i / count) * Math.PI * 2;
@@ -478,6 +576,7 @@ export class Attacks {
         const away = Math.hypot(mark.x - this.bodyX, mark.y - this.bodyY) || 1;
         // 符剑: it circles for a moment first, then goes.
         const orbit = this.paired('符', '剑');
+        if (orbit) this.surge('符', '剑');
         this.push(
           '符',
           orbit ? 'aimed-orbit' : 'aimed',
@@ -527,6 +626,14 @@ export class Attacks {
       // 三才剑阵: the cut leaves on a curve instead of a line, as though it were following the ring
       // of talismans round.
       const circling = this.triad('三才剑阵');
+      // The sword answers on the third beat only — 收势. Ringing on all three would be three rings
+      // a quarter second apart, which is a strobe rather than a flourish.
+      if (form.cross) {
+        this.surge('剑', '风');
+        this.surge('剑', '雷');
+        this.surgeTriad('三才剑阵', ['符', '剑', '雷']);
+        this.surgeTriad('瘴风刃', ['风', '剑', '毒']);
+      }
       for (const way of headings) {
         const blade = this.push(
           '剑',
@@ -582,6 +689,7 @@ export class Attacks {
       // 三灾劫: the three disasters land together. Lightning into the pool, then a ring of frost
       // out of it — one event with three colours in it, which is what a 三合 should look like.
       if (this.triad('三灾劫')) {
+        this.surgeTriad('三灾劫', ['雷', '火', '冰']);
         const bolt = this.push('雷', 'chain', at.x, at.y - 300, 0, 0, 0, 0.3, 300, 0);
         bolt.path = [
           { x: at.x, y: at.y - 300 },
@@ -656,6 +764,8 @@ export class Attacks {
         burning ? 2 : 1,
       );
       // 风毒 drifts; 万毒蛊 follows.
+      if (this.paired('毒', '风')) this.surge('毒', '风');
+      this.surgeTriad('业火鬼', ['毒', '火', '影']);
       if (this.paired('毒', '风')) {
         puff.vx = (Math.random() - 0.5) * 34;
         puff.vy = (Math.random() - 0.5) * 34;
@@ -851,6 +961,7 @@ export class Attacks {
         if (battlefield.cull(e.x, e.y, e.reach, 1) > 0) {
           // 雷符: where a talisman lands, one more jumps to whatever is nearest.
           if (this.paired('符', '雷')) {
+            this.surge('符', '雷');
             const next = battlefield.closest(e.x, e.y, 150);
             if (next) {
               battlefield.cull(next.x, next.y, Touch, 1);
@@ -926,6 +1037,7 @@ export class Attacks {
         }
         // 风雪: the blades leave frost behind them, and the frost bites too.
         if (this.paired('风', '冰') && Math.random() < dt * 9) {
+          this.surge('风', '冰');
           this.push('风', 'frost', e.x, e.y, 0, 0, 0, 0.7, 20, 1);
         }
       } else if (e.kind === 'zone' || e.kind === 'frost' || e.kind === 'trail' || e.kind === 'trail-fire') {
@@ -948,6 +1060,7 @@ export class Attacks {
             this.spark(e.x, e.y, 5, e.school, 150);
             // 雷火: the ground fire reaches out for a neighbour every time it catches something.
             if (e.school === '火' && this.paired('火', '雷')) {
+              this.surge('火', '雷');
               const next = battlefield.closest(e.x, e.y, 170);
               if (next) {
                 battlefield.cull(next.x, next.y, Touch, 1);
@@ -962,12 +1075,14 @@ export class Attacks {
             if (e.school === '火' && this.paired('火', '冰')) {
               const inside = Math.hypot(e.x - this.bodyX, e.y - this.bodyY) < span('冰', this.levelOf('冰'));
               if (inside) {
+                this.surge('火', '冰');
                 battlefield.cull(e.x, e.y, 72, 2);
                 this.push('火', 'burst', e.x, e.y, 0, 0, 0, 0.36, 72, 0);
               }
             }
             // 焚瘴: a cloud that catches fire takes the rest of the cloud with it.
             if (e.kind === 'trail-fire') {
+              this.surge('火', '毒');
               for (const other of this.live) {
                 if (other.kind === 'trail-fire' && other !== e && other.cool <= 0) {
                   if (Math.hypot(other.x - e.x, other.y - e.y) < e.reach * 2.4) other.cool = 0.06;
@@ -1007,11 +1122,13 @@ export class Attacks {
           this.spark(e.x, e.y, 6, '影', 200, e.angle, 1.8);
           // 影毒: everything it touches is left poisoned.
           if (this.paired('影', '毒')) {
+            this.surge('影', '毒');
             this.push('影', 'trail', e.x, e.y, 0, 0, 0, 1.4, 34, 1);
           }
         }
         // 傀符: it throws talismans as well.
         if (this.paired('影', '符') && mark && e.cool <= 0 && Math.random() < dt * 1.2) {
+          this.surge('影', '符');
           const to = Math.hypot(mark.x - e.x, mark.y - e.y) || 1;
           this.push(
             '符',
@@ -1039,7 +1156,13 @@ export class Attacks {
   }
 
   bounds(): { x: number; y: number; width: number; height: number } | null {
-    if (this.live.length === 0 && this.sparks.length === 0 && !this.has('冰') && !this.has('土')) {
+    if (
+      this.live.length === 0 &&
+      this.sparks.length === 0 &&
+      this.surges.length === 0 &&
+      !this.has('冰') &&
+      !this.has('土')
+    ) {
       return null;
     }
     let left = Infinity;
@@ -1061,6 +1184,7 @@ export class Attacks {
       take(s.x, s.y, s.size + 3);
       take(s.x - s.vx * SparkTail, s.y - s.vy * SparkTail, s.size + 3);
     }
+    for (const surge of this.surges) take(surge.x, surge.y, surge.from + 190);
     if (this.has('冰')) take(this.bodyX, this.bodyY, span('冰', this.levelOf('冰')) + 16);
     if (this.has('土') && this.shellLeft > 0) take(this.bodyX, this.bodyY, 96);
     if (left === Infinity) return null;
@@ -1092,9 +1216,85 @@ export class Attacks {
     if (this.has('冰')) this.drawField(context);
     for (const e of this.live) this.drawOne(context, e);
     if (this.has('土') && this.shellLeft > 0) this.drawShell(context);
+    this.drawSurges(context);
     this.drawSparks(context);
 
     context.restore();
+  }
+
+  /**
+   * The rings the body throws when a pairing fires.
+   *
+   * One ring per school, staggered, each easing outward fast and thinning as it goes — plus a
+   * short crown of spokes at the start, which is what makes the first frame read as a *shove*
+   * rather than as something expanding gently. Drawn last so they sit over everything, because the
+   * point of them is to say **this came from here**.
+   */
+  private drawSurges(context: CanvasRenderingContext2D): void {
+    for (const surge of this.surges) {
+      // Two frames of white over the body before anything expands. The rings alone read as a nice
+      // ripple; the flash is what reads as a *hit*, and it is the cheapest frame in the file.
+      const blink = 1 - Math.min(1, surge.age / 0.09);
+      if (blink > 0) {
+        const pop = context.createRadialGradient(
+          surge.x,
+          surge.y,
+          0,
+          surge.x,
+          surge.y,
+          surge.from * (1.1 + 0.9 * (1 - blink)),
+        );
+        pop.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+        pop.addColorStop(0.55, surge.hues[0].core);
+        pop.addColorStop(1, clear(surge.hues[0].edge));
+        context.globalAlpha = blink * blink;
+        context.fillStyle = pop;
+        context.beginPath();
+        context.arc(surge.x, surge.y, surge.from * (1.1 + 0.9 * (1 - blink)), 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = 1;
+      }
+      for (const [i, hue] of surge.hues.entries()) {
+        const at = (surge.age - i * 0.06) / surge.life;
+        if (at <= 0 || at >= 1) continue;
+        // Fast out, slow at the end: a ring that expands linearly reads as a bubble.
+        const eased = 1 - (1 - at) * (1 - at) * (1 - at);
+        const r = surge.from + eased * (150 + i * 26);
+        const fade = 1 - at;
+
+        const ring = context.createRadialGradient(surge.x, surge.y, r * 0.72, surge.x, surge.y, r);
+        ring.addColorStop(0, clear(hue.edge));
+        ring.addColorStop(0.55, hue.body);
+        ring.addColorStop(0.8, hue.core);
+        ring.addColorStop(1, clear(hue.core));
+        context.globalAlpha = fade * fade * 0.9;
+        context.fillStyle = ring;
+        context.beginPath();
+        context.arc(surge.x, surge.y, r, 0, Math.PI * 2);
+        context.fill();
+
+        // The shove: spokes, only in the first third, shortening as the ring outruns them.
+        if (at < 0.34) {
+          const kick = 1 - at / 0.34;
+          context.globalAlpha = kick * 0.85;
+          context.strokeStyle = hue.core;
+          context.lineWidth = 2.4 * kick + 0.6;
+          const spokes = 10;
+          for (let k = 0; k < spokes; k++) {
+            const angle = (k / spokes) * Math.PI * 2 + i * 0.3;
+            context.beginPath();
+            const foot = surge.from + 2;
+            context.moveTo(surge.x + Math.cos(angle) * foot, surge.y + Math.sin(angle) * foot);
+            context.lineTo(
+              surge.x + Math.cos(angle) * (foot + 34 * kick),
+              surge.y + Math.sin(angle) * (foot + 34 * kick),
+            );
+            context.stroke();
+          }
+        }
+      }
+      context.globalAlpha = 1;
+    }
   }
 
   /** The dark side of an effect: a silhouette under the light, so it has an edge anywhere. */
