@@ -94,6 +94,42 @@ const AimedSpeed = 980;
 const ArcSpeed = 660;
 const ArcSeconds = 0.75;
 const ArcWidth = 88;
+
+/**
+ * 剑气's three forms, and the rest after them.
+ *
+ * A metronome is not a swordsman. One crescent every 1.15 seconds, always at the nearest thing, is
+ * *correct* and it is the least interesting way a sword could possibly behave — there is no
+ * phrasing in it, so there is nothing to recognise and nothing to look forward to.
+ *
+ * So it is a form of three: **起手** off the left shoulder, **反手** back across it, and **收势**
+ * through the middle as a cross. The first two come fast, and then it holds — the pause is what
+ * makes the three read as one phrase instead of as three events, and it is the only part of this
+ * that a player will actually feel.
+ *
+ * `beat` is a multiple of the school's cadence and the three **sum to 3.0**, so the rate is exactly
+ * what it was before. This buys phrasing and costs nothing, which is the only honest way to add
+ * showmanship to something already balanced.
+ */
+interface Form {
+  /** Radians off the aim, so consecutive cuts do not lie on top of each other. */
+  tilt: number;
+  /** A cross, thrown along the aim and across it at once. */
+  cross: boolean;
+  /** How big the crescent is drawn and how far it reaches, as a multiple. */
+  scale: number;
+  /** Cadence multiples until the next form. */
+  beat: number;
+}
+
+const FORMS: Form[] = [
+  { tilt: -0.44, cross: false, scale: 0.95, beat: 0.3 },
+  { tilt: 0.44, cross: false, scale: 0.95, beat: 0.3 },
+  { tilt: 0, cross: true, scale: 1.35, beat: 2.4 },
+];
+
+/** How long the qi gathers at the shoulder before a cut leaves. */
+const WindUpSeconds = 0.1;
 /** How fast 风刃 goes round, in radians a second. */
 const OrbitRate = 3.1;
 /** How fast an 影卫 moves, and how often it can kill. */
@@ -331,8 +367,9 @@ export class Attacks {
       // Clamped to one activation a frame: a cadence shorter than a frame would otherwise fire a
       // burst proportional to how badly the machine is struggling, which is backwards.
       if (left <= 0) {
-        left = period;
-        this.fire(h.school, battlefield);
+        // A school may ask for a different gap before its next turn — 剑气 does, because its three
+        // forms are not evenly spaced. Everything else returns nothing and keeps the flat cadence.
+        left = period * (this.fire(h.school, battlefield) ?? 1);
       }
       this.timers.set(h.school, left);
     }
@@ -362,8 +399,11 @@ export class Attacks {
     return base * 0.8;
   }
 
-  /** One activation of one school. */
-  private fire(school: School, battlefield: Battlefield): void {
+  /** Which form 剑气 is on. */
+  private form = 0;
+
+  /** One activation of one school. Returns a multiple of the cadence to wait, if it wants one. */
+  private fire(school: School, battlefield: Battlefield): number | void {
     const level = this.levelOf(school);
     const reach = span(school, level);
     const spec = SPECS[school];
@@ -417,17 +457,23 @@ export class Attacks {
 
     if (school === '剑') {
       const mark = battlefield.closest(this.bodyX, this.bodyY, reach * 1.4);
-      const heading = mark
+      const aim = mark
         ? Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX)
         : Math.random() * Math.PI * 2;
+      const form = FORMS[this.form % FORMS.length];
+      this.form += 1;
+
+      const heading = aim + form.tilt;
       const headings: number[] = [];
       if (this.evolved('剑')) {
-        // 万剑归宗: a fan of five.
-        for (let i = 0; i < 5; i++) headings.push(heading + (i - 2) * 0.5);
+        // 万剑归宗: a fan of five, and 收势 widens it.
+        const spread = form.cross ? 0.72 : 0.5;
+        for (let i = 0; i < 5; i++) headings.push(heading + (i - 2) * spread);
       } else if (this.paired('剑', '风')) {
-        // 风剑: all four quarters at once, which is what "合成整圈" becomes once it is thrown
-        // rather than swung.
         for (let i = 0; i < 4; i++) headings.push(heading + (i * Math.PI) / 2);
+      } else if (form.cross) {
+        // 收势: through the middle and across it at once.
+        headings.push(heading, heading + Math.PI / 2);
       } else {
         headings.push(heading);
       }
@@ -449,13 +495,17 @@ export class Attacks {
           Math.sin(way) * ArcSpeed,
           way,
           ArcSeconds,
-          reach,
+          reach * form.scale,
           bite,
         );
-        // Reused as distance flown, so it can also stop at its reach rather than only at its life.
-        blade.cool = 0;
+        // Held back a breath, so the qi visibly gathers before the cut leaves. `push` stores the
+        // scale on an effect that has no other use for `index`.
+        blade.age = -WindUpSeconds;
+        blade.index = Math.round(form.scale * 100);
+        // The gather itself, at the shoulder, on the way the cut is going.
+        this.push('剑', 'gather', this.bodyX, this.bodyY, 0, 0, way, WindUpSeconds, 46, 0);
       }
-      return;
+      return form.beat;
     }
 
     if (school === '雷') {
@@ -1384,6 +1434,32 @@ export class Attacks {
       return;
     }
 
+    if (e.kind === 'gather') {
+      // Qi drawn to the shoulder before the cut leaves: four lines closing onto one bright point,
+      // on the heading the crescent is about to take. A tenth of a second, and it is the whole
+      // difference between a sword that swings and a sword that is *about to*.
+      const t = Math.min(1, e.age / Math.max(0.0001, e.life));
+      const at = { x: e.x + Math.cos(e.angle) * 30, y: e.y + Math.sin(e.angle) * 30 };
+      context.save();
+      context.translate(at.x, at.y);
+      context.rotate(e.angle);
+      context.globalAlpha = 0.85 * t;
+      context.strokeStyle = hue.body;
+      context.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const around = (i / 4) * Math.PI * 2 + this.clock * 3;
+        const out = e.reach * (1 - t);
+        context.beginPath();
+        context.moveTo(Math.cos(around) * out, Math.sin(around) * out);
+        context.lineTo(Math.cos(around) * out * 0.3, Math.sin(around) * out * 0.3);
+        context.stroke();
+      }
+      this.bloom(context, 0, 0, 8 + 16 * t, hue, 0.5 + 0.5 * t);
+      context.globalAlpha = 1;
+      context.restore();
+      return;
+    }
+
     if (e.kind === 'arc') {
       // A blade, not a saucer.
       //
@@ -1392,8 +1468,11 @@ export class Attacks {
       // travelling. So: long across the cut and thin along it, and the wake is one tapered band
       // that narrows to nothing behind, the way a thrown edge actually leaves the air.
       const rung = this.rung('剑');
-      const half = (ArcWidth / 2) * (1 + rung * 0.1);
-      const bow = 11 + rung * 1.6;
+      // 收势 is drawn bigger than the two cuts that set it up, which is most of what makes the
+      // third beat land as the end of a phrase rather than as one more swing.
+      const form = (e.index ?? 100) / 100;
+      const half = (ArcWidth / 2) * (1 + rung * 0.1) * form;
+      const bow = (11 + rung * 1.6) * form;
       const shape = (scale: number, lead: number) => {
         context.beginPath();
         context.moveTo(lead, -half * scale);

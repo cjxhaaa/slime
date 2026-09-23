@@ -1645,6 +1645,25 @@ all** — a flat line rather than an inverted one, which is why it took a sweep 
 The lesson: I should have swept every school at every level back when I made levelling *visible*. I
 verified that a level could be seen and never verified that it did anything.
 
+#### 剑气 has a phrase now, not a pulse
+
+A metronome is not a swordsman. One crescent every 1.15 seconds, always at the nearest thing, is
+*correct* and it is the least interesting way a sword could behave — there is no phrasing in it, so
+there is nothing to recognise and nothing to look forward to.
+
+It is a form of three now: **起手** off the left shoulder, **反手** back across it, and **收势**
+through the middle as a cross, drawn a third bigger. The first two come 0.25s apart and then it
+**holds for two seconds**. The pause is the point — it is what makes three cuts read as one phrase
+instead of three events, and it is the only part of this a player actually feels.
+
+Each cut is preceded by a tenth of a second of **gathering**: four lines closing onto one bright
+point at the shoulder, on the heading the crescent is about to take. That is the whole difference
+between a sword that swung and a sword that is *about to*.
+
+The three beats **sum to exactly 3.0 cadences**, so the rate is unchanged — measured, the cycle is
+2.5s against 3 × 0.831. That is the only honest way to add showmanship to something already
+balanced: buy the phrasing, pay nothing for it.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held
