@@ -104,10 +104,14 @@ quietBox.addEventListener('change', () => {
 // ---------------------------------------------------------------------------------------------
 // 演武场
 //
-// Build a loadout by hand and watch it fire, without drafting for it or reaching the realm it
-// belongs to. It exists because the effects are the part of this mode that needs looking at
-// repeatedly, and the only way to see a particular pairing was to keep entering trials and hoping
-// the draft dealt it.
+// Build a loadout by hand and watch it fire **against posts that stand still**. It exists because
+// the effects are the part of this mode that needs looking at repeatedly, and the only way to see a
+// particular pairing was to keep entering trials and hoping the draft dealt it.
+//
+// It opened a real 历练 at first, which was the wrong shape: looking at one effect repeatedly meant
+// fighting a game about it — waiting for something to walk into range, losing what you were watching
+// when it died, and being thrown out after ninety seconds. Three rings of posts, no clock, no
+// opponent.
 //
 // **It pays nothing.** No 修为, and the save is not written. That is what makes it safe to ship in
 // the release build rather than hiding it behind a dev flag: it is a preview window, not a shortcut
@@ -116,7 +120,6 @@ quietBox.addEventListener('change', () => {
 // could not reach.
 
 const SCHOOL_NAMES: [School, string][] = SCHOOLS.map((key) => [key, SPECS[key].name]);
-const REALMS = ['练气', '筑基', '金丹', '元婴', '化神', '炉虚', '合体', '大乘'];
 
 interface Slot {
   school: School;
@@ -146,16 +149,11 @@ let loadout: Slot[] = [{ school: '符', level: 1, evolved: false }];
 const chipRow = el<HTMLDivElement>('arena-schools');
 const pickedRow = el<HTMLDivElement>('arena-picked');
 const comboLine = el<HTMLParagraphElement>('arena-combos');
-const realmPick = el<HTMLSelectElement>('arena-realm');
-const safeBox = el<HTMLInputElement>('arena-safe');
 
-for (let realm = 1; realm < REALMS.length; realm++) {
-  const option = document.createElement('option');
-  option.value = String(realm);
-  option.textContent = REALMS[realm];
-  if (realm === 4) option.selected = true;
-  realmPick.append(option);
-}
+// The realm picker and 护体不损 are gone. Both existed because the yard used to run a real trial;
+// against posts that never move and never hit back, a realm decides nothing a level slider does
+// not already decide, and there is no damage to be protected from. **A control that changes
+// nothing is worse than no control** — it invites you to believe it did something.
 
 function held(school: School): boolean {
   return loadout.some((slot) => slot.school === school);
@@ -258,14 +256,9 @@ function push(): void {
 
 el<HTMLButtonElement>('arena-start').addEventListener('click', () => {
   if (loadout.length === 0) return;
-  tell('arena-start', {
-    realm: Number(realmPick.value),
-    loadout,
-    safe: safeBox.checked,
-  });
+  tell('arena-start', { loadout });
 });
 
 el<HTMLButtonElement>('arena-stop').addEventListener('click', () => tell('arena-stop'));
-safeBox.addEventListener('change', () => push());
 
 render();

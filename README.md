@@ -1533,10 +1533,24 @@ The effects are the part of this mode that needs looking at repeatedly, and unti
 to see a particular pairing fire was to keep entering trials and hope the draft dealt it. Settings
 now has a **演武场**: pick any of the nine schools (up to four), drag each one's level, tick
 evolution, and the pairings you have made are named on the spot with what they do — "雷符（符落处再
-分一道，击其近者）". Then 开打. No realm gate, no draft. The realm is a dropdown, because it decides
-the arrival pace and which breeds turn up. 护体不损 is on by default, since being killed while
-looking at an effect is only annoying. Moving a slider **applies mid-bout**, so you can watch a
-level change without restarting.
+分一道，击其近者）". Moving a slider **applies live**, so you can watch a level change without
+restarting.
+
+**It is a practice yard, not a run — the first version got that wrong.** It used to open a real
+历练: 邪气 arriving on a schedule, closing in, a ninety-second clock. Which turned "look at one
+effect repeatedly" into *fighting a game about it* — waiting for something to walk into range,
+losing the thing you were watching when it died, being thrown out after a minute and a half. **A
+preview should not have an opponent.**
+
+It is three rings of motionless posts now (150 / 290 / 430 px) that get back up a moment after they
+go down, and **there is no clock**: it runs until you stop it. The rings are not decoration. With
+targets at known distances, **whichever ring stops lighting up is that school'"'"'s reach** — and reach
+is the one property that is otherwise invisible, because normally the 邪气 come to you.
+
+The realm dropdown and 护体不损 went with it. Against posts that never move and never hit back, a
+realm decides nothing a level slider does not already decide, and there is no damage to be protected
+from. **A control that changes nothing is worse than no control** — it invites you to believe it did
+something.
 
 **It pays nothing and writes nothing.** That is what makes it safe to ship in the release build
 instead of hiding it behind a dev flag: it is a preview window, not a shortcut up the ladder. The

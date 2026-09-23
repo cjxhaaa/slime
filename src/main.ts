@@ -19,6 +19,7 @@ import { Trial, harvest } from './game/Trial';
 import { Arsenal, type Holding } from './game/Arsenal';
 import { EVOLUTIONS, activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
+import { Dummies } from './game/Dummies';
 import { Draft } from './ui/Draft';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
@@ -69,15 +70,22 @@ const draft = new Draft();
 let killsSeen = 0;
 
 /**
- * 演武场: a bout started from Settings with a loadout built by hand.
+ * 演武场: a practice yard, opened from Settings with a loadout built by hand.
  *
- * Null outside one. When it is set, the run skips the draft entirely — the build is given rather
- * than dealt — and **pays nothing at all**: no 修为, no save. That is what makes it safe to ship
- * in the release build instead of hiding it behind a dev flag. The debug hooks this app shipped by
- * accident once were dangerous because they could put the save into states the game itself could
- * not reach; a preview that writes nothing cannot.
+ * It used to start a real 历练 — 邪气 arriving on a schedule, closing in, a ninety-second clock —
+ * which meant that looking at one effect repeatedly involved *fighting a game about it*: waiting
+ * for something to walk into range, losing what you were watching when it died, and being thrown
+ * out after a minute and a half. A preview should not have an opponent.
+ *
+ * So it is `Dummies` now: posts that stand still in three rings and get back up a moment after
+ * they go down. Nothing arrives, nothing attacks, and **it does not end** until you say so.
+ *
+ * It still pays nothing and writes nothing, which is what makes it safe in the release build
+ * rather than behind a dev flag. The hooks this app shipped by accident once were dangerous
+ * because they could put the save into states the game itself cannot reach; a preview that writes
+ * nothing cannot.
  */
-let arena: { safe: boolean } | null = null;
+let arena: { dummies: Dummies } | null = null;
 const bubble = new Bubble();
 const paw = new PawCursor();
 const dragVelocity = new VelocityTracker();
@@ -597,15 +605,16 @@ function enterTrial(width: number, height: number): void {
  * Deliberately not gated on 筑基. The gate exists so that somebody meets the mode after they have
  * crossed a realm; it has nothing to say about looking at an effect on purpose.
  */
-function startArena(realm: number, loadout: Holding[], safe: boolean): void {
+function startArena(loadout: Holding[]): void {
   if (inTrial) leaveTrial();
   const { width, height } = canvas;
   inTrial = true;
-  arena = { safe };
+  const dummies = new Dummies();
+  arena = { dummies };
   trialReturn = { x: slime.x, y: slime.y };
   slime.planar = true;
   slime.centreIn(width, height);
-  trial.start(realm);
+  dummies.place(slime.x, slime.y);
   attacks.reset();
   attacks.carry(loadout, activeCombos(loadout.map((slot) => slot.school)));
   killsSeen = 0;
@@ -652,12 +661,13 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
 
 /** Ends the run and pays out what it came to. `harvest` holds the reasoning about how much. */
 function settleTrial(): void {
-  // A bout in the 演武场 is worth nothing and is not written down. Checked first so that no
-  // later edit to this function can accidentally give it something.
+  // The 演武场 is worth nothing and is not written down. Checked first so that no later edit to
+  // this function can accidentally give it something.
   if (arena !== null) {
+    const struck = arena.dummies.hits;
     arena = null;
     trialUntil = performance.now() + TrialBubbleMs;
-    trialSaid = `演武已毕\n除邪 ${trial.killCount} · 修为无增`;
+    trialSaid = `演武已毕\n中桩 ${struck} · 修为无增`;
     leaveTrial();
     return;
   }
@@ -1081,22 +1091,20 @@ function frame(now: number): void {
   draft.advance(elapsed);
   if (inTrial && !draft.isOpen) {
     const body = { x: slime.x, y: slime.y, radius: slime.blob.restRadius };
-    // In the arena with 护体不损 on, the shell simply always catches it. Wrapping the guard is
-    // enough — the trial already asks permission before every wound, so nothing in it has to know
-    // that a preview mode exists.
-    const guard =
-      arena?.safe === true
-        ? { absorb: () => (attacks.absorb(), true), fields: () => attacks.fields() }
-        : attacks;
-    trial.update(elapsed, body, width, height, guard);
-    attacks.update(elapsed, body, trial);
+    if (arena !== null) {
+      // The yard. No arrivals, no contact, no clock — and `Dummies` implements the same
+      // `Battlefield` the trial does, so nothing in `Attacks` has a branch for practice.
+      arena.dummies.update(elapsed);
+      attacks.update(elapsed, body, arena.dummies);
+    } else {
+      trial.update(elapsed, body, width, height, attacks);
+      attacks.update(elapsed, body, trial);
 
-    if (arena === null) {
       for (let i = killsSeen; i < trial.killCount; i++) arsenal.countKill();
       killsSeen = trial.killCount;
+      if (trial.outcome !== 'running') settleTrial();
+      else if (arsenal.due) offerDraft();
     }
-    if (trial.outcome !== 'running') settleTrial();
-    else if (arena === null && arsenal.due) offerDraft();
   }
 
   volley.update(elapsed, width, height);
@@ -1238,7 +1246,9 @@ function frame(now: number): void {
     unionRect(
       unionRect(
         unionRect(unionRect(glyphs.bounds(), motes.bounds()), volley.bounds()),
-        inTrial ? unionRect(trial.bounds(), attacks.bounds()) : null,
+        inTrial
+          ? unionRect(arena !== null ? arena.dummies.bounds() : trial.bounds(), attacks.bounds())
+          : null,
       ),
       unionRect(
         unionRect(
@@ -1309,7 +1319,8 @@ function frame(now: number): void {
     context.clip(clip);
 
     if (inTrial) {
-      trial.draw(context);
+      if (arena !== null) arena.dummies.draw(context);
+      else trial.draw(context);
       attacks.draw(context);
     }
     motes.draw(context, slime.bodyColour);
@@ -1792,10 +1803,10 @@ async function main(): Promise<void> {
   // Settings has no state of its own: it asks, and this window — which owns the save — answers.
   await listen('want-state', () => emitPetState());
 
-  await listen<{ realm: number; loadout: Holding[]; safe: boolean }>('arena-start', (event) => {
-    const { realm, loadout, safe } = event.payload;
+  await listen<{ loadout: Holding[] }>('arena-start', (event) => {
+    const { loadout } = event.payload;
     if (!Array.isArray(loadout) || loadout.length === 0) return;
-    startArena(realm, loadout, safe);
+    startArena(loadout);
   });
 
   // Sent on every slider and checkbox, so a change is felt without restarting the bout. Ignored

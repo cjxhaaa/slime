@@ -24,8 +24,8 @@
       <section id="arena-box">
         <h2>演武场</h2>
         <p class="muted">
-          自己搭一套法脉直接开打，用来看特效。不论境界都能进，不抽卡，
-          <strong>也不结算任何修为</strong> —— 它是个预览窗口，不是一条损道。
+          自己搭一套法脉，对着木桩打。桩不动、不还手、倒了就站回来，也
+          <strong>没有时间限制</strong>，不点结束就一直打。不结算任何修为。
         </p>
 
         <div id="arena-schools" class="chips"></div>
@@ -33,21 +33,13 @@
         <p id="arena-combos" class="muted combos"></p>
 
         <div class="row">
-          <label class="field">
-            <span>境界</span>
-            <select id="arena-realm"></select>
-          </label>
-          <label class="check inline">
-            <input id="arena-safe" type="checkbox" checked />
-            <span>护体不损</span>
-          </label>
-        </div>
-
-        <div class="row">
-          <button id="arena-start">开打</button>
+          <button id="arena-start">上桩</button>
           <button id="arena-stop" class="secondary">结束</button>
         </div>
-        <p class="muted">开打后可以用鼠标拖动史莱姆躲避。右键身体也能结束。</p>
+        <p class="muted">
+          桩排成三圈（150 / 290 / 430 像素）—— 哪一圈不再倒，就是这套法脉的射程边界。
+          拖动史莱姆可以换位置（瘴气需要走起来才留痕）。拉滑块当场生效。
+        </p>
       </section>
 
       <section>
