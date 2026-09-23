@@ -28,6 +28,15 @@ export interface SaveState {
   seenIntro: boolean;
   /** Seclusion: the keyboard is being left alone and nothing asks for attention. */
   quiet: boolean;
+  /**
+   * The chosen language, or null to follow the system.
+   *
+   * Null rather than a resolved tag, so somebody who never opens the language menu keeps following
+   * their system — including after they change *that*. Storing the resolved value would freeze the
+   * first guess forever, which is the kind of thing nobody notices until they switch their OS to
+   * another language and this one alone stays behind.
+   */
+  locale: string | null;
 }
 
 /**
@@ -83,6 +92,7 @@ export async function loadSave(): Promise<SaveState | null> {
       settledAt?: unknown;
       seenIntro?: unknown;
       quiet?: unknown;
+      locale?: unknown;
     };
     // A file from a future version is not something this build can reason about, and guessing at
     // it is how a save gets quietly mangled. Starting fresh is bad; corrupting is worse.
@@ -116,6 +126,9 @@ export async function loadSave(): Promise<SaveState | null> {
       settledAt: numberOr(parsed.settledAt, Date.now() / 1000),
       seenIntro: parsed.seenIntro === true,
       quiet: parsed.quiet === true,
+      // Absent in every save written before there was a language menu, which is the common case
+      // and not an error: null means "follow the system", and that is the right default for them.
+      locale: typeof parsed.locale === 'string' ? parsed.locale : null,
     };
   } catch {
     return null;

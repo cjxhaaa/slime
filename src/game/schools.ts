@@ -406,7 +406,7 @@ export interface Evolution {
 
 export const EVOLUTIONS: Record<School, Evolution> = {
   符: { of: '符', name: '万符朝元', effect: '每息一符，永不落空' },
-  剑: { of: '剑', name: '万剑归宗', effect: '扫出的不再是一道，是一片' },
+  剑: { of: '剑', name: '万剑归宗', effect: '斩出的不再是一道，是一片' },
   雷: { of: '雷', name: '九天神雷', effect: '雷沿着敌人一路传下去' },
   火: { of: '火', name: '焚天炉', effect: '火不熄，且随你走' },
   冰: { of: '冰', name: '玄冰狱', effect: '寒域之内，行者尽止' },

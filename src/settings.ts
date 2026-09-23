@@ -1,13 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
-import {
-  MaxLevel,
-  SCHOOLS,
-  SPECS,
-  type School,
-  activeCombos,
-  activeTriads,
-} from './game/schools';
+import { MaxLevel, SCHOOLS, type School, activeCombos, activeTriads } from './game/schools';
+import { ENDONYMS, LOCALES, type Locale, isLocale, setLocale, words } from './i18n';
 
 // A settings page that fails silently is indistinguishable from one that never loaded, which is
 // exactly the hole this fell into: a blank white window with no way to tell whether the document,
@@ -126,7 +120,55 @@ quietBox.addEventListener('change', () => {
 // friends on `window` — was dangerous precisely because it *could* put the save somewhere the game
 // could not reach.
 
-const SCHOOL_NAMES: [School, string][] = SCHOOLS.map((key) => [key, SPECS[key].name]);
+/**
+ * The language row.
+ *
+ * Every label is the language's **own name for itself**, never translated — a language menu is
+ * read by somebody who cannot yet read the rest of the app, so 「日本語」 has to say 日本語 whatever
+ * the app is currently set to.
+ */
+const languageChips = el<HTMLDivElement>('language-chips');
+let chosen: Locale | null = null;
+
+function paintLanguage(): void {
+  const w = words();
+  el<HTMLHeadingElement>('language-title').textContent = w.settings.languageTitle;
+  el<HTMLParagraphElement>('language-blurb').textContent = w.settings.languageBlurb;
+  languageChips.replaceChildren(
+    ...LOCALES.map((tag) => {
+      const chip = document.createElement('button');
+      chip.className = 'chip';
+      chip.type = 'button';
+      chip.textContent = ENDONYMS[tag];
+      chip.setAttribute('aria-pressed', String(tag === chosen));
+      chip.addEventListener('click', () => {
+        chosen = tag;
+        setLocale(tag);
+        tell('locale-changed', tag);
+        paintAll();
+      });
+      return chip;
+    }),
+  );
+}
+
+/** The arena's headings and buttons, which are static markup in every other section. */
+function paintArena(): void {
+  const w = words();
+  el<HTMLHeadingElement>('arena-title').textContent = w.settings.arenaTitle;
+  el<HTMLParagraphElement>('arena-blurb').textContent = w.settings.arenaBlurb;
+  el<HTMLParagraphElement>('arena-rings').textContent = w.settings.arenaRings;
+  el<HTMLButtonElement>('arena-start').textContent = w.settings.start;
+  el<HTMLButtonElement>('arena-stop').textContent = w.settings.stop;
+  el<HTMLButtonElement>('quit').textContent = w.settings.quitLabel;
+}
+
+/** Everything in this window that has words in it. */
+function paintAll(): void {
+  paintLanguage();
+  paintArena();
+  render();
+}
 
 interface Slot {
   school: School;
@@ -179,12 +221,13 @@ function toggle(school: School): void {
  * of sync with `loadout` — which is the entire failure mode of a hand-patched list.
  */
 function render(): void {
+  const w = words();
   chipRow.replaceChildren(
-    ...SCHOOL_NAMES.map(([key, name]) => {
+    ...SCHOOLS.map((key) => {
       const chip = document.createElement('button');
       chip.className = 'chip';
       chip.type = 'button';
-      chip.textContent = name;
+      chip.textContent = w.schools[key].name;
       chip.setAttribute('aria-pressed', String(held(key)));
       chip.disabled = !held(key) && loadout.length >= MaxSlots;
       chip.addEventListener('click', () => toggle(key));
@@ -198,7 +241,7 @@ function render(): void {
       row.className = 'slot';
 
       const name = document.createElement('b');
-      name.textContent = SPECS[slot.school].name;
+      name.textContent = w.schools[slot.school].name;
 
       const level = document.createElement('input');
       level.type = 'range';
@@ -211,7 +254,7 @@ function render(): void {
       const readout = document.createElement('span');
       readout.className = 'lv';
       const showLevel = () => {
-        readout.textContent = slot.evolved ? '★' : `${slot.level} 重`;
+        readout.textContent = slot.evolved ? '★' : String(slot.level);
       };
       showLevel();
       level.addEventListener('input', () => {
@@ -232,7 +275,7 @@ function render(): void {
         push();
       });
       const word = document.createElement('span');
-      word.textContent = '进化';
+      word.textContent = w.draft.evolve.replace('★ ', '');
       evolve.append(box, word);
 
       row.append(name, level, readout, evolve);
@@ -247,12 +290,21 @@ function render(): void {
   const forms = activeTriads(schools);
   // 三合 first, because a build that has one is defined by it — it costs three of the four slots.
   const lines: string[] = [];
-  for (const triad of forms) lines.push(`三合 · ${triad.name}（${triad.effect}）`);
-  if (made.length) lines.push(`合：${made.map((c) => `${c.name}（${c.effect}）`).join('、')}`);
+  for (const triad of forms) {
+    const said = w.triads[triad.of.join('')];
+    lines.push(`${w.settings.triadLabel} · ${said.name}（${said.blurb}）`);
+  }
+  if (made.length) {
+    const said = made.map((c) => {
+      const one = w.combos[c.pair.join('')];
+      return `${one.name}（${one.blurb}）`;
+    });
+    lines.push(`${w.settings.combosLabel}：${said.join('、')}`);
+  }
   comboLine.textContent = lines.length
     ? lines.join('\n')
     : loadout.length > 1
-      ? '这几个不相合。'
+      ? w.settings.noCombo
       : '';
   push();
 }
@@ -275,3 +327,19 @@ el<HTMLButtonElement>('arena-start').addEventListener('click', () => {
 el<HTMLButtonElement>('arena-stop').addEventListener('click', () => tell('arena-stop'));
 
 render();
+
+/**
+ * Settings does not choose the language; it displays the choice and sends changes.
+ *
+ * Same rule as 静修 and the rebirth: the overlay owns the save, so it owns the answer. This window
+ * asks on open and is told on change, so a change made here and a change made anywhere else arrive
+ * by the same path.
+ */
+void listen<{ locale: Locale; chosen: string | null }>('locale-state', (event) => {
+  chosen = isLocale(event.payload.chosen) ? event.payload.chosen : null;
+  setLocale(event.payload.locale);
+  paintAll();
+});
+tell('want-locale');
+
+paintAll();

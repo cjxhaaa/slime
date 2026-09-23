@@ -84,6 +84,9 @@ import { Attacks } from './Attacks.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
 import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
+import { DICTIONARIES, LOCALES, fill, isLocale, localeFor } from '../i18n/index.js';
+import { TRIADS as TRIAD_TABLE } from './schools.js';
+import { REALMS as REALM_NAMES } from './realms.js';
 
 let failures = 0;
 function check(label: string, actual: number, expected: number, tol = 1e-6): void {
@@ -1336,6 +1339,150 @@ for (const realm of [1, 4, Ascended - 1]) {
 }
 
 Math.random = wildRandom;
+
+
+// ---------------------------------------------------------------------------------------------
+// 语言. Five dictionaries, and the ways a translation goes wrong quietly.
+//
+// TypeScript already forces the fixed-shape parts — `realms`, `schools`, `evolutions`, `breeds`
+// are `Record`s over closed unions and a missing one will not compile. What it cannot check is the
+// three things below, and all three produce a game that *runs* and reads wrong.
+
+check('five locales', LOCALES.length, 5);
+
+// 0. **The tables and the source dictionary have to agree, word for word.**
+//
+// `SPECS`, `COMBOS`, `TRIADS`, `EVOLUTIONS`, `BREEDS`, `REALMS` and `FINDS` still carry their
+// Chinese text, and the UI does not read it — it reads the dictionary. That is deliberate: the
+// tables are where the design is written down, and a reader of `schools.ts` should be able to see
+// what 雷符 *is* without opening a translation file. But two copies of a string is two copies of a
+// string, so this pins them together: the moment somebody edits one and not the other, the run
+// fails and says which one.
+let drifted: string[] = [];
+const zh = DICTIONARIES['zh-Hans'];
+for (const school of SCHOOLS) {
+  if (zh.schools[school].name !== SPECS[school].name) drifted.push(`schools.${school}.name`);
+  if (zh.schools[school].blurb !== SPECS[school].blurb) drifted.push(`schools.${school}.blurb`);
+  if (zh.evolutions[school].name !== EVOLUTIONS[school].name) drifted.push(`evolutions.${school}.name`);
+  if (zh.evolutions[school].blurb !== EVOLUTIONS[school].effect) drifted.push(`evolutions.${school}.effect`);
+}
+for (const combo of COMBOS) {
+  const key = combo.pair.join('');
+  if (zh.combos[key]?.name !== combo.name) drifted.push(`combos.${key}.name`);
+  if (zh.combos[key]?.blurb !== combo.effect) drifted.push(`combos.${key}.effect`);
+}
+for (const triad of TRIAD_TABLE) {
+  const key = triad.of.join('');
+  if (zh.triads[key]?.name !== triad.name) drifted.push(`triads.${key}.name`);
+  if (zh.triads[key]?.blurb !== triad.effect) drifted.push(`triads.${key}.effect`);
+}
+for (const breed of BREEDS) {
+  if (zh.breeds[breed.kind] !== breed.name) drifted.push(`breeds.${breed.kind}`);
+}
+for (let i = 0; i < REALM_NAMES.length; i++) {
+  if (zh.realms[i] !== REALM_NAMES[i]) drifted.push(`realms[${i}]`);
+}
+for (let i = 0; i < FINDS.length; i++) {
+  if (zh.finds[i] !== FINDS[i]) drifted.push(`finds[${i}]`);
+}
+check(`the tables and 简体中文 agree${drifted.length ? ': ' + drifted.join(', ') : ''}`, drifted.length, 0);
+
+// 1. `combos` and `triads` are keyed by school characters, so they are `Record<string, ...>` and a
+//    missing key is legal TypeScript. Every dictionary must cover every pairing and every form,
+//    with nothing extra — an extra key is a typo that will never be read.
+let missingKeys: string[] = [];
+let strayKeys: string[] = [];
+const comboKeys = COMBOS.map((c) => c.pair.join(''));
+const triadKeys = TRIAD_TABLE.map((t) => t.of.join(''));
+for (const tag of LOCALES) {
+  const dict = DICTIONARIES[tag];
+  for (const key of comboKeys) if (!dict.combos[key]) missingKeys.push(`${tag} combos.${key}`);
+  for (const key of triadKeys) if (!dict.triads[key]) missingKeys.push(`${tag} triads.${key}`);
+  for (const key of Object.keys(dict.combos)) {
+    if (!comboKeys.includes(key)) strayKeys.push(`${tag} combos.${key}`);
+  }
+  for (const key of Object.keys(dict.triads)) {
+    if (!triadKeys.includes(key)) strayKeys.push(`${tag} triads.${key}`);
+  }
+}
+check(`every dictionary covers every pairing and form${missingKeys.length ? ': ' + missingKeys.join(', ') : ''}`, missingKeys.length, 0);
+check(`and carries nothing spare${strayKeys.length ? ': ' + strayKeys.join(', ') : ''}`, strayKeys.length, 0);
+
+// 2. Nothing is blank. An empty string type-checks and draws as a gap on a card.
+let blanks = 0;
+const walk = (value: unknown, path: string): void => {
+  if (typeof value === 'string') {
+    if (value.trim().length === 0) blanks++;
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => walk(item, `${path}[${i}]`));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, inner] of Object.entries(value)) walk(inner, `${path}.${key}`);
+  }
+};
+for (const tag of LOCALES) walk(DICTIONARIES[tag], tag);
+check('no dictionary has a blank string in it', blanks, 0);
+
+// 3. **The placeholders have to match**, and this is the one that actually bites. A line that says
+//    `{kills}` in one language and `{kill}` in another draws the literal braces on screen, and it
+//    only shows up on the day somebody plays in that language and finishes a run.
+const holes = (text: string): string[] => (text.match(/\{\w+\}/g) ?? []).slice().sort();
+let mismatched: string[] = [];
+const patterned: [string, (d: (typeof DICTIONARIES)['en']) => string][] = [
+  ['realmStage', (d) => d.realmStage],
+  ['draft.levelStep', (d) => d.draft.levelStep],
+  ['draft.pairsWith', (d) => d.draft.pairsWith],
+  ['draft.triadWith', (d) => d.draft.triadWith],
+  ['trial.survived', (d) => d.trial.survived],
+  ['trial.overwhelmed', (d) => d.trial.overwhelmed],
+  ['trial.arena', (d) => d.trial.arena],
+  ['trial.nourishing', (d) => d.trial.nourishing],
+  ['trial.charmCount', (d) => d.trial.charmCount],
+];
+for (const [name, pick] of patterned) {
+  const want = holes(pick(DICTIONARIES['zh-Hans'])).join(',');
+  for (const tag of LOCALES) {
+    const got = holes(pick(DICTIONARIES[tag])).join(',');
+    if (got !== want) mismatched.push(`${name} in ${tag}: ${got || '(none)'} vs ${want}`);
+  }
+}
+check(`every pattern takes the same holes${mismatched.length ? ': ' + mismatched.join('; ') : ''}`, mismatched.length, 0);
+
+// Counts that are fixed by the game rather than by the language.
+let wrongCounts = 0;
+for (const tag of LOCALES) {
+  const dict = DICTIONARIES[tag];
+  if (dict.realms.length !== Ascended) wrongCounts++;
+  if (dict.stages.length !== StagesPerRealm) wrongCounts++;
+  if (dict.finds.length !== FINDS.length) wrongCounts++;
+}
+check('every dictionary has the right number of realms, stages and finds', wrongCounts, 0);
+
+// Filling in.
+check('a hole is filled', fill('{a}-{b}', { a: 1, b: 2 }) === '1-2' ? 1 : 0, 1);
+check('an unknown hole is left alone', fill('{a}{z}', { a: 'x' }) === 'x{z}' ? 1 : 0, 1);
+
+// What the system asks for, mapped onto the five. Chinese is the case that needs care: the script
+// is what is being chosen, and the region is only evidence about it.
+checkTrue('zh-TW is traditional', localeFor(['zh-TW']) === 'zh-Hant');
+checkTrue('zh-HK is traditional', localeFor(['zh-HK']) === 'zh-Hant');
+checkTrue('zh-Hant with no region is traditional', localeFor(['zh-Hant']) === 'zh-Hant');
+checkTrue('zh-CN is simplified', localeFor(['zh-CN']) === 'zh-Hans');
+checkTrue('bare zh is simplified', localeFor(['zh']) === 'zh-Hans');
+checkTrue('ja-JP lands on Japanese', localeFor(['ja-JP']) === 'ja');
+checkTrue('ko-KR lands on Korean', localeFor(['ko-KR']) === 'ko');
+checkTrue('en-GB lands on English', localeFor(['en-GB']) === 'en');
+// Anything nobody here speaks falls to English, not to the source: a reader who gets English can at
+// least find the language menu.
+checkTrue('an unsupported language falls to English', localeFor(['de-DE']) === 'en');
+checkTrue('and the first understood tag wins', localeFor(['de-DE', 'ko-KR']) === 'ko');
+checkTrue('an empty list still returns something', localeFor([]) === 'en');
+
+checkTrue('a stored locale is recognised', isLocale('ja'));
+checkTrue('and junk in the save is not', !isLocale('xx') && !isLocale(7) && !isLocale(null));
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

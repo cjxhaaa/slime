@@ -17,9 +17,10 @@ import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
 import { Arsenal, type Holding } from './game/Arsenal';
-import { EVOLUTIONS, activeCombos } from './game/schools';
+import { activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
+import { fill, isLocale, locale, localeFor, setLocale, words } from './i18n';
 import { Draft } from './ui/Draft';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
@@ -416,7 +417,10 @@ function requestClicks(wantsClicks: boolean, dragging: boolean, now: number): vo
   void invoke('release_clicks').catch(() => {});
 }
 
-const SETTINGS_ITEM = { id: 'settings', label: '设置…', enabled: true };
+/** Rebuilt on every open rather than held, so a language change needs no invalidation. */
+function settingsItem() {
+  return { id: 'settings', label: words().menu.settings, enabled: true };
+}
 
 /** Runs whatever the menu was clicked for. */
 function chooseFromMenu(id: string): void {
@@ -641,7 +645,7 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
   // The rarest card in the mode used to be taken in silence. Say it, and show it.
   if (card.kind === 'evolve') {
     attacks.herald(card.school);
-    trialSaid = EVOLUTIONS[card.school].name;
+    trialSaid = words().evolutions[card.school].name;
     trialUntil = performance.now() + 3_200;
   } else {
     // A card that completes something says so too. Compared against what was held *before* the
@@ -655,12 +659,14 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
     if (forms.length > 0) {
       const triad = forms[0];
       attacks.heraldTriad(triad.of);
-      trialSaid = `三合 · ${triad.name}\n${triad.effect}`;
+      const said = words().triads[triad.of.join('')];
+      trialSaid = `${fill(words().draft.triadWith, { triad: said.name })}\n${said.blurb}`;
       trialUntil = performance.now() + 4_200;
     } else if (made.length > 0) {
       const combo = made[0];
       attacks.heraldCombo(combo.pair[0], combo.pair[1]);
-      trialSaid = `${combo.name}\n${combo.effect}`;
+      const said = words().combos[combo.pair.join('')];
+      trialSaid = `${said.name}\n${said.blurb}`;
       trialUntil = performance.now() + 3_600;
     }
   }
@@ -678,7 +684,7 @@ function settleTrial(): void {
     const struck = arena.dummies.hits;
     arena = null;
     trialUntil = performance.now() + TrialBubbleMs;
-    trialSaid = `演武已毕\n中桩 ${struck} · 修为无增`;
+    trialSaid = fill(words().trial.arena, { kills: struck });
     leaveTrial();
     return;
   }
@@ -693,8 +699,8 @@ function settleTrial(): void {
   trialUntil = performance.now() + TrialBubbleMs;
   trialSaid =
     trial.outcome === 'survived'
-      ? `历练已成\n除邪 ${trial.killCount} · 修为大进`
-      : `护体尽碎\n除邪 ${trial.killCount} · 修为略进`;
+      ? fill(words().trial.survived, { kills: trial.killCount })
+      : fill(words().trial.overwhelmed, { kills: trial.killCount });
   leaveTrial();
   requestSave(currentSave());
 }
@@ -757,6 +763,28 @@ function takeFortune(): boolean {
 }
 let seenIntro = true;
 
+/**
+ * The language the player picked, or null for "follow the system".
+ *
+ * Null is stored rather than the resolved tag, so somebody who never opens the menu keeps following
+ * their system — including after they change *that*. Storing what was guessed the first time would
+ * freeze it forever, which nobody notices until they switch their OS and this one app stays behind.
+ */
+let chosenLocale: string | null = null;
+
+/** Applies the choice, or the system's preference when there is none. */
+function applyLocale(): void {
+  const wanted = isLocale(chosenLocale)
+    ? chosenLocale
+    : localeFor(navigator.languages ?? [navigator.language]);
+  if (setLocale(wanted)) fullRepaint = true;
+}
+
+/** Tells Settings what language this window is in, and whether it was chosen or inherited. */
+function emitLocale(): void {
+  void emit('locale-state', { locale: locale(), chosen: chosenLocale }).catch(() => {});
+}
+
 /** Everything worth keeping, assembled in one place so every writer stores the same shape. */
 function currentSave(): SaveState {
   return {
@@ -770,6 +798,7 @@ function currentSave(): SaveState {
     fortune: fortune.snapshot(),
     seenIntro,
     quiet,
+    locale: chosenLocale,
   };
 }
 
@@ -1551,17 +1580,17 @@ function wirePointer(): void {
     }
     menu.show(
       inTrial
-        ? [{ id: 'leave-trial', label: '结束历练', enabled: true }, SETTINGS_ITEM]
+        ? [{ id: 'leave-trial', label: words().menu.leaveTrial, enabled: true }, settingsItem()]
         : [
             {
               id: 'enter-trial',
-              label: '入历练',
+              label: words().menu.enterTrial,
               enabled: trialUnlocked(),
               // Shown greyed rather than hidden: a menu item that appears out of nowhere at 筑基
               // is a surprise, and one that is visibly waiting for you is a goal.
-              note: trialUnlocked() ? undefined : '筑基可开',
+              note: trialUnlocked() ? undefined : words().menu.lockedUntil,
             },
-            SETTINGS_ITEM,
+            settingsItem(),
           ],
       event.clientX,
       event.clientY,
@@ -1585,6 +1614,7 @@ async function main(): Promise<void> {
         charms.restore(saved.charms);
         fortune.restore(saved.fortune);
         seenIntro = saved.seenIntro;
+        chosenLocale = saved.locale;
         quiet = saved.quiet;
         // Rust starts out listening, so a save that says otherwise has to say so out loud.
         if (quiet) void invoke('set_quiet', { quiet: true }).catch(() => {});
@@ -1809,10 +1839,19 @@ async function main(): Promise<void> {
     };
   }
 
+  applyLocale();
   await refreshGeometry();
 
   // Settings has no state of its own: it asks, and this window — which owns the save — answers.
   await listen('want-state', () => emitPetState());
+  await listen('want-locale', () => emitLocale());
+
+  await listen<string>('locale-changed', (event) => {
+    if (!isLocale(event.payload)) return;
+    chosenLocale = event.payload;
+    applyLocale();
+    requestSave(currentSave());
+  });
 
   await listen<{ loadout: Holding[] }>('arena-start', (event) => {
     const { loadout } = event.payload;
