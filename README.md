@@ -1554,6 +1554,33 @@ loadout, so an IPC that throws took the whole screen down with it — which is h
 into "the settings window is blank". Every message out of that file is wrapped now: a control that
 cannot reach the overlay should stop working, not stop drawing.
 
+### Evolutions you can see
+
+All nine evolutions changed a **behaviour** and nothing else: two talismans instead of one, eight
+lightning hops instead of three, a shell that never breaks, a poison cloud that hunts. Every one of
+them correct, and every one invisible — an evolved 符箓 was pixel-for-pixel the ordinary one, just
+more often. The rarest reward in the mode was the one you could not see you had, which is precisely
+what §5's "a reward has to be visible" exists to prevent.
+
+Three layers of fix:
+
+1. **The palette ascends.** `ascend()` burns a school's three-stop ramp whiter and pulls it toward
+   **gold** — gold being the one colour none of the nine owns, so it reads as "above the nine"
+   rather than "the fire one". Plus a slow gold four-pointed mark.
+2. **Each evolution gets its own shape.** 万符朝元 trails a gold streamer; 万剑归宗 is a *sheaf* of
+   arcs rather than one; 九天神雷 drops a column from above onto the first thing it strikes; 焚天炉
+   becomes a ring of fire around the body with tongues climbing off it; 玄冰狱 grows pillars inside
+   the field; 罡风阵 draws the three counter-turning rings that were already in the physics and
+   entirely invisible; 不动明山 stops being segmented plates and becomes one unbroken gold band,
+   because "armour that runs out" and "armour that does not" are two different shapes; 万毒蛊 reaches
+   feelers the way it is hunting; 影卫三重 wear halos and are tied to one another.
+3. **The moment itself is announced.** Taking the card was silent — the build changed and nothing
+   said so. It is three rings of gold light and a crown of sparks now, and it says the name.
+
+One real bug fell out of it: 不动明山's unbroken band was sitting on top of **six segmented
+shadows**, because the dark pass is drawn separately and had not been changed with it. A thing's lit
+side and its dark side have to agree about what shape it is.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held

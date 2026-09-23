@@ -151,6 +151,55 @@ export const PALETTE: Record<School, Palette> = {
   影: { core: '#ffeeff', body: '#d489ff', edge: '#7526d6' },
 };
 
+/**
+ * The same school, evolved.
+ *
+ * Every one of the nine evolutions changed a *behaviour* and nothing else — two talismans instead
+ * of one, eight lightning hops instead of three, a shell that never breaks. All correct, all
+ * invisible: an evolved 符箓 was pixel-for-pixel the ordinary one, just more often. The rarest
+ * reward in the mode was the one you could not see you had, which is the exact failure §5 of the
+ * plan exists to prevent.
+ *
+ * So the palette itself ascends. Hotter, whiter in the middle, and pulled a little toward gold —
+ * gold being the one colour no school owns, so it reads as "this is above the nine" rather than as
+ * "this is the fire one". Each evolution also gets its own change of shape; this is the part that
+ * says *something* happened before you have worked out what.
+ */
+export function ascend(hue: Palette): Palette {
+  return {
+    core: mixHex(hue.core, '#ffffff', 0.55),
+    body: mixHex(hue.body, '#fff0a8', 0.4),
+    edge: mixHex(hue.edge, hue.body, 0.4),
+  };
+}
+
+/** The colour of the mark an evolved school wears. Deliberately not any school's own. */
+export const Crown = '#ffe58a';
+
+/** A local copy of the blend, so this file does not depend on the drawing layer. */
+function mixHex(a: string, b: string, t: number): string {
+  const read = (hex: string) => {
+    const raw = hex.replace('#', '');
+    const full =
+      raw.length === 3
+        ? raw
+            .split('')
+            .map((c) => c + c)
+            .join('')
+        : raw;
+    return [
+      parseInt(full.slice(0, 2), 16),
+      parseInt(full.slice(2, 4), 16),
+      parseInt(full.slice(4, 6), 16),
+    ];
+  };
+  const [ar, ag, ab] = read(a);
+  const [br, bg, bb] = read(b);
+  const pick = (x: number, y: number) => Math.round(x + (y - x) * t);
+  const hex = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${hex(pick(ar, br))}${hex(pick(ag, bg))}${hex(pick(ab, bb))}`;
+}
+
 export const SPECS: Record<School, SchoolSpec> = {
   符: {
     key: '符',

@@ -18,10 +18,12 @@
 import { clear, mix } from '../slime/colour.js';
 import {
   type Combo,
+  Crown,
   PALETTE,
   type Palette,
   type School,
   SPECS,
+  ascend,
   cadence,
   comboFor,
   span,
@@ -175,6 +177,51 @@ export class Attacks {
 
   private evolved(school: School): boolean {
     return this.held.find((h) => h.school === school)?.evolved ?? false;
+  }
+
+  /**
+   * The colours this school is drawn in right now.
+   *
+   * One call rather than nine `evolved ? ... : ...` at every draw site. The evolved ramp is hotter
+   * and pulled toward gold, which is the colour none of the nine owns — so it reads as "above the
+   * nine" instead of "the fire one".
+   */
+  private hueOf(school: School): Palette {
+    const base = PALETTE[school];
+    return this.evolved(school) ? ascend(base) : base;
+  }
+
+  /**
+   * The mark an evolved school wears: a slow gold four-pointed star.
+   *
+   * Drawn on top of whatever the school already does. It is small, and that is on purpose — its
+   * job is to answer "did that evolve?" at a glance, not to become the effect. The shape changes
+   * underneath it are what make each one its own thing.
+   */
+  private mark(context: CanvasRenderingContext2D, x: number, y: number, size: number, alpha = 1): void {
+    const turn = this.clock * 1.1;
+    context.save();
+    context.translate(x, y);
+    context.rotate(turn);
+    context.globalAlpha = alpha;
+    context.fillStyle = Crown;
+    for (const spin of [0, Math.PI / 2]) {
+      context.save();
+      context.rotate(spin);
+      context.beginPath();
+      context.moveTo(0, -size);
+      context.quadraticCurveTo(size * 0.22, 0, 0, size);
+      context.quadraticCurveTo(-size * 0.22, 0, 0, -size);
+      context.closePath();
+      context.fill();
+      context.restore();
+    }
+    context.globalAlpha = alpha * 0.8;
+    context.beginPath();
+    context.arc(0, 0, size * 0.2, 0, Math.PI * 2);
+    context.fill();
+    context.globalAlpha = 1;
+    context.restore();
   }
 
   /** True when both halves of a named pairing are held. */
@@ -534,6 +581,38 @@ export class Attacks {
   }
 
   /**
+   * The moment a school evolves.
+   *
+   * Taking the card used to be silent: the build changed and nothing on the screen said so, so the
+   * rarest thing in the mode arrived without an announcement. Three rings and a crown of sparks,
+   * all in gold, all centred on the pet — whatever else is going on, this is the thing that
+   * happened.
+   */
+  herald(school: School): void {
+    const hue = ascend(PALETTE[school]);
+    for (let i = 0; i < 3; i++) {
+      const wave = this.push(school, 'burst', this.bodyX, this.bodyY, 0, 0, 0, 0.75 + i * 0.18, 150 + i * 60, 0);
+      wave.age = -i * 0.1;
+    }
+    for (let i = 0; i < 26; i++) {
+      if (this.sparks.length >= MaxSparks) break;
+      const angle = (i / 26) * Math.PI * 2;
+      const rush = 240 + Math.random() * 220;
+      const life = 0.5 + Math.random() * 0.4;
+      this.sparks.push({
+        x: this.bodyX,
+        y: this.bodyY,
+        vx: Math.cos(angle) * rush,
+        vy: Math.sin(angle) * rush,
+        life,
+        born: life,
+        size: 1.6 + Math.random() * 1.8,
+        hue: { core: '#ffffff', body: Crown, edge: hue.edge },
+      });
+    }
+  }
+
+  /**
    * Throws `count` sparks from a point.
    *
    * `aim` of null scatters them evenly; a heading sends them out in a cone, which is what a hit
@@ -589,6 +668,12 @@ export class Attacks {
     const alive: Effect[] = [];
     for (const e of this.live) {
       e.age += dt;
+      // A staggered ring starts with a negative age so it opens late. Nothing else should touch it
+      // until its turn comes.
+      if (e.age < 0) {
+        alive.push(e);
+        continue;
+      }
       e.cool = Math.max(0, e.cool - dt);
 
       if (e.kind === 'aimed' || e.kind === 'aimed-orbit') {
@@ -823,6 +908,17 @@ export class Attacks {
     context.rotate(this.clock * 0.5);
     context.globalAlpha = 0.42;
     context.strokeStyle = 'rgba(14, 10, 26, 0.9)';
+    // The dark side has to agree with the lit side about what shape the shell is. It did not, and
+    // 不动明山's unbroken gold band was sitting on top of six segmented shadows.
+    if (this.evolved('土')) {
+      context.lineWidth = 15;
+      context.beginPath();
+      context.arc(0, 0, 66, 0, Math.PI * 2);
+      context.stroke();
+      context.globalAlpha = 1;
+      context.restore();
+      return;
+    }
     const plates = 6;
     for (let i = 0; i < plates * Math.min(this.shellLeft, 3); i++) {
       const ring = 62 + Math.floor(i / plates) * 11;
@@ -877,7 +973,7 @@ export class Attacks {
    */
   private drawField(context: CanvasRenderingContext2D): void {
     const r = span('冰', this.levelOf('冰'));
-    const hue = PALETTE['冰'];
+    const hue = this.hueOf('冰');
     const deep = this.evolved('冰');
     context.save();
     context.translate(this.bodyX, this.bodyY);
@@ -937,6 +1033,44 @@ export class Attacks {
       context.restore();
     }
 
+    // 玄冰狱: pillars standing inside the ring, tall and gold-edged. The school stops being a
+    // line on the floor and becomes somewhere you have been shut into — which is what it does,
+    // since nothing inside it can really move any more.
+    if (deep) {
+      for (let i = 0; i < 9; i++) {
+        const angle = (i / 9) * Math.PI * 2 - this.clock * 0.18;
+        const out = r * (0.32 + 0.42 * ((i * 0.37) % 1));
+        const tall = 26 + 12 * Math.sin(this.clock * 1.6 + i * 2.1);
+        const px = Math.cos(angle) * out;
+        const py = Math.sin(angle) * out;
+        context.globalAlpha = 0.5;
+        context.fillStyle = hue.edge;
+        context.beginPath();
+        context.moveTo(px - 7, py + 5);
+        context.lineTo(px, py - tall);
+        context.lineTo(px + 7, py + 5);
+        context.closePath();
+        context.fill();
+        context.globalAlpha = 0.95;
+        context.fillStyle = hue.core;
+        context.beginPath();
+        context.moveTo(px - 2.4, py + 3);
+        context.lineTo(px, py - tall * 0.86);
+        context.lineTo(px + 2.4, py + 3);
+        context.closePath();
+        context.fill();
+        context.globalAlpha = 0.55;
+        context.strokeStyle = Crown;
+        context.lineWidth = 1.3;
+        context.beginPath();
+        context.moveTo(px - 7, py + 5);
+        context.lineTo(px, py - tall);
+        context.lineTo(px + 7, py + 5);
+        context.stroke();
+      }
+      this.mark(context, 0, 0, 13, 0.8);
+    }
+
     context.globalAlpha = 0.7;
     context.strokeStyle = hue.core;
     context.lineWidth = 1.5;
@@ -957,10 +1091,49 @@ export class Attacks {
 
   /** 山岳: plates that turn, lit along their length. */
   private drawShell(context: CanvasRenderingContext2D): void {
-    const hue = PALETTE['土'];
+    const hue = this.hueOf('土');
+    const risen = this.evolved('土');
     context.save();
     context.translate(this.bodyX, this.bodyY);
     context.rotate(this.clock * 0.5);
+
+    // 不动明山 does not break, so it is not drawn as pieces. A closed gold band, unbroken all the
+    // way round, is the whole difference between armour that is holding and armour that is going
+    // to run out — and the segmented version could not say it.
+    if (risen) {
+      context.globalAlpha = 0.34;
+      context.strokeStyle = hue.edge;
+      context.lineWidth = 17;
+      context.beginPath();
+      context.arc(0, 0, 66, 0, Math.PI * 2);
+      context.stroke();
+      context.globalAlpha = 0.85;
+      context.strokeStyle = Crown;
+      context.lineWidth = 6;
+      context.beginPath();
+      context.arc(0, 0, 66, 0, Math.PI * 2);
+      context.stroke();
+      context.globalAlpha = 1;
+      context.strokeStyle = hue.core;
+      context.lineWidth = 1.8;
+      for (const at of [60, 72]) {
+        context.beginPath();
+        context.arc(0, 0, at, 0, Math.PI * 2);
+        context.stroke();
+      }
+      // Studs, so the band has weight rather than being a hoop.
+      context.fillStyle = Crown;
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        context.beginPath();
+        context.arc(Math.cos(angle) * 66, Math.sin(angle) * 66, 4.2, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.restore();
+      this.mark(context, this.bodyX, this.bodyY - 84, 12);
+      return;
+    }
+
     const plates = 6;
     for (let i = 0; i < plates * Math.min(this.shellLeft, 3); i++) {
       const ring = 62 + Math.floor(i / plates) * 11;
@@ -1012,7 +1185,9 @@ export class Attacks {
   }
 
   private drawOne(context: CanvasRenderingContext2D, e: Effect): void {
-    const hue = PALETTE[e.school];
+    if (e.age < 0) return;
+    const hue = this.hueOf(e.school);
+    const risen = this.evolved(e.school);
     const fade = e.life > 0 ? Math.max(0, 1 - e.age / e.life) : 1;
     const grown = e.life > 0 ? Math.min(1, e.age / Math.max(0.0001, e.life * 0.25)) : 1;
 
@@ -1047,6 +1222,19 @@ export class Attacks {
       context.fillRect(-1, -3.6, 2, 7.2);
       context.fillRect(3.6, -4.6, 2, 9.2);
       context.restore();
+      // 万符朝元 trails a gold streamer and carries the mark, so a wall of them reads as one
+      // thing happening rather than as the ordinary school running faster.
+      if (risen) {
+        context.globalAlpha = 0.5;
+        context.strokeStyle = Crown;
+        context.lineWidth = 3.5;
+        context.beginPath();
+        context.moveTo(e.x - e.vx * 0.075, e.y - e.vy * 0.075);
+        context.lineTo(e.x, e.y);
+        context.stroke();
+        context.globalAlpha = 1;
+        this.mark(context, e.x, e.y, 9);
+      }
       return;
     }
 
@@ -1113,6 +1301,20 @@ export class Attacks {
       context.globalAlpha = 0.7 * fade;
       context.fillStyle = band;
       context.fill();
+
+      // 万剑归宗 is not one arc, it is a *sheaf*: four more at stepped radii, so the sweep has
+      // depth instead of width. The name says a thousand swords; one thicker arc does not.
+      if (risen) {
+        for (let blade = 1; blade <= 4; blade++) {
+          const at = reach * (1 - blade * 0.17);
+          context.globalAlpha = fade * (0.55 - blade * 0.09);
+          context.strokeStyle = blade % 2 === 0 ? hue.core : Crown;
+          context.lineWidth = 3.2;
+          context.beginPath();
+          context.arc(0, 0, at, -arc / 2 + blade * 0.11, arc / 2 - blade * 0.11);
+          context.stroke();
+        }
+      }
 
       // Smear arcs behind it, hot to cool, each a little shorter than the last.
       for (let i = 0; i < 4; i++) {
@@ -1189,6 +1391,26 @@ export class Attacks {
       for (let i = 1; i < path.length; i++) {
         this.bloom(context, path[i].x, path[i].y, 34 * fade + 10, hue, 0.9 * fade);
       }
+      // 九天神雷 falls from above onto the first thing it strikes. A column is the one shape
+      // that says "this came from somewhere else" rather than "the pet threw it".
+      if (risen && path.length > 1) {
+        const head = path[1];
+        const shaft = context.createLinearGradient(head.x, head.y - 420, head.x, head.y);
+        shaft.addColorStop(0, clear(hue.edge));
+        shaft.addColorStop(0.7, hue.body);
+        shaft.addColorStop(1, hue.core);
+        context.globalAlpha = fade * flare * 0.8;
+        context.fillStyle = shaft;
+        context.beginPath();
+        context.moveTo(head.x - 26 * fade, head.y - 420);
+        context.lineTo(head.x + 26 * fade, head.y - 420);
+        context.lineTo(head.x + 9 * fade, head.y);
+        context.lineTo(head.x - 9 * fade, head.y);
+        context.closePath();
+        context.fill();
+        context.globalAlpha = 1;
+        this.mark(context, head.x, head.y, 16 * fade + 4);
+      }
       context.globalAlpha = 1;
       return;
     }
@@ -1247,6 +1469,34 @@ export class Attacks {
       context.globalAlpha = 1;
       context.restore();
 
+      // 焚天炉 travels with the body, so it is drawn as a furnace *around* it: a gold ring at
+      // the rim with tongues climbing off it. Without this it is the ordinary pool that happens to
+      // keep up, which is exactly how it read.
+      if (risen) {
+        context.save();
+        context.translate(e.x, e.y);
+        context.globalAlpha = 0.5 * fade;
+        context.strokeStyle = Crown;
+        context.lineWidth = 3;
+        context.beginPath();
+        context.arc(0, 0, r * 0.92, 0, Math.PI * 2);
+        context.stroke();
+        for (let i = 0; i < 10; i++) {
+          const angle = (i / 10) * Math.PI * 2 - this.clock * 1.4;
+          const tall = r * (0.26 + 0.16 * Math.abs(Math.sin(this.clock * 6 + i * 1.9)));
+          context.globalAlpha = 0.75 * fade;
+          context.strokeStyle = i % 2 === 0 ? Crown : hue.core;
+          context.lineWidth = 4;
+          context.beginPath();
+          context.moveTo(Math.cos(angle) * r * 0.92, Math.sin(angle) * r * 0.92);
+          context.lineTo(Math.cos(angle) * (r * 0.92 + tall), Math.sin(angle) * (r * 0.92 + tall));
+          context.stroke();
+        }
+        context.globalAlpha = 1;
+        context.restore();
+        this.mark(context, e.x, e.y, 11);
+      }
+
       if (Math.random() < 0.34) {
         const angle = Math.random() * Math.PI * 2;
         this.spark(e.x + Math.cos(angle) * r * 0.6, e.y + Math.sin(angle) * r * 0.6, 1, '火', 85, -Math.PI / 2, 1.4);
@@ -1278,6 +1528,28 @@ export class Attacks {
         context.arc(Math.cos(angle) * r * 0.55, Math.sin(angle) * r * 0.55, 2.1, 0, Math.PI * 2);
         context.fill();
       }
+      // 万毒蛊 hunts, so it is drawn reaching: feelers along the way it is travelling. A cloud
+      // that chases you and a cloud that sits there looked identical, which is the whole complaint.
+      if (risen) {
+        const heading = Math.atan2(e.vy, e.vx);
+        context.globalAlpha = 0.7 * fade;
+        context.strokeStyle = Crown;
+        context.lineWidth = 1.7;
+        for (const side of [-0.5, 0, 0.5]) {
+          const reach = r * (1.1 + 0.3 * Math.sin(this.clock * 4 + side * 3));
+          context.beginPath();
+          context.moveTo(0, 0);
+          context.quadraticCurveTo(
+            Math.cos(heading + side * 1.5) * reach * 0.6,
+            Math.sin(heading + side * 1.5) * reach * 0.6,
+            Math.cos(heading + side) * reach,
+            Math.sin(heading + side) * reach,
+          );
+          context.stroke();
+        }
+        context.globalAlpha = 1;
+        this.mark(context, 0, 0, 7, 0.9);
+      }
       context.globalAlpha = 1;
       context.restore();
       return;
@@ -1301,6 +1573,22 @@ export class Attacks {
       context.globalAlpha = 1;
       context.restore();
 
+      // 罡风阵: the ring each blade rides is drawn, faintly and in gold. Three counter-turning
+      // rings were already in the physics and were completely invisible — all you saw was more
+      // blades.
+      if (risen) {
+        context.save();
+        context.translate(this.bodyX, this.bodyY);
+        context.globalAlpha = 0.22;
+        context.strokeStyle = Crown;
+        context.lineWidth = 1.6;
+        context.beginPath();
+        context.arc(0, 0, Math.hypot(e.x - this.bodyX, e.y - this.bodyY) || e.reach, 0, Math.PI * 2);
+        context.stroke();
+        context.globalAlpha = 1;
+        context.restore();
+      }
+
       this.bloom(context, e.x, e.y, 20, hue, 0.55);
       context.save();
       context.translate(e.x, e.y);
@@ -1321,6 +1609,7 @@ export class Attacks {
       context.quadraticCurveTo(9, 0, 0, 22);
       context.stroke();
       context.restore();
+      if (risen) this.mark(context, e.x, e.y, 8, 0.85);
       return;
     }
 
@@ -1343,6 +1632,27 @@ export class Attacks {
       context.beginPath();
       context.arc(e.x, e.y, 11.5, 0, Math.PI * 2);
       context.fill();
+      // 影卫三重: each wears a gold halo, and they are tied to one another, so three of them read
+      // as a formation rather than as three copies of the same thing wandering about.
+      if (risen) {
+        context.globalAlpha = 0.85;
+        context.strokeStyle = Crown;
+        context.lineWidth = 1.8;
+        context.beginPath();
+        context.arc(e.x, e.y, 15 + Math.sin(this.clock * 3 + (e.index ?? 0)) * 1.6, 0, Math.PI * 2);
+        context.stroke();
+        context.globalAlpha = 0.3;
+        context.lineWidth = 1.4;
+        for (const other of this.live) {
+          if (other.kind !== 'ward' || other === e) continue;
+          if ((other.index ?? 0) <= (e.index ?? 0)) continue;
+          context.beginPath();
+          context.moveTo(e.x, e.y);
+          context.lineTo(other.x, other.y);
+          context.stroke();
+        }
+        context.globalAlpha = 1;
+      }
       context.globalAlpha = 1;
       return;
     }

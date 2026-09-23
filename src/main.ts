@@ -17,7 +17,7 @@ import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
 import { Arsenal, type Holding } from './game/Arsenal';
-import { activeCombos } from './game/schools';
+import { EVOLUTIONS, activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
 import { Draft } from './ui/Draft';
 import { requirement, stageName } from './game/realms';
@@ -627,6 +627,12 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
   const { mend } = arsenal.take(card);
   if (mend > 0) trial.mend(mend);
   attacks.carry(arsenal.held, arsenal.combos());
+  // The rarest card in the mode used to be taken in silence. Say it, and show it.
+  if (card.kind === 'evolve') {
+    attacks.herald(card.school);
+    trialSaid = EVOLUTIONS[card.school].name;
+    trialUntil = performance.now() + 3_200;
+  }
   draft.hide();
   // Another one may already be owed: the four opening cards are drafted back to back.
   if (arsenal.due) offerDraft();
