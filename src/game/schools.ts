@@ -84,7 +84,7 @@ export type Motion =
   /** Flies to a target and is spent on it. */
   | 'aimed'
   /** A crescent thrown out from the body, cutting through what it passes. */
-  | 'sweep'
+  | 'arc'
   /** Strikes a target instantly, then jumps to a neighbour. */
   | 'chain'
   /** Dropped where it lands and burns for a while. */
@@ -224,7 +224,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     key: '剑',
     name: '剑气',
     blurb: '斩出一道，沿途尽断',
-    motion: 'sweep',
+    motion: 'arc',
     tint: '#8ceaff',
     interval: 1.15,
     // How far the crescent travels, not how far the body reaches. It was a 132px swing close in;
@@ -325,8 +325,8 @@ export const COMBOS: Combo[] = [
   { pair: ['符', '剑'], name: '符剑', effect: '符先绕身三息，再飞出' },
   { pair: ['符', '土'], name: '阵符', effect: '符不飞了，在地上连成一圈法阵' },
   { pair: ['符', '影'], name: '傀符', effect: '影卫也会掷符' },
-  { pair: ['剑', '风'], name: '风剑', effect: '横扫合成整圈，且更远' },
-  { pair: ['剑', '雷'], name: '雷剑', effect: '扫过之处留一道雷弧' },
+  { pair: ['剑', '风'], name: '风剑', effect: '四方各斩一道' },
+  { pair: ['剑', '雷'], name: '雷剑', effect: '每一刀都往旁边引一道雷' },
   { pair: ['雷', '火'], name: '雷火', effect: '地火向近处引雷' },
   { pair: ['火', '冰'], name: '冰火', effect: '寒域中的敌人被点燃时炸开' },
   { pair: ['火', '毒'], name: '焚瘴', effect: '瘴气会被点着，成片烧起来' },
