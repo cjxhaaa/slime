@@ -598,6 +598,24 @@ export class Attacks {
    * all in gold, all centred on the pet — whatever else is going on, this is the thing that
    * happened.
    */
+  /**
+   * The moment a pairing completes.
+   *
+   * Quieter than an evolution — one ring in each school's own colour rather than three in gold —
+   * because a pairing is the ordinary good outcome of a draft and an evolution is the jackpot. But
+   * it is not *nothing*, which is what it was: the card said "与雷法合 · 雷符" while you were
+   * choosing and then the screen never mentioned it again. You were left to notice that your
+   * talismans had started forking.
+   */
+  heraldCombo(a: School, b: School): void {
+    for (const [i, school] of [a, b].entries()) {
+      const ring = this.push(school, 'burst', this.bodyX, this.bodyY, 0, 0, 0, 0.6, 118, 0);
+      ring.age = -i * 0.12;
+    }
+    this.spark(this.bodyX, this.bodyY, 9, a, 200);
+    this.spark(this.bodyX, this.bodyY, 9, b, 200);
+  }
+
   herald(school: School): void {
     const hue = ascend(PALETTE[school]);
     for (let i = 0; i < 3; i++) {
@@ -1100,10 +1118,18 @@ export class Attacks {
     context.restore();
   }
 
-  /** 山岳: plates that turn, lit along their length. */
+  /**
+   * 山岳: plates that turn, lit along their length.
+   *
+   * With 玄冰甲 they are frozen over. Of the fourteen pairings this was the only one with **no
+   * picture at all** — it re-formed the shell faster and that was the whole of it, which meant the
+   * one thing you could observe was that you seemed to be getting hit less. A pairing you can only
+   * detect statistically is a pairing nobody knows they have.
+   */
   private drawShell(context: CanvasRenderingContext2D): void {
     const hue = this.hueOf('土');
     const risen = this.evolved('土');
+    const iced = this.paired('土', '冰');
     context.save();
     context.translate(this.bodyX, this.bodyY);
     context.rotate(this.clock * 0.5);
@@ -1168,6 +1194,46 @@ export class Attacks {
       context.beginPath();
       context.arc(0, 0, ring + 2.4, from + 0.04, to - 0.04);
       context.stroke();
+
+      // 玄冰甲: a rime along the outside of every plate, with frost spurs standing off it.
+      if (iced) {
+        const cold = PALETTE['冰'];
+        context.globalAlpha = 0.8;
+        context.strokeStyle = cold.body;
+        context.lineWidth = 2.6;
+        context.beginPath();
+        context.arc(0, 0, ring + 6.5, from + 0.02, to - 0.02);
+        context.stroke();
+        context.globalAlpha = 1;
+        context.fillStyle = cold.core;
+        for (let spur = 0; spur < 3; spur++) {
+          const at = from + ((spur + 0.5) / 3) * (to - from);
+          const out = ring + 6.5;
+          const tall = 5 + 2.5 * Math.sin(this.clock * 2.4 + spur + i);
+          context.save();
+          context.rotate(at);
+          context.beginPath();
+          context.moveTo(out + tall, 0);
+          context.lineTo(out - 1, 2.6);
+          context.lineTo(out - 1, -2.6);
+          context.closePath();
+          context.fill();
+          context.restore();
+        }
+      }
+    }
+
+    // And the moment it re-forms: the ice knits itself back before the plate does, which is the
+    // part the pairing actually changed.
+    if (iced && this.shellBack > 0 && this.shellBack < 0.5) {
+      const knit = 1 - this.shellBack / 0.5;
+      context.globalAlpha = knit * 0.9;
+      context.strokeStyle = PALETTE['冰'].core;
+      context.lineWidth = 2;
+      context.beginPath();
+      context.arc(0, 0, 62 + (1 - knit) * 26, 0, Math.PI * 2 * knit);
+      context.stroke();
+      context.globalAlpha = 1;
     }
     context.restore();
   }

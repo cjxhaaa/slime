@@ -624,6 +624,7 @@ function offerDraft(): void {
 
 /** Spends a card and starts the fight again. */
 function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
+  const before = arsenal.combos();
   const { mend } = arsenal.take(card);
   if (mend > 0) trial.mend(mend);
   attacks.carry(arsenal.held, arsenal.combos());
@@ -632,6 +633,16 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
     attacks.herald(card.school);
     trialSaid = EVOLUTIONS[card.school].name;
     trialUntil = performance.now() + 3_200;
+  } else {
+    // A card that completes a pairing says so too. Compared against what was held *before* the
+    // card rather than recomputed from names, because two cards in one draft can complete two.
+    const made = arsenal.combos().filter((combo) => !before.includes(combo));
+    if (made.length > 0) {
+      const combo = made[0];
+      attacks.heraldCombo(combo.pair[0], combo.pair[1]);
+      trialSaid = `${combo.name}\n${combo.effect}`;
+      trialUntil = performance.now() + 3_600;
+    }
   }
   draft.hide();
   // Another one may already be owed: the four opening cards are drafted back to back.
