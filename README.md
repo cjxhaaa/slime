@@ -1544,7 +1544,7 @@ preview should not have an opponent.**
 
 It is three rings of motionless posts now (150 / 290 / 430 px) that get back up a moment after they
 go down, and **there is no clock**: it runs until you stop it. The rings are not decoration. With
-targets at known distances, **whichever ring stops lighting up is that school'"'"'s reach** — and reach
+targets at known distances, **whichever ring stops lighting up is that school's reach** — and reach
 is the one property that is otherwise invisible, because normally the 邪气 come to you.
 
 The realm dropdown and 护体不损 went with it. Against posts that never move and never hit back, a
