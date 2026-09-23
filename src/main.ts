@@ -634,6 +634,7 @@ function offerDraft(): void {
 /** Spends a card and starts the fight again. */
 function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
   const before = arsenal.combos();
+  const beforeTriads = arsenal.triads();
   const { mend } = arsenal.take(card);
   if (mend > 0) trial.mend(mend);
   attacks.carry(arsenal.held, arsenal.combos());
@@ -643,10 +644,20 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
     trialSaid = EVOLUTIONS[card.school].name;
     trialUntil = performance.now() + 3_200;
   } else {
-    // A card that completes a pairing says so too. Compared against what was held *before* the
-    // card rather than recomputed from names, because two cards in one draft can complete two.
+    // A card that completes something says so too. Compared against what was held *before* the
+    // card rather than recomputed from names, because one card can complete two.
+    //
+    // A 三合 outranks a pairing, and the order matters: the card that completes a 三合 has almost
+    // always completed a pairing on the way there, so announcing the smaller of the two would bury
+    // the larger one under it.
+    const forms = arsenal.triads().filter((triad) => !beforeTriads.includes(triad));
     const made = arsenal.combos().filter((combo) => !before.includes(combo));
-    if (made.length > 0) {
+    if (forms.length > 0) {
+      const triad = forms[0];
+      attacks.heraldTriad(triad.of);
+      trialSaid = `三合 · ${triad.name}\n${triad.effect}`;
+      trialUntil = performance.now() + 4_200;
+    } else if (made.length > 0) {
       const combo = made[0];
       attacks.heraldCombo(combo.pair[0], combo.pair[1]);
       trialSaid = `${combo.name}\n${combo.effect}`;

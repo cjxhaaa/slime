@@ -59,6 +59,8 @@ import {
   activeCombos,
   cadence,
   comboFor,
+  TRIADS,
+  activeTriads,
   exchangeCost,
   killsForExchanges,
   partners,
@@ -985,6 +987,107 @@ checkTrue('evolving takes the level with it', lone.levelOf('符') === MaxLevel);
 checkTrue('and it cannot be drawn twice', lone.evolvable().length === 0);
 checkTrue('an evolved school is not offered raises', !lone.offer(rng).some((c) => c.kind === 'raise' && c.school === '符'));
 
+
+
+// 三合. Seven forms of three schools, sitting on top of the fourteen pairings.
+
+check('seven 三合', TRIADS.length, 7);
+check('all of three schools', TRIADS.filter((t) => new Set(t.of).size === 3).length, 7);
+check('every one named', TRIADS.filter((t) => t.name.length > 0 && t.effect.length > 0).length, 7);
+
+// **一主二辅**, and this is the load-bearing constraint: each form is a school plus two of its
+// own partners, so the three already carry two pairings before the 三合 is counted. That is what
+// makes somebody assembling a build the ordinary way — taking cards that pair with what they hold —
+// walk into these without hunting. A form made of three schools that do not pair would be a secret
+// recipe, and a secret recipe in a ninety-second mode is content nobody sees.
+let everyFormIsAnchored = true;
+let fewestPairings = 9;
+for (const triad of TRIADS) {
+  const inside = triad.of.filter((a, i) =>
+    triad.of.some((b, j) => j !== i && comboFor(a, b) !== null),
+  );
+  // At least one of the three has to pair with both others — that is the "主".
+  const anchored = triad.of.some((lead) =>
+    triad.of.every((other) => other === lead || comboFor(lead, other) !== null),
+  );
+  if (!anchored) everyFormIsAnchored = false;
+  let pairings = 0;
+  for (let i = 0; i < 3; i++) {
+    for (let j = i + 1; j < 3; j++) if (comboFor(triad.of[i], triad.of[j])) pairings++;
+  }
+  fewestPairings = Math.min(fewestPairings, pairings);
+  if (inside.length !== 3) everyFormIsAnchored = false;
+}
+checkTrue('every 三合 has a school that pairs with both the others', everyFormIsAnchored);
+checkTrue(`and carries at least two pairings of its own: ${fewestPairings}`, fewestPairings >= 2);
+
+// Exactly two of them are triangles — all three pairing with each other — and the graph contains
+// no others, so this is a fact about the pairings rather than a choice about the forms.
+const triangles = TRIADS.filter((t) => {
+  let pairings = 0;
+  for (let i = 0; i < 3; i++) {
+    for (let j = i + 1; j < 3; j++) if (comboFor(t.of[i], t.of[j])) pairings++;
+  }
+  return pairings === 3;
+});
+check('two of the seven are triangles', triangles.length, 2);
+// And the graph really has no third one, which is why there are not more of them.
+let allTriangles = 0;
+for (let i = 0; i < SCHOOLS.length; i++) {
+  for (let j = i + 1; j < SCHOOLS.length; j++) {
+    for (let k = j + 1; k < SCHOOLS.length; k++) {
+      if (
+        comboFor(SCHOOLS[i], SCHOOLS[j]) &&
+        comboFor(SCHOOLS[j], SCHOOLS[k]) &&
+        comboFor(SCHOOLS[i], SCHOOLS[k])
+      ) {
+        allTriangles++;
+      }
+    }
+  }
+}
+check('the pairings contain exactly two triangles in total', allTriangles, 2);
+
+// No school is locked out of the layer.
+let leastAppearances = 9;
+for (const school of SCHOOLS) {
+  leastAppearances = Math.min(leastAppearances, TRIADS.filter((t) => t.of.includes(school)).length);
+}
+checkTrue(`every school is in at least two 三合: ${leastAppearances}`, leastAppearances >= 2);
+
+// A four-slot build can hold one, and holding one costs three quarters of the build — which is the
+// whole reason this layer is worth having where a fifteenth pairing would not be.
+check('a 三合 fits in four slots', activeTriads(['符', '剑', '雷', '冰']).length, 1);
+check('and three schools is enough on their own', activeTriads(['符', '剑', '雷']).length, 1);
+check('two of the three is not', activeTriads(['符', '剑']).length, 0);
+
+// How often a steered draft walks into one without trying, which is the number the 一主二辅 rule
+// exists to keep up. Reported rather than pinned tightly: it is a consequence of the pairings.
+let withTriad = 0;
+for (let run = 0; run < runs; run++) {
+  const kit3 = new Arsenal();
+  kit3.start();
+  for (let pick = 0; pick < Slots; pick++) {
+    const cards = kit3.offer(rng);
+    let best = cards[0];
+    let bestScore = -1;
+    for (const card of cards) {
+      if (card.kind !== 'take') continue;
+      const would = kit3.schools.concat(card.school);
+      const score = activeCombos(would).length * 2 + activeTriads(would).length * 5;
+      if (score > bestScore) {
+        bestScore = score;
+        best = card;
+      }
+    }
+    kit3.take(best);
+  }
+  if (activeTriads(kit3.schools).length > 0) withTriad++;
+}
+checkTrue(
+  `a draft that goes looking finds one ${((withTriad / runs) * 100).toFixed(0)}% of the time`,
+  withTriad / runs > 0.5,
+);
 
 // ---------------------------------------------------------------------------------------------
 // 邪气: the roster, and whether a run actually gets worse.

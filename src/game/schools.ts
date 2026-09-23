@@ -338,6 +338,58 @@ export const COMBOS: Combo[] = [
 ];
 
 /**
+ * 三合 — seven forms that need three schools at once.
+ *
+ * The fourteen pairings turned out to be **dense enough**: drafted blind, four slots average 2.35
+ * of them and land two or more 82% of the time; drafted deliberately, a complete build comes out
+ * every single time. Adding edges to that would not add depth, it would remove the one question
+ * the draft asks — *does this card go with what I have* — by making the answer almost always yes.
+ *
+ * So the next layer goes **up** instead of sideways. A 三合 costs you a whole slot's freedom: with
+ * four slots there are only C(4,3) = 4 three-school subsets, so committing to one is committing to
+ * three quarters of your build. That is a real decision in a way that a fifteenth pairing is not.
+ *
+ * ## 一主二辅
+ *
+ * Every one is a school plus **two of its own partners**, so the three of them already carry two
+ * pairings between them before the 三合 is counted. That is deliberate: it means somebody
+ * assembling a build the ordinary way — taking cards that pair with what they hold — walks into
+ * these without being told to hunt for them. A form made of three schools that do not pair would be
+ * a secret recipe, and secret recipes in a ninety-second mode are content nobody sees.
+ *
+ * Two of the seven (三才剑阵 and 幽都印) are **triangles** — all three pair with each other — and
+ * they are the only two the graph contains. They carry three pairings each.
+ *
+ * Every school appears in at least two, so no draft is locked out of the layer.
+ */
+export interface Triad {
+  /** The three, in no particular order. */
+  of: [School, School, School];
+  name: string;
+  effect: string;
+}
+
+export const TRIADS: Triad[] = [
+  { of: ['符', '剑', '雷'], name: '三才剑阵', effect: '符先落地成阵，雷引其上，剑气循阵旋出' },
+  { of: ['符', '土', '影'], name: '幽都印', effect: '壳碎时地上升起符阵，阵中走出三个影卫' },
+  { of: ['雷', '火', '冰'], name: '三灾劫', effect: '地火落处同时降雷，并炸开一圈寒霜' },
+  { of: ['冰', '风', '土'], name: '玄霜壁', effect: '风刃不再绕身，钉在寒域边缘结成一道旋转冰墙' },
+  { of: ['风', '剑', '毒'], name: '瘴风刃', effect: '剑气裹瘴而行，所过之处留下毒痕' },
+  { of: ['毒', '火', '影'], name: '业火鬼', effect: '影卫浑身燃烧，走过的地方成片引火' },
+  { of: ['土', '冰', '影'], name: '玄冥甲', effect: '影卫不再游走，护在身侧随甲而转' },
+];
+
+/** The 三合 a build completes. */
+export function activeTriads(held: School[]): Triad[] {
+  return TRIADS.filter((triad) => triad.of.every((school) => held.includes(school)));
+}
+
+/** Whether a particular form is up. Named rather than indexed, so a reorder cannot break it. */
+export function hasTriad(held: School[], name: string): boolean {
+  return activeTriads(held).some((triad) => triad.name === name);
+}
+
+/**
  * The nine jackpots, one per school.
  *
  * **An evolution is only ever offered for a school whose partner you are holding.** That is the one

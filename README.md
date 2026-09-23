@@ -1678,6 +1678,46 @@ The three beats **sum to exactly 3.0 cadences**, so the rate is unchanged — me
 2.5s against 3 × 0.831. That is the only honest way to add showmanship to something already
 balanced: buy the phrasing, pay nothing for it.
 
+### 三合: the next layer goes up, not sideways
+
+"Why only fourteen pairings" has a measured answer: fourteen edges are **already dense enough**.
+Drafted blind, four slots average 2.35 of them and land two or more 82% of the time; drafted
+deliberately, a complete build comes out 100% of the time. Adding edges would not add depth — it
+would delete the only question the draft asks, *does this card go with what I have*, by making the
+answer almost always yes.
+
+So the next layer goes **up**: seven **三合**, each needing three schools at once. Four slots hold
+only C(4,3) = 4 three-school subsets, so committing to one commits three quarters of the build.
+That is a real decision in a way a fifteenth pairing is not.
+
+| 三合 | schools | what it does |
+|---|---|---|
+| **三才剑阵** | 符+剑+雷 | the crescents stop flying straight and curve round the array |
+| **幽都印** | 符+土+影 | the shell bursting raises a ring of talismans and **three** wards |
+| **三灾劫** | 雷+火+冰 | a dropped flame also calls lightning and bursts a ring of frost |
+| **玄霜壁** | 冰+风+土 | the blades leave the body, pin to the cold rim, and double |
+| **瘴风刃** | 风+剑+毒 | the crescents lay miasma along their whole path |
+| **业火鬼** | 毒+火+影 | the wards burn as they travel, setting the ground alight |
+| **玄冥甲** | 土+冰+影 | the wards stop hunting and turn with the shell as a guard |
+
+#### 一主二辅: why not any three
+
+Every form is **a school plus two of its own partners**, so the three already carry two pairings
+between them before the 三合 is counted. That is deliberate: somebody assembling a build the
+ordinary way — taking cards that pair with what they hold — **walks into these without hunting for
+them**. Measured: a draft that goes looking finds one **86%** of the time. A form made of three
+schools that do not pair would be a secret recipe, and a secret recipe in a ninety-second mode is
+content nobody sees.
+
+Two of the seven are **triangles** — all three pairing with each other — and a check verifies the
+stronger claim that the graph contains **exactly two triangles in total**, so "only two perfect
+三合" is a property of the pairings rather than a choice I made.
+
+One bug worth recording. 三才剑阵 was first implemented by adding 1000 to an effect's `index` as a
+"this one curves" flag — and the drawing layer reads `index / 100` as the form's scale. So a curving
+crescent came out **eleven times its size**, a band clean across the screen. **Two meanings in one
+number is a bug with a delay on it.** It has its own field now.
+
 ### Reaching the top, and what you keep
 
 The seventy-second breakthrough is not allowed to look like the seventy-first. It gathers — held

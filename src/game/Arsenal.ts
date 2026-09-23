@@ -26,7 +26,9 @@ import {
   SCHOOLS,
   type School,
   Slots,
+  type Triad,
   activeCombos,
+  activeTriads,
   exchangeCost,
   partners,
 } from './schools.js';
@@ -115,6 +117,11 @@ export class Arsenal {
   /** Every combination the current build completes. */
   combos(): Combo[] {
     return activeCombos(this.schools);
+  }
+
+  /** Every 三合 the current build completes. */
+  triads(): Triad[] {
+    return activeTriads(this.schools);
   }
 
   /** How full the meter is, 0 to 1. Drawn, so it has to be a fraction rather than a count. */

@@ -23,6 +23,7 @@ import {
   type Palette,
   type School,
   SPECS,
+  activeTriads,
   ascend,
   cadence,
   comboFor,
@@ -67,6 +68,16 @@ interface Effect {
   path?: { x: number; y: number }[];
   /** For 影卫: which one it is, so three of them do not stack on the same pixel. */
   index?: number;
+  /**
+   * Radians a second this bends its own heading by. Zero, and absent, for everything that flies
+   * straight.
+   *
+   * Its own field rather than a flag smuggled into another one. 三才剑阵 was first written by
+   * adding 1000 to `index`, which the drawing layer reads as `index / 100` for the form's scale —
+   * so a curving crescent came out **eleven times its size**, as a band across the whole screen.
+   * Two meanings in one number is a bug with a delay on it.
+   */
+  curve?: number;
 }
 
 /** How long each motion's effect lives, in seconds. */
@@ -186,6 +197,8 @@ export class Attacks {
   /** Everything the current build holds, refreshed whenever the arsenal changes. */
   private held: { school: School; level: number; evolved: boolean }[] = [];
   private combos: Combo[] = [];
+  /** Names of the 三合 the build completes, worked out once per change rather than per frame. */
+  private forms = new Set<string>();
 
   reset(): void {
     this.arena = null;
@@ -208,7 +221,10 @@ export class Attacks {
   carry(held: { school: School; level: number; evolved: boolean }[], combos: Combo[]): void {
     this.held = held;
     this.combos = combos;
+    this.forms = new Set(activeTriads(held.map((h) => h.school)).map((t) => t.name));
     for (const h of held) if (!this.timers.has(h.school)) this.timers.set(h.school, 0.25);
+    // 玄冥甲 parks the wards on an orbit and 玄霜壁 parks the blades on the cold rim; both are
+    // read at draw time, so nothing has to be rebuilt when a form completes mid-run.
   }
 
   private has(school: School): boolean {
@@ -278,6 +294,11 @@ export class Attacks {
     context.restore();
   }
 
+  /** True when a 三合 is complete. By name, so reordering `TRIADS` cannot silently rewire one. */
+  private triad(name: string): boolean {
+    return this.forms.has(name);
+  }
+
   /** True when both halves of a named pairing are held. */
   private paired(a: School, b: School): boolean {
     const combo = comboFor(a, b);
@@ -328,8 +349,26 @@ export class Attacks {
     // A shell breaking should throw pieces of itself. Eighteen, outward, fast.
     this.spark(this.bodyX, this.bodyY, 18, '土', 330);
 
-    // 幽壤: two 影卫 come out of the ground where it broke.
-    if (this.paired('土', '影')) {
+    // 幽壤: two 影卫 come out of the ground where it broke. 幽都印 makes it three, and lays a ring
+    // of talismans for them to step out of.
+    if (this.triad('幽都印')) {
+      for (let i = 0; i < 3; i++) this.spawnWard(i + 7);
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2;
+        this.push(
+          '符',
+          'ward-glyph',
+          this.bodyX + Math.cos(angle) * 96,
+          this.bodyY + Math.sin(angle) * 96,
+          0,
+          0,
+          angle,
+          2.2,
+          28,
+          1,
+        );
+      }
+    } else if (this.paired('土', '影')) {
       for (let i = 0; i < 2; i++) this.spawnWard(i + 7);
     }
     // 不动明山 never actually breaks — it bursts and is immediately whole again.
@@ -485,6 +524,9 @@ export class Attacks {
       // number, and the evolution adds two to it rather than multiplying it by five.
       const total = spec.bite + level + (this.evolved('剑') ? 2 : 0);
       const bite = Math.max(1, Math.ceil(total / headings.length));
+      // 三才剑阵: the cut leaves on a curve instead of a line, as though it were following the ring
+      // of talismans round.
+      const circling = this.triad('三才剑阵');
       for (const way of headings) {
         const blade = this.push(
           '剑',
@@ -502,6 +544,7 @@ export class Attacks {
         // scale on an effect that has no other use for `index`.
         blade.age = -WindUpSeconds;
         blade.index = Math.round(form.scale * 100);
+        if (circling) blade.curve = 1.9;
         // The gather itself, at the shoulder, on the way the cut is going.
         this.push('剑', 'gather', this.bodyX, this.bodyY, 0, 0, way, WindUpSeconds, 46, 0);
       }
@@ -536,6 +579,19 @@ export class Attacks {
             y: this.bodyY,
           });
       this.push('火', 'zone', at.x, at.y, 0, 0, 0, LIFE.zone, reach, spec.bite + level);
+      // 三灾劫: the three disasters land together. Lightning into the pool, then a ring of frost
+      // out of it — one event with three colours in it, which is what a 三合 should look like.
+      if (this.triad('三灾劫')) {
+        const bolt = this.push('雷', 'chain', at.x, at.y - 300, 0, 0, 0, 0.3, 300, 0);
+        bolt.path = [
+          { x: at.x, y: at.y - 300 },
+          { x: at.x, y: at.y },
+        ];
+        battlefield.cull(at.x, at.y, 60, 2);
+        this.push('冰', 'burst', at.x, at.y, 0, 0, 0, 0.5, reach * 1.5, 0);
+        battlefield.cull(at.x, at.y, reach * 1.5, 2);
+        this.spark(at.x, at.y, 10, '冰', 260);
+      }
       return;
     }
 
@@ -554,7 +610,9 @@ export class Attacks {
     if (school === '风') {
       // Blades are persistent, so this only tops them up to the number the level allows. The level
       // buys **blades** here rather than radius — see `grow` on the spec for why.
-      const want = (this.evolved('风') ? 3 : 1) * (1 + Math.floor((level - 1) * 0.75));
+      // 玄霜壁 doubles them, because a wall needs enough of them to read as a wall.
+      const wall = this.triad('玄霜壁');
+      const want = (this.evolved('风') ? 3 : 1) * (1 + Math.floor((level - 1) * 0.75)) * (wall ? 2 : 1);
       const have = this.live.filter((e) => e.school === '风' && e.kind === 'orbit').length;
       for (let i = have; i < want; i++) {
         const blade = this.push(
@@ -677,6 +735,21 @@ export class Attacks {
     this.spark(this.bodyX, this.bodyY, 9, b, 200);
   }
 
+  /**
+   * The moment a 三合 completes.
+   *
+   * Three rings in the three schools' own colours, and a crown of sparks from each. Louder than a
+   * pairing's single ring and quieter than an evolution's gold, which is where it belongs: a 三合
+   * costs three quarters of a build, and an evolution is still the rarer thing.
+   */
+  heraldTriad(of: [School, School, School]): void {
+    for (const [i, school] of of.entries()) {
+      const ring = this.push(school, 'burst', this.bodyX, this.bodyY, 0, 0, 0, 0.7 + i * 0.1, 120 + i * 55, 0);
+      ring.age = -i * 0.11;
+      this.spark(this.bodyX, this.bodyY, 10, school, 250);
+    }
+  }
+
   herald(school: School): void {
     const hue = ascend(PALETTE[school]);
     for (let i = 0; i < 3; i++) {
@@ -793,6 +866,14 @@ export class Attacks {
           continue;
         }
       } else if (e.kind === 'arc') {
+        // 三才剑阵 bends the flight, so a volley sweeps round rather than out.
+        if (e.curve) {
+          const turn = e.curve * dt;
+          const vx = e.vx * Math.cos(turn) - e.vy * Math.sin(turn);
+          const vy = e.vx * Math.sin(turn) + e.vy * Math.cos(turn);
+          e.vx = vx;
+          e.vy = vy;
+        }
         const flew = Math.hypot(e.vx, e.vy) * dt;
         e.x += e.vx * dt;
         e.y += e.vy * dt;
@@ -816,6 +897,11 @@ export class Attacks {
             }
           }
         }
+        // 瘴风刃: it lays miasma along its whole path, so a cut becomes a line you cannot follow
+        // it through.
+        if (this.triad('瘴风刃') && Math.random() < dt * 22) {
+          this.push('毒', 'trail', e.x, e.y, 0, 0, Math.random() * Math.PI * 2, 1.8, 40, 1);
+        }
         // Spent when it has cut its fill or flown its distance, whichever comes first.
         if (e.bite <= 0 || e.cool >= e.reach) continue;
       } else if (e.kind === 'orbit') {
@@ -827,7 +913,11 @@ export class Attacks {
         // three blades on orbits of 146, 178 and 210 — further out every level, while everything it
         // was meant to hit walked inward. That is why levelling it made it *worse*.
         const rings = this.evolved('风') ? 3 : 1;
-        const ring = e.reach * (1 + 0.22 * ((e.index ?? 0) % rings));
+        // 玄霜壁 takes the blades off their own orbit and pins them to the edge of the cold field,
+        // so the two schools stop being two things happening near each other and become one wall.
+        const ring = this.triad('玄霜壁')
+          ? span('冰', this.levelOf('冰'))
+          : e.reach * (1 + 0.22 * ((e.index ?? 0) % rings));
         e.x = this.bodyX + Math.cos(e.angle) * ring;
         e.y = this.bodyY + Math.sin(e.angle) * ring;
         if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch + 6, 1) > 0) {
@@ -887,12 +977,31 @@ export class Attacks {
           }
         }
       } else if (e.kind === 'ward') {
+        // 玄冥甲: they stop hunting and stand guard, turning with the shell instead.
+        if (this.triad('玄冥甲')) {
+          const spin = this.clock * 1.1 + ((e.index ?? 0) / 3) * Math.PI * 2;
+          const ring = 92;
+          e.x = this.bodyX + Math.cos(spin) * ring;
+          e.y = this.bodyY + Math.sin(spin) * ring;
+          e.angle = spin + Math.PI / 2;
+          if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch + 10, 1) > 0) {
+            e.cool = WardCool * 0.7;
+            this.spark(e.x, e.y, 6, '冰', 210, e.angle, 1.8);
+          }
+          alive.push(e);
+          continue;
+        }
         const mark = battlefield.closest(e.x, e.y, 900);
         const goal = mark ?? { x: this.bodyX, y: this.bodyY };
         const away = Math.hypot(goal.x - e.x, goal.y - e.y) || 1;
         e.x += ((goal.x - e.x) / away) * WardSpeed * dt;
         e.y += ((goal.y - e.y) / away) * WardSpeed * dt;
         e.angle = Math.atan2(goal.y - e.y, goal.x - e.x);
+        // 业火鬼: it burns as it travels, setting light to the ground behind it rather than only
+        // to what it touches.
+        if (this.triad('业火鬼') && Math.random() < dt * 9) {
+          this.push('毒', 'trail-fire', e.x, e.y, 0, 0, Math.random() * Math.PI * 2, 1.5, 44, 1);
+        }
         if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch + 8, 1) > 0) {
           e.cool = WardCool;
           this.spark(e.x, e.y, 6, '影', 200, e.angle, 1.8);

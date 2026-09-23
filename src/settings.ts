@@ -1,6 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
-import { MaxLevel, SCHOOLS, SPECS, type School, activeCombos } from './game/schools';
+import {
+  MaxLevel,
+  SCHOOLS,
+  SPECS,
+  type School,
+  activeCombos,
+  activeTriads,
+} from './game/schools';
 
 // A settings page that fails silently is indistinguishable from one that never loaded, which is
 // exactly the hole this fell into: a blank white window with no way to tell whether the document,
@@ -235,9 +242,15 @@ function render(): void {
 
   // Naming the pairings here is most of why this screen is worth having: it is the one place the
   // graph is visible without reading the source.
-  const made = activeCombos(loadout.map((slot) => slot.school));
-  comboLine.textContent = made.length
-    ? `合：${made.map((combo) => `${combo.name}（${combo.effect}）`).join('、')}`
+  const schools = loadout.map((slot) => slot.school);
+  const made = activeCombos(schools);
+  const forms = activeTriads(schools);
+  // 三合 first, because a build that has one is defined by it — it costs three of the four slots.
+  const lines: string[] = [];
+  for (const triad of forms) lines.push(`三合 · ${triad.name}（${triad.effect}）`);
+  if (made.length) lines.push(`合：${made.map((c) => `${c.name}（${c.effect}）`).join('、')}`);
+  comboLine.textContent = lines.length
+    ? lines.join('\n')
     : loadout.length > 1
       ? '这几个不相合。'
       : '';
