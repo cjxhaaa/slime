@@ -99,9 +99,9 @@ export const zhHans: Dictionary = {
   pet: {
     readyToBreak: '{stage} · 可突破\n点击渡劫',
     ordealSure: '渡劫无虞',
-    ordealSteady: '渡劫稳妥 · 再攸 {short} 张无虞',
-    ordealFair: '渡劫可试 · 再攸 {short} 张无虞',
-    ordealPerilous: '渡劫凶险 · 再攸 {short} 张无虞',
+    ordealSteady: '渡劫稳妥 · 再攒 {short} 张无虞',
+    ordealFair: '渡劫可试 · 再攒 {short} 张无虞',
+    ordealPerilous: '渡劫凶险 · 再攒 {short} 张无虞',
     refineLeft: '今日尚可炼化 {left} 次',
     ordealFailed: '渡劫未成\n符箓尽散 · 修为有损',
     ascendedIdle: '此身已证大道\n设置中可转生重历',

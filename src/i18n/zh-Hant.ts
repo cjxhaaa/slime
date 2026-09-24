@@ -107,9 +107,9 @@ export const zhHant: Dictionary = {
   pet: {
     readyToBreak: '{stage} · 可突破\n點擊渡劫',
     ordealSure: '渡劫無虞',
-    ordealSteady: '渡劫穩妥 · 再攸 {short} 張無虞',
-    ordealFair: '渡劫可試 · 再攸 {short} 張無虞',
-    ordealPerilous: '渡劫凶險 · 再攸 {short} 張無虞',
+    ordealSteady: '渡劫穩妥 · 再攢 {short} 張無虞',
+    ordealFair: '渡劫可試 · 再攢 {short} 張無虞',
+    ordealPerilous: '渡劫凶險 · 再攢 {short} 張無虞',
     refineLeft: '今日尚可煉化 {left} 次',
     ordealFailed: '渡劫未成\n符籙盡散 · 修為有損',
     ascendedIdle: '此身已證大道\n設定中可轉生重歷',

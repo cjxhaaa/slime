@@ -35,7 +35,7 @@ export const en: Dictionary = {
   ],
   ascended: 'Ascended',
   stages: ['1', '2', '3', '4', '5', '6', '7', '8', '9'],
-  realmStage: '{realm} {stage}',
+  realmStage: '{realm}, Layer {stage}',
   fullness: ['Barely gathered', 'Gathering', 'Nearly full', 'Ready to break through'],
 
   schools: {
@@ -103,7 +103,7 @@ export const en: Dictionary = {
 
   breeds: {
     drift: 'Wraith',
-    dart: 'Render',
+    dart: 'Charger',
     weave: 'Circler',
     split: 'Splitter',
     heavy: 'Hulk',
@@ -134,7 +134,7 @@ export const en: Dictionary = {
   ],
 
   pet: {
-    readyToBreak: '{stage} · ready\nClick to face the ordeal',
+    readyToBreak: '{stage} · ready to break through\nClick to face the ordeal',
     ordealSure: 'The ordeal holds no danger',
     ordealSteady: 'Steady · {short} more charms to be sure',
     ordealFair: 'Worth attempting · {short} more charms to be sure',

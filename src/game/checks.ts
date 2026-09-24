@@ -1504,6 +1504,86 @@ checkTrue('a stored locale is recognised', isLocale('ja'));
 checkTrue('and junk in the save is not', !isLocale('xx') && !isLocale(7) && !isLocale(null));
 
 // -------------------------------------------------------------------------------------------------
+// Script leaks.
+//
+// Four of the five dictionaries share a writing system and none of them share a *script*. A string
+// copied out of the wrong one type-checks perfectly, reads almost right, and is simply wrong —
+// 「修為將満」 in 日本語 is the traditional 將 where Japanese writes 将, and the only way anybody
+// was ever going to notice is by reading all five columns side by side. So it is asserted instead.
+//
+// 简体中文 is the standard: it is the source text, and the other four are measured against it.
+
+/** Simplified and traditional forms of the same character, for the two Chinese dictionaries. */
+const CHINESE_VARIANTS = '练練,气氣,筑築,婴嬰,炼煉,虚虛,体體,飞飛,层層,剑劍,风風,药藥,发發,极極,灵靈,万萬,与與,断斷,尽盡,归歸,单單,边邊,关關,静靜,战戰,择擇,击擊,产產,当當,画畫,团團,图圖,压壓,医醫,乱亂,乐樂,虫蟲,烧燒,灯燈,炉爐,独獨,听聽,觉覺,丰豐,轻輕,辞辭,铁鐵,随隨,验驗,盐鹽,场場,过過,这這,个個,说說,读讀,转轉,传傳,续續,应應,对對,证證,变變,齐齊,旧舊,来來,两兩,会會,经經,实實,数數,点點,国國,学學,从從,稳穩,现現,样樣,让讓,识識,记記,设設,语語,种種,无無,还還,为為,处處,们們,门門,时時,长長,东東,纹紋,满滿,悪惡,广廣,总總,将將,装裝,欢歡,权權,观觀,岁歲,价價,儿兒,杂雜,担擔,绘繪,争爭,兽獸,宝寶'
+  .split(',')
+  .map((pair) => [pair[0], pair[1]] as const);
+
+/**
+ * Traditional forms that Japanese replaced with a 新字体.
+ *
+ * Separate from the list above because the answer is not the same: 為 and 虛 are traditional for
+ * Chinese but perfectly ordinary Japanese, so a shared table would fire on every correct string.
+ */
+const SHINJITAI = '穩穏,將将,從従,學学,國国,會会,經経,實実,氣気,數数,點点,說説,讀読,轉転,傳伝,續続,應応,對対,證証,變変,體体,齊斉,舊旧,來来,兩両,萬万,與与,斷断,盡尽,歸帰,單単,發発,邊辺,關関,靜静,戰戦,擇択,擊撃,產産,當当,畫画,團団,圖図,壓圧,醫医,亂乱,樂楽,蟲虫,燒焼,燈灯,爐炉,獨独,聽聴,覺覚,豐豊,輕軽,辭辞,鐵鉄,隨随,驗験,鹽塩,劍剣,廣広,總総,裝装,歡歓,權権,觀観,歲歳,價価,兒児,雜雑,擔担,繪絵,爭争,獸獣,寶宝'
+  .split(',')
+  .map((pair) => [pair[0], pair[1]] as const);
+
+const strings = (value: unknown, out: [string, string][], path: string): void => {
+  if (typeof value === 'string') {
+    out.push([path, value]);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => strings(item, out, `${path}[${i}]`));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, inner] of Object.entries(value)) strings(inner, out, `${path}.${key}`);
+  }
+};
+
+const said = (tag: (typeof LOCALES)[number]): [string, string][] => {
+  const out: [string, string][] = [];
+  strings(DICTIONARIES[tag], out, tag);
+  return out;
+};
+
+let leaks: string[] = [];
+for (const [where, text] of said('zh-Hans')) {
+  for (const [simple, full] of CHINESE_VARIANTS) {
+    if (text.includes(full) && full !== simple) leaks.push(`${where}: traditional ${full}`);
+  }
+}
+for (const [where, text] of said('zh-Hant')) {
+  for (const [simple, full] of CHINESE_VARIANTS) {
+    if (text.includes(simple) && full !== simple) leaks.push(`${where}: simplified ${simple}`);
+  }
+}
+for (const [where, text] of said('ja')) {
+  for (const [old, now] of SHINJITAI) {
+    if (text.includes(old)) leaks.push(`${where}: ${old} where Japanese writes ${now}`);
+  }
+}
+check(`no dictionary is written in another one's script${leaks.length ? ': ' + leaks.join(', ') : ''}`, leaks.length, 0);
+
+// 한국어 is written in Hangul — the vocabulary is 한자어, but 練氣 on screen would look like a
+// textbook rather than a game. A Han character in this dictionary is a line somebody forgot to
+// translate, and it is the one kind of leak that is completely unambiguous.
+const Han = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
+let hanInKorean: string[] = [];
+for (const [where, text] of said('ko')) if (Han.test(text)) hanInKorean.push(where);
+check(`한국어 carries no Han characters${hanInKorean.length ? ': ' + hanInKorean.join(', ') : ''}`, hanInKorean.length, 0);
+
+// And English carries nothing CJK at all, for the same reason.
+const CJK = /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
+let cjkInEnglish: string[] = [];
+for (const [where, text] of said('en')) if (CJK.test(text)) cjkInEnglish.push(where);
+check(`English carries nothing CJK${cjkInEnglish.length ? ': ' + cjkInEnglish.join(', ') : ''}`, cjkInEnglish.length, 0);
+
+// And the tables really were walked, rather than a typo in a path quietly checking nothing.
+checkTrue('every dictionary was read', said('ko').length > 150);
+
+// -------------------------------------------------------------------------------------------------
 // Fitting words into a fixed box.
 //
 // The card is 186 pixels wide and was sized when every string in it was Chinese. Both of the bugs

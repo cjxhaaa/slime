@@ -24,7 +24,7 @@ export const ja: Dictionary = {
   ascended: '飛昇済み',
   stages: ['一', '二', '三', '四', '五', '六', '七', '八', '九'],
   realmStage: '{realm}{stage}層',
-  fullness: ['修為初凝', '修為漸盈', '修為將満', '突破可能'],
+  fullness: ['修為初凝', '修為漸盈', '修為将満', '突破可能'],
 
   schools: {
     符: { name: '符籙', blurb: '符を投じ、一符一敵' },
@@ -112,10 +112,10 @@ export const ja: Dictionary = {
   pet: {
     readyToBreak: '{stage} · 突破可能\nクリックで渡劫',
     ordealSure: '渡劫に憂いなし',
-    ordealSteady: '渡劫は穩当 · あと {short} 枚で憂いなし',
+    ordealSteady: '渡劫は穏当 · あと {short} 枚で憂いなし',
     ordealFair: '渡劫は試すに足る · あと {short} 枚で憂いなし',
     ordealPerilous: '渡劫は険しい · あと {short} 枚で憂いなし',
-    refineLeft: '本日はあと {left} 回鍉化できる',
+    refineLeft: '本日はあと {left} 回錬化できる',
     ordealFailed: '渡劫ならず\n符籙は尽き · 修為を損なう',
     ascendedIdle: 'この身すでに大道を証す\n設定から転生できる',
     firstBreath: 'この物、霊性あるらしく\n天地の気を吞吐している',

@@ -1,3 +1,5 @@
+import { wrap } from './text.js';
+
 export interface BubbleRect {
   x: number;
   y: number;
@@ -11,6 +13,9 @@ const LINE_HEIGHT = 19;
 const TAIL = 9;
 const RADIUS = 12;
 const MAX_WIDTH = 260;
+/** At most three things said, as before — but each of them may now need two lines to say it. */
+const MAX_PARAGRAPHS = 3;
+const MAX_LINES = 5;
 
 /**
  * The speech bubble.
@@ -44,7 +49,9 @@ export class Bubble {
     this.visible = true;
     if (text === this.text) return;
     this.text = text;
-    this.lines = text.split('\n').slice(0, 3);
+    // Not laid out here: wrapping needs a context to measure with, and `show` has none. Cleared
+    // instead, and `layout` — which does have one — does the work the first time it is asked.
+    this.lines = [];
     this.textWidth = null;
     this.textDirty = true;
   }
@@ -86,17 +93,25 @@ export class Bubble {
     anchorY: number,
     stageWidth: number,
   ): BubbleRect | null {
-    if (this.appear < 0.01 || this.lines.length === 0) return null;
+    if (this.appear < 0.01 || this.text.length === 0) return null;
     if (this.textWidth === null) {
       context.save();
       context.font = FONT;
-      let widest = 0;
-      for (const line of this.lines) {
-        widest = Math.max(widest, context.measureText(line).width);
+      // Wrapped rather than squashed. `fillText` takes a maximum width and **condenses** the
+      // glyphs to meet it, which is invisible in Chinese — where a bubble is a dozen characters
+      // — and turns an English line into something that looks like a rendering fault.
+      const measure = (piece: string): number => context.measureText(piece).width;
+      const laid: string[] = [];
+      for (const paragraph of this.text.split('\n').slice(0, MAX_PARAGRAPHS)) {
+        for (const line of wrap(paragraph, MAX_WIDTH, measure)) laid.push(line);
       }
+      this.lines = laid.slice(0, MAX_LINES);
+      let widest = 0;
+      for (const line of this.lines) widest = Math.max(widest, measure(line));
       context.restore();
       this.textWidth = widest;
     }
+    if (this.lines.length === 0) return null;
     const width = Math.min(MAX_WIDTH, this.textWidth) + PADDING_X * 2;
     const height = this.lines.length * LINE_HEIGHT + PADDING_Y * 2;
 
@@ -145,7 +160,6 @@ export class Bubble {
         line,
         rect.x + PADDING_X,
         rect.y + PADDING_Y + LINE_HEIGHT * index + LINE_HEIGHT / 2,
-        MAX_WIDTH,
       );
     });
     context.restore();
