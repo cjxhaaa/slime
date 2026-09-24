@@ -59,7 +59,7 @@ const rebirthWarn = el<HTMLParagraphElement>('rebirth-warn');
 void listen<{ ascended: boolean; ascensions: number; realm: string }>('pet-state', (event) => {
   const state = event.payload;
   rebirthBox.hidden = !state.ascended;
-  ascended = state;
+  saveState = state;
   armed = false;
   paintRebirth();
 });
@@ -74,7 +74,7 @@ void emit('want-state');
 let armed = false;
 let armedTimer: number | null = null;
 /** The last thing the overlay said about the save, kept so a language change can redraw it. */
-let ascended: { ascensions: number; realm: string } | null = null;
+let saveState: { ascensions: number; realm: string } | null = null;
 
 /**
  * The rebirth section, in whatever language and whatever state the two clicks are in.
@@ -89,11 +89,11 @@ function paintRebirth(): void {
   el<HTMLParagraphElement>('rebirth-blurb').textContent = w.settings.rebirthBlurb;
   rebirthButton.textContent = armed ? w.settings.rebirthConfirm : w.settings.rebirthButton;
   rebirthWarn.textContent = armed ? w.settings.rebirthWarn : '';
-  rebirthState.textContent = ascended
+  rebirthState.textContent = saveState
     ? fill(w.settings.rebirthState, {
-        realm: ascended.realm,
-        times: ascended.ascensions,
-        rate: (1 + 0.5 * ascended.ascensions).toFixed(1),
+        realm: saveState.realm,
+        times: saveState.ascensions,
+        rate: (1 + 0.5 * saveState.ascensions).toFixed(1),
       })
     : '';
 }

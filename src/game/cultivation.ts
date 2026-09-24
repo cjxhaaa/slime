@@ -1,4 +1,5 @@
 import { Ascended, StagesPerRealm, baseRate, fullness, requirement, stageName } from './realms.js';
+import { words } from '../i18n/index.js';
 
 /**
  * Everything about how fast qi comes in, other than the realm you are in.
@@ -342,7 +343,9 @@ export class Cultivation {
 
   /** The one line the pet is allowed to say about any of this, and only when hovered. */
   describe(): string {
-    if (this.realm >= Ascended) return '已飞升';
+    // `stageName` says this too, in whatever language — but this branch returns before reaching it,
+    // which is how the ascended pet went on saying it in Chinese to an English reader.
+    if (this.realm >= Ascended) return words().ascended;
     return `${stageName(this.realm, this.stage)} · ${fullness(this.progress)}`;
   }
 }

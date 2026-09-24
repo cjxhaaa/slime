@@ -39,7 +39,7 @@ export const zhHant: Dictionary = {
     符土: { name: '陣符', blurb: '符不飛了，在地上連成一圈法陣' },
     符影: { name: '傀符', blurb: '影衛也會擲符' },
     剑风: { name: '風劍', blurb: '四方各斬一道' },
-    剑雷: { name: '雷劍', blurb: '每一刀都往旁邊引一道雷' },
+    剑雷: { name: '雷劍', blurb: '每一劍都往旁邊引一道雷' },
     雷火: { name: '雷火', blurb: '地火向近處引雷' },
     火冰: { name: '冰火', blurb: '寒域中的敵人被點燃時炸開' },
     火毒: { name: '焚瘴', blurb: '瘴氣會被點著，成片燒起來' },
@@ -55,8 +55,8 @@ export const zhHant: Dictionary = {
     符土影: { name: '幽都印', blurb: '殼碎時地上升起符陣，陣中走出三個影衛' },
     雷火冰: { name: '三災劫', blurb: '地火落處同時降雷，並炸開一圈寒霜' },
     冰风土: { name: '玄霜壁', blurb: '風刃不再繞身，釘在寒域邊緣結成一道旋轉冰牆' },
-    风剑毒: { name: '瘴風刃', blurb: '劍氣裹瘴而行，所過之處留下毒痕' },
-    毒火影: { name: '業火鬼', blurb: '影衛渾身燃燒，走過的地方成片引火' },
+    风剑毒: { name: '瘴風刃', blurb: '劍氣裹瘴而行，所過之處留下瘴痕' },
+    毒火影: { name: '業火鬼', blurb: '影衛渾身燃燒，所過之處成片引火' },
     土冰影: { name: '玄冥甲', blurb: '影衛不再遊走，護在身側隨甲而轉' },
   },
 
@@ -64,7 +64,7 @@ export const zhHant: Dictionary = {
     符: { name: '萬符朝元', blurb: '每息一符，永不落空' },
     剑: { name: '萬劍歸宗', blurb: '斬出的不再是一道，是一片' },
     雷: { name: '九天神雷', blurb: '雷沿著敵人一路傳下去' },
-    火: { name: '焚天爐', blurb: '火不熄，且隨你走' },
+    火: { name: '焚天爐', blurb: '火不熄，且隨身而走' },
     冰: { name: '玄冰獄', blurb: '寒域之內，行者盡止' },
     风: { name: '罡風陣', blurb: '三重風刃，反向而轉' },
     土: { name: '不動明山', blurb: '殼不再碎，只是盪開' },
@@ -88,7 +88,7 @@ export const zhHant: Dictionary = {
     '簷下接了一捧晨露',
     '風裡飄來一縷香火',
     '啃到一塊帶靈氣的舊木',
-    '牆角蹲出一朵靈芝',
+    '牆角冒出一朵靈芝',
     '撿了枚不知誰掉的玉簡',
     '曬了半晌的太陽',
     '誤食一顆野果，竟有藥性',
@@ -130,7 +130,7 @@ export const zhHant: Dictionary = {
     evolve: '★ 進化',
     mend: '調息',
     mendTitle: '護體',
-    mendBlurb: '回復三分護體',
+    mendBlurb: '恢復三分護體',
     levelStep: '{from}重 → {to}重',
     pairsWith: '與{school}合 · {combo}',
     triadWith: '三合 · {triad}',
@@ -149,7 +149,7 @@ export const zhHant: Dictionary = {
     arenaBlurb:
       '自己搭一套法脈，對著木樁打。樁不動、不還手、倒了就站回來，也沒有時間限制，不點結束就一直打。不結算任何修為。',
     arenaRings:
-      '樁排成三圈（150 / 290 / 430 像素）—— 哪一圈不再倒，就是這套法脈的射程邊界。拖動史萊姆可以換位置（瘴氣需要走起來才留痕）。拉滑桿當場生效。',
+      '樁排成三圈（150 / 290 / 430 像素）——哪一圈不再倒，就是這套法脈的射程邊界。拖曳史萊姆可以換位置（瘴氣需要走起來才留痕）。拉滑桿當場生效。',
     start: '上樁',
     stop: '結束',
     combosLabel: '合',
@@ -161,21 +161,21 @@ export const zhHant: Dictionary = {
     languageTitle: '語言',
     languageBlurb: '預設跟隨系統。改了立刻生效，兩個視窗一起換。',
     languageAuto: '（目前跟隨系統）',
-    quitLabel: '結束 Slime',
+    quitLabel: '退出 Slime',
 
     rebirthTitle: '轉生',
     rebirthBlurb:
       '重歷八境，從練氣起。已飛昇的次數、產出倍率和每日煉化檔位都保留，身上的霞光也不會散。',
     rebirthButton: '轉生重歷',
     rebirthConfirm: '確定？再點一次',
-    rebirthWarn: '當前境界、層數與修為會清零，無法復原。',
+    rebirthWarn: '目前境界、層數與修為會清零，無法復原。',
     rebirthState: '{realm} · 已飛昇 {times} 次 · 產出 ×{rate}',
 
     quietTitle: '靜修',
     quietLabel: '閉關',
     quietBlurb:
       '讓史萊姆不再讀取鍵盤，也不再對任何事有反應。牠仍舊慢慢修煉，在你回來之前一句話也不說。',
-    quietNote: '這不是過濾。開著的時候，Windows 會被告知不要再把按鍵送到 Slime。',
+    quietNote: '這不是過濾。開著的時候，會讓 Windows 不再把按鍵送到 Slime。',
 
     behaviourTitle: '習性',
     behaviourDrag:
@@ -184,6 +184,6 @@ export const zhHant: Dictionary = {
       '在 Windows 上牠還吃你敲的鍵：每隔幾秒身邊冒出一個，牠蹦過去，吞下去就長一點。那個字是你真按過的，從最近幾秒裡隨機取，順序打亂。',
     behaviourEat:
       '按住牠停在一個視窗上兩秒，牠會把那個視窗吃掉。身體還沒裹完就拉開，這頓就算了。',
-    behaviourQuit: 'Ctrl+Alt+Shift+Q 在任何地方都能結束，哪怕懸浮層已經不動了。',
+    behaviourQuit: 'Ctrl+Alt+Shift+Q 在任何地方都能退出，哪怕懸浮層已經不動了。',
   },
 };

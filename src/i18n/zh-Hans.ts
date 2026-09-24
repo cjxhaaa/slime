@@ -31,7 +31,7 @@ export const zhHans: Dictionary = {
     符土: { name: '阵符', blurb: '符不飞了，在地上连成一圈法阵' },
     符影: { name: '傀符', blurb: '影卫也会掷符' },
     剑风: { name: '风剑', blurb: '四方各斩一道' },
-    剑雷: { name: '雷剑', blurb: '每一刀都往旁边引一道雷' },
+    剑雷: { name: '雷剑', blurb: '每一剑都往旁边引一道雷' },
     雷火: { name: '雷火', blurb: '地火向近处引雷' },
     火冰: { name: '冰火', blurb: '寒域中的敌人被点燃时炸开' },
     火毒: { name: '焚瘴', blurb: '瘴气会被点着，成片烧起来' },
@@ -47,8 +47,8 @@ export const zhHans: Dictionary = {
     符土影: { name: '幽都印', blurb: '壳碎时地上升起符阵，阵中走出三个影卫' },
     雷火冰: { name: '三灾劫', blurb: '地火落处同时降雷，并炸开一圈寒霜' },
     冰风土: { name: '玄霜壁', blurb: '风刃不再绕身，钉在寒域边缘结成一道旋转冰墙' },
-    风剑毒: { name: '瘴风刃', blurb: '剑气裹瘴而行，所过之处留下毒痕' },
-    毒火影: { name: '业火鬼', blurb: '影卫浑身燃烧，走过的地方成片引火' },
+    风剑毒: { name: '瘴风刃', blurb: '剑气裹瘴而行，所过之处留下瘴痕' },
+    毒火影: { name: '业火鬼', blurb: '影卫浑身燃烧，所过之处成片引火' },
     土冰影: { name: '玄冥甲', blurb: '影卫不再游走，护在身侧随甲而转' },
   },
 
@@ -56,7 +56,7 @@ export const zhHans: Dictionary = {
     符: { name: '万符朝元', blurb: '每息一符，永不落空' },
     剑: { name: '万剑归宗', blurb: '斩出的不再是一道，是一片' },
     雷: { name: '九天神雷', blurb: '雷沿着敌人一路传下去' },
-    火: { name: '焚天炉', blurb: '火不熄，且随你走' },
+    火: { name: '焚天炉', blurb: '火不熄，且随身而走' },
     冰: { name: '玄冰狱', blurb: '寒域之内，行者尽止' },
     风: { name: '罡风阵', blurb: '三重风刃，反向而转' },
     土: { name: '不动明山', blurb: '壳不再碎，只是荡开' },
@@ -80,7 +80,7 @@ export const zhHans: Dictionary = {
     '檐下接了一捧晨露',
     '风里飘来一缕香火',
     '啃到一块带灵气的旧木',
-    '墙角蹲出一朵灵芝',
+    '墙角冒出一朵灵芝',
     '捡了枚不知谁掉的玉简',
     '晒了半晌的太阳',
     '误食一颗野果，竟有药性',
@@ -122,7 +122,7 @@ export const zhHans: Dictionary = {
     evolve: '★ 进化',
     mend: '调息',
     mendTitle: '护体',
-    mendBlurb: '回复三分护体',
+    mendBlurb: '恢复三分护体',
     levelStep: '{from}重 → {to}重',
     pairsWith: '与{school}合 · {combo}',
     triadWith: '三合 · {triad}',
@@ -141,7 +141,7 @@ export const zhHans: Dictionary = {
     arenaBlurb:
       '自己搭一套法脉，对着木桩打。桩不动、不还手、倒了就站回来，也没有时间限制，不点结束就一直打。不结算任何修为。',
     arenaRings:
-      '桩排成三圈（150 / 290 / 430 像素）—— 哪一圈不再倒，就是这套法脉的射程边界。拖动史莱姆可以换位置（瘴气需要走起来才留痕）。拉滑块当场生效。',
+      '桩排成三圈（150 / 290 / 430 像素）——哪一圈不再倒，就是这套法脉的射程边界。拖动史莱姆可以换位置（瘴气需要走起来才留痕）。拉滑块当场生效。',
     start: '上桩',
     stop: '结束',
     combosLabel: '合',
@@ -167,7 +167,7 @@ export const zhHans: Dictionary = {
     quietLabel: '闭关',
     quietBlurb:
       '让史莱姆不再读取键盘，也不再对任何事有反应。它仍旧慢慢修炼，在你回来之前一句话也不说。',
-    quietNote: '这不是过滤。开着的时候，Windows 会被告知不要再把按键送到 Slime。',
+    quietNote: '这不是过滤。开着的时候，会让 Windows 不再把按键送到 Slime。',
 
     behaviourTitle: '习性',
     behaviourDrag:

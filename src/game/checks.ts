@@ -83,8 +83,16 @@ import {
 import { Attacks } from './Attacks.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
-import { Ascended, STAGE_NUMERALS, StagesPerRealm, baseRate, requirement } from './realms.js';
-import { DICTIONARIES, LOCALES, fill, isLocale, localeFor } from '../i18n/index.js';
+import {
+  Ascended,
+  STAGE_NUMERALS,
+  StagesPerRealm,
+  baseRate,
+  fullness,
+  requirement,
+  stageName,
+} from './realms.js';
+import { DICTIONARIES, LOCALES, fill, isLocale, locale, localeFor, setLocale } from '../i18n/index.js';
 import { fit, wrap } from '../ui/text.js';
 import { TRIADS as TRIAD_TABLE } from './schools.js';
 import { REALMS as REALM_NAMES } from './realms.js';
@@ -1591,15 +1599,52 @@ checkTrue('every dictionary was read', said('ko').length > 150);
 // other four, which is the whole reason the measurement is injected: these run under Node against
 // a fake metric, so the breaks can be asserted without a canvas.
 
-// Latin at 8 a character, CJK at 16 — close enough to real proportions for the rules to bite.
-const metric = (text: string): number => {
+/**
+ * How wide a string is, in ems, **over-estimated on purpose**.
+ *
+ * Measured off the real thing, in the shipping fonts, across all 1471 strings that ship: Han,
+ * Hangul and kana are exactly 1.000 em, a space is 0.296 em, and Latin averages 0.603 em at 13px
+ * regular and 0.639 em at 600 weight — but the *worst whole string* runs to 0.761 em a character
+ * and the widest single glyph to 1.080 em.
+ *
+ * That spread is why **this is an approximation, and says so**. A per-character constant tight
+ * enough not to cry wolf cannot also certify the last pixel, and one wide enough to certify it
+ * rejects strings that fit. The numbers below sit a little above the average: enough to catch a
+ * string that is *clearly* over its budget — which is the bug that actually happened, a title
+ * 330 px wide in a 166 px card — and not enough to settle a string that is one pixel over. That
+ * one needs a real canvas, and is checked by driving the app in a browser.
+ *
+ * The first version used 0.5 em for Latin, was therefore *optimistic*, and duly passed the title
+ * that overflowed by a factor of two. Erring high is the point; erring high by a fifth was not.
+ */
+const LatinEm = 0.66;
+const SpaceEm = 0.32;
+const WideEm = 1.02;
+
+const ems = (text: string): number => {
   let sum = 0;
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;
-    sum += code > 0x2000 && code < 0xd800 ? 16 : 8;
+    const wide =
+      (code >= 0x3000 && code <= 0x30ff) ||
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xff60);
+    sum += ch === ' ' ? SpaceEm : wide ? WideEm : LatinEm;
   }
   return sum;
 };
+
+/** The same, at a pixel size. */
+const atSize =
+  (size: number) =>
+  (text: string): number =>
+    ems(text) * size;
+
+// The old name, kept for the rules below, which only care about relative widths.
+const metric = (text: string): number => ems(text) * 16;
 
 // 1. **A Latin word is never cut in half.** This is the bug that shipped: the old loop broke
 //    between any two characters, so an English blurb read "…breath, an / d none of them miss".
@@ -1624,7 +1669,7 @@ const leading = wrap('\u4e00\u606f\u4e00\u7b26\uff0c\u4e14\u7bad\u7bad\u4e0d\u7a
 check('no line starts with closing punctuation', leading.length, 0);
 
 // 4. Korean has spaces in it, so it breaks at them like English rather than like Chinese.
-const korean = wrap('\uc228\ud560 \ub54c\ub9c8\ub2e4 \ubd80\uc801 \ud558\ub098', 48, metric);
+const korean = wrap('\uc228\ud560 \ub54c\ub9c8\ub2e4 \ubd80\uc801 \ud558\ub098', 90, metric);
 checkTrue('Korean breaks at its spaces', korean.every((line) => !line.startsWith(' ')));
 checkTrue('and keeps its words whole', korean.join(' ') === '\uc228\ud560 \ub54c\ub9c8\ub2e4 \ubd80\uc801 \ud558\ub098');
 
@@ -1636,7 +1681,7 @@ checkTrue('and every piece fits', long.every((line) => metric(line) <= 80));
 // 6. **The title ladder.** Four Chinese characters keep the top size; the English evolution names
 //    do not, and the point of walking down is that the language with no problem pays nothing.
 const sizes = [27, 24, 21, 19, 17];
-const at = (size: number, text: string): number => (metric(text) * size) / 16;
+const at = (size: number, text: string): number => ems(text) * size;
 const zhTitle = fit('\u4e07\u7b26\u9f50\u53d1', 166, sizes, 2, at);
 check('Chinese keeps the full title size', zhTitle.size, 27);
 check('on one line', zhTitle.lines.length, 1);
@@ -1652,10 +1697,26 @@ checkTrue(
   enTitle.lines.every((line) => at(enTitle.size, line) <= 166),
 );
 
-// 7. Every name that actually ships has to land inside a card, in all five.
-let overflowing: string[] = [];
+// 7. **The whole layout budget, for every string that ships, in all five languages.**
+//
+//    Each of these has a hard ceiling in the drawing code — the card clips nothing and draws a
+//    fixed number of lines, so a string over budget is silently cut off rather than visibly wrong.
+//    That is the failure this replaces: it used to be found by opening a browser and looking.
+const CardTitle = 166; // box.width - 20, through the size ladder, at most two lines
+const CardBlurb = 160; // box.width - 26, 13px, three lines before it reaches the pairing rule
+const CardPair = 164; // box.width - 22, 13px semibold, two lines before it leaves the card
+const BubbleWidth = 260; // Bubble's MAX_WIDTH, 13px, five lines
+
+let overBudget: string[] = [];
+const budget = (what: string, text: string, width: number, size: number, most: number): void => {
+  const lines = wrap(text, width, atSize(size));
+  if (lines.length > most) overBudget.push(`${what} needs ${lines.length} lines, has ${most}: ${text}`);
+};
+
 for (const tag of LOCALES) {
   const dict = DICTIONARIES[tag];
+
+  // Titles shrink rather than wrap past two lines, so these are checked through the ladder.
   const titles = [
     ...SCHOOLS.map((k) => dict.schools[k].name),
     ...SCHOOLS.map((k) => dict.evolutions[k].name),
@@ -1664,11 +1725,99 @@ for (const tag of LOCALES) {
     dict.draft.mendTitle,
   ];
   for (const title of titles) {
-    const laid = fit(title, 166, sizes, 2, at);
-    if (laid.lines.some((line) => at(laid.size, line) > 166)) overflowing.push(`${tag}: ${title}`);
+    const laid = fit(title, CardTitle, sizes, 2, at);
+    if (laid.lines.some((line) => at(laid.size, line) > CardTitle)) {
+      overBudget.push(`${tag} title overflows at its smallest size: ${title}`);
+    }
+  }
+
+  // The card's own blurb, which is the only blurb a card draws — a combo's and a triad's go in
+  // the bubble, which is wider and allows more lines.
+  for (const k of SCHOOLS) {
+    budget(`${tag} school blurb`, dict.schools[k].blurb, CardBlurb, 13, 3);
+    budget(`${tag} evolution blurb`, dict.evolutions[k].blurb, CardBlurb, 13, 3);
+  }
+  budget(`${tag} mend blurb`, dict.draft.mendBlurb, CardBlurb, 13, 3);
+
+  // The pairing line, filled with every school a card could name against every pairing it could
+  // complete — the longest of those is what has to fit, not the average.
+  for (const k of SCHOOLS) {
+    for (const one of Object.values(dict.combos)) {
+      const line = fill(dict.draft.pairsWith, { school: dict.schools[k].name, combo: one.name });
+      budget(`${tag} pairing`, line, CardPair, 13, 2);
+    }
+  }
+
+  // The bubble: every announcement, every verdict, every result. Two paragraphs where the
+  // announcement has a name above its blurb.
+  const bubbles = [
+    ...Object.values(dict.combos).map((c) => `${c.name}\n${c.blurb}`),
+    ...Object.values(dict.triads).map((t) => `${fill(dict.draft.triadWith, { triad: t.name })}\n${t.blurb}`),
+    ...SCHOOLS.map((k) => dict.evolutions[k].name),
+    ...Object.values(dict.pet),
+    ...Object.values(dict.trial),
+  ];
+  for (const text of bubbles) {
+    let used = 0;
+    for (const paragraph of text.split('\n')) used += wrap(paragraph, BubbleWidth, atSize(13)).length;
+    if (used > 5) overBudget.push(`${tag} bubble needs ${used} lines, has 5: ${text.replace(/\n/g, ' / ')}`);
   }
 }
-check(`every card title fits its card${overflowing.length ? ': ' + overflowing.join(', ') : ''}`, overflowing.length, 0);
+check(`every string fits the box it is drawn in${overBudget.length ? ': ' + overBudget.join('; ') : ''}`, overBudget.length, 0);
+checkTrue('and the budget really was walked', LOCALES.length * 9 * 14 > 600);
+
+// -------------------------------------------------------------------------------------------------
+// What actually reaches the screen.
+//
+// Every check above this line reads the **dictionaries**. That is not the same question. A string
+// can be perfectly translated in all five files and still never be asked for, because some function
+// between the dictionary and the canvas returns a literal instead — which is exactly what
+// `Cultivation.describe()` did:
+//
+//     if (this.realm >= Ascended) return '\u5df2\u98de\u5347';
+//
+// `words().ascended` was there, `stageName` used it, and this branch returned before reaching it.
+// An English player who ascended saw Chinese in the bubble and in the settings window, and every
+// assertion above passed, because none of them ever called the function.
+//
+// So these call the functions. Under English, nothing they produce may contain a CJK character.
+
+const Ideograph = /[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/;
+const wasLocale = locale();
+setLocale('en');
+
+let leaked: string[] = [];
+const englishOnly = (what: string, produced: string): void => {
+  if (Ideograph.test(produced)) leaked.push(`${what} → ${produced}`);
+};
+
+// Every rung of the ladder, and the one past the top — which is the rung that was wrong.
+for (let realm = 0; realm <= Ascended; realm++) {
+  for (let stage = 0; stage < StagesPerRealm; stage++) {
+    englishOnly(`stageName(${realm}, ${stage})`, stageName(realm, stage));
+  }
+}
+// Every bucket of the fullness word.
+for (const progress of [0, 0.44, 0.45, 0.84, 0.85, 0.99, 1, 1.5]) {
+  englishOnly(`fullness(${progress})`, fullness(progress));
+}
+// Every line a find can say.
+for (let i = 0; i < FINDS.length; i++) {
+  englishOnly(`findText(${i})`, findText(() => (i + 0.5) / FINDS.length));
+}
+// And the hover line itself, at every realm including the ascended one.
+for (let realm = 0; realm <= Ascended; realm++) {
+  const pet = new Cultivation(0);
+  pet.realm = realm;
+  pet.stage = realm >= Ascended ? 0 : 3;
+  englishOnly(`describe() at realm ${realm}`, pet.describe());
+}
+
+check(`nothing outside the dictionary speaks Chinese in English${leaked.length ? ': ' + leaked.join(', ') : ''}`, leaked.length, 0);
+checkTrue('and the functions really were called', FINDS.length + Ascended > 20);
+
+setLocale(wasLocale);
+checkTrue('the locale is put back', locale() === wasLocale);
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);
