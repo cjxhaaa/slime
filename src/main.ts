@@ -20,7 +20,16 @@ import { Arsenal, type Holding } from './game/Arsenal';
 import { activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
-import { fill, isLocale, locale, localeFor, setLocale, words } from './i18n';
+import {
+  combo as comboWords,
+  fill,
+  isLocale,
+  locale,
+  localeFor,
+  setLocale,
+  triad as triadWords,
+  words,
+} from './i18n';
 import { Draft } from './ui/Draft';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
@@ -659,13 +668,13 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
     if (forms.length > 0) {
       const triad = forms[0];
       attacks.heraldTriad(triad.of);
-      const said = words().triads[triad.of.join('')];
+      const said = triadWords(triad.of.join(''));
       trialSaid = `${fill(words().draft.triadWith, { triad: said.name })}\n${said.blurb}`;
       trialUntil = performance.now() + 4_200;
     } else if (made.length > 0) {
       const combo = made[0];
       attacks.heraldCombo(combo.pair[0], combo.pair[1]);
-      const said = words().combos[combo.pair.join('')];
+      const said = comboWords(combo.pair.join(''));
       trialSaid = `${said.name}\n${said.blurb}`;
       trialUntil = performance.now() + 3_600;
     }
@@ -778,6 +787,9 @@ function applyLocale(): void {
     ? chosenLocale
     : localeFor(navigator.languages ?? [navigator.language]);
   if (setLocale(wanted)) fullRepaint = true;
+  // What the document is in, for the font fallback: a Han character has different correct shapes in
+  // Chinese, Japanese and Korean, and this attribute is what tells the engine which one to pick.
+  document.documentElement.lang = wanted;
 }
 
 /** Tells Settings what language this window is in, and whether it was chosen or inherited. */
@@ -882,11 +894,14 @@ let appliedLook = { scale: 0, core: '', glow: -1, aura: -1 };
 function hoverLines(): string {
   const lines = [cultivation.describe()];
   const nourishLeft = cultivation.nourishSecondsLeft;
+  const w = words();
   if (nourishLeft > 0) {
-    lines.push(`温养中 · 还余 ${Math.max(1, Math.round(nourishLeft / 60))} 分钟`);
+    lines.push(
+      fill(w.trial.nourishing, { minutes: Math.max(1, Math.round(nourishLeft / 60)) }),
+    );
   }
   if (charms.count > 0) {
-    lines.push(`符箓 ${charms.count} 张`);
+    lines.push(fill(w.trial.charmCount, { count: charms.count }));
   }
   // Only at the edge, and only as a phrase. A percentage on the desktop is a number on screen, and
   // the guardrails are explicit about those — but "about to try something that might not work" is
@@ -894,18 +909,18 @@ function hoverLines(): string {
   if (cultivation.atRealmEdge && cultivation.readyToBreakThrough) {
     const chance = charms.oddsAt(cultivation.realm);
     const shortfall = charms.shortfallAt(cultivation.realm);
-    lines.push(
+    const verdict =
       chance >= 1
-        ? '渡劫无虞'
+        ? w.pet.ordealSure
         : chance >= 0.85
-          ? `渡劫稳妥 · 再攸 ${shortfall} 张无虞`
+          ? w.pet.ordealSteady
           : chance >= 0.7
-            ? `渡劫可试 · 再攸 ${shortfall} 张无虞`
-            : `渡劫凶险 · 再攸 ${shortfall} 张无虞`,
-    );
+            ? w.pet.ordealFair
+            : w.pet.ordealPerilous;
+    lines.push(fill(verdict, { short: shortfall }));
   }
   if (daily.left > 0) {
-    lines.push(`今日尚可炼化 ${daily.left} 次`);
+    lines.push(fill(w.pet.refineLeft, { left: daily.left }));
   }
   return lines.join('\n');
 }
@@ -1009,7 +1024,10 @@ function offerBreakThrough(): void {
   // says so — it just does not come and find you.
   if (quiet || slime.hasLiveAlert) return;
   alertRaisedAt = performance.now();
-  slime.raiseAlert(`${stageName(cultivation.realm, cultivation.stage)} · 可突破\n点击渡劫`, () => {
+  const prompt = fill(words().pet.readyToBreak, {
+    stage: stageName(cultivation.realm, cultivation.stage),
+  });
+  slime.raiseAlert(prompt, () => {
     bubble.hide();
     slime.clearAlert();
     takeBreakThrough();
@@ -1191,9 +1209,9 @@ function frame(now: number): void {
       // collision is eight moments in a run, and missing a find is defined to cost nothing.
       (trialSaid !== null && now < trialUntil ? trialSaid : null) ??
       fortuneText ??
-      (now < failUntil ? '渡劫未成\n符箓尽散 · 修为有损' : null) ??
-      (now < ascendUntil ? '此身已证大道\n设置中可转生重历' : null) ??
-      (now < introUntil ? '此物似有灵性\n正吞吐天地之气' : null) ??
+      (now < failUntil ? words().pet.ordealFailed : null) ??
+      (now < ascendUntil ? words().pet.ascendedIdle : null) ??
+      (now < introUntil ? words().pet.firstBreath : null) ??
       // Hovering is the only way any of the cultivation is legible, and even then it is a phrase
       // rather than a figure — no number ever reaches the screen.
       // Not while the menu is up: the bubble anchors above the body and the menu opens from it,

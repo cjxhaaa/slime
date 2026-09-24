@@ -60,6 +60,12 @@ export interface Dictionary {
   stages: [string, string, string, string, string, string, string, string, string];
   /** `{realm}` and `{stage}` are substituted. Separate because word order is not the same in all five. */
   realmStage: string;
+  /**
+   * How full the current stage is, as a word: 初凝 / 渐盈 / 将满 / 可突破, weakest first.
+   *
+   * Four buckets rather than a percentage, for the same reason nothing else here shows a figure.
+   */
+  fullness: [string, string, string, string];
 
   schools: Record<School, Named>;
   /** Keyed by the two school characters in the order `COMBOS` declares them. */
@@ -71,6 +77,28 @@ export interface Dictionary {
 
   /** The twenty lines a 机缘 can say. */
   finds: string[];
+
+  /**
+   * What the pet says about its own state, in the bubble and in the alert.
+   *
+   * These lived in `main.ts` as literals longer than anything else here, because they read as part
+   * of the code rather than as content — which is exactly how a string gets missed.
+   */
+  pet: {
+    /** `{stage}`. Two lines: what it is, and what a click would do. */
+    readyToBreak: string;
+    /** Four verdicts on the coming ordeal. `{short}` is how many charms are still wanting. */
+    ordealSure: string;
+    ordealSteady: string;
+    ordealFair: string;
+    ordealPerilous: string;
+    /** `{left}` refinings left today. */
+    refineLeft: string;
+    /** Two-liners, each shown for a while after the thing it describes. */
+    ordealFailed: string;
+    ascendedIdle: string;
+    firstBreath: string;
+  };
 
   menu: {
     settings: string;
@@ -88,6 +116,8 @@ export interface Dictionary {
     raise: string;
     evolve: string;
     mend: string;
+    /** The title on the mend card. `mend` is the word for the *kind* of card, which is not the same. */
+    mendTitle: string;
     mendBlurb: string;
     /** `{from}` and `{to}` are stage numerals. */
     levelStep: string;
@@ -115,8 +145,40 @@ export interface Dictionary {
     combosLabel: string;
     triadLabel: string;
     noCombo: string;
+    /**
+     * `{name}` and `{blurb}`, and what goes between two of them.
+     *
+     * Brackets and list commas are part of a script, not decoration: （）、 are full-width in
+     * Chinese and Japanese and simply wrong in English and Korean, which want ( ) and a comma with
+     * a space. Building the line by concatenation is how a window ends up half in one convention.
+     */
+    listItem: string;
+    listSep: string;
+    listColon: string;
     languageTitle: string;
     languageBlurb: string;
+    /** Appended to the blurb while nothing has been chosen and the system is being followed. */
+    languageAuto: string;
     quitLabel: string;
+
+    rebirthTitle: string;
+    rebirthBlurb: string;
+    rebirthButton: string;
+    /** The second of the two clicks, and the line that says what it costs. */
+    rebirthConfirm: string;
+    rebirthWarn: string;
+    /** `{realm}`, `{times}` and `{rate}`. */
+    rebirthState: string;
+
+    quietTitle: string;
+    quietLabel: string;
+    quietBlurb: string;
+    quietNote: string;
+
+    behaviourTitle: string;
+    behaviourDrag: string;
+    behaviourKeys: string;
+    behaviourEat: string;
+    behaviourQuit: string;
   };
 }

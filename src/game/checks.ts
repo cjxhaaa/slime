@@ -83,8 +83,9 @@ import {
 import { Attacks } from './Attacks.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
-import { Ascended, StagesPerRealm, baseRate, requirement } from './realms.js';
+import { Ascended, STAGE_NUMERALS, StagesPerRealm, baseRate, requirement } from './realms.js';
 import { DICTIONARIES, LOCALES, fill, isLocale, localeFor } from '../i18n/index.js';
+import { fit, wrap } from '../ui/text.js';
 import { TRIADS as TRIAD_TABLE } from './schools.js';
 import { REALMS as REALM_NAMES } from './realms.js';
 
@@ -1385,6 +1386,9 @@ for (let i = 0; i < REALM_NAMES.length; i++) {
 for (let i = 0; i < FINDS.length; i++) {
   if (zh.finds[i] !== FINDS[i]) drifted.push(`finds[${i}]`);
 }
+for (let i = 0; i < STAGE_NUMERALS.length; i++) {
+  if (zh.stages[i] !== STAGE_NUMERALS[i]) drifted.push(`stages[${i}]`);
+}
 check(`the tables and 简体中文 agree${drifted.length ? ': ' + drifted.join(', ') : ''}`, drifted.length, 0);
 
 // 1. `combos` and `triads` are keyed by school characters, so they are `Record<string, ...>` and a
@@ -1429,27 +1433,42 @@ check('no dictionary has a blank string in it', blanks, 0);
 // 3. **The placeholders have to match**, and this is the one that actually bites. A line that says
 //    `{kills}` in one language and `{kill}` in another draws the literal braces on screen, and it
 //    only shows up on the day somebody plays in that language and finishes a run.
+//
+//    Walked rather than listed. The list this used to be was correct on the day it was written and
+//    was already three patterns behind by the time anybody looked — a check that has to be edited
+//    whenever a pattern is added is a check that silently stops covering the newest thing, which is
+//    exactly the thing most likely to be wrong.
 const holes = (text: string): string[] => (text.match(/\{\w+\}/g) ?? []).slice().sort();
+const patterns = (value: unknown, path: string, into: Map<string, string>): void => {
+  if (typeof value === 'string') {
+    const found = holes(value);
+    if (found.length > 0) into.set(path, found.join(','));
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => patterns(item, `${path}[${i}]`, into));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, inner] of Object.entries(value)) patterns(inner, `${path}.${key}`, into);
+  }
+};
+const source = new Map<string, string>();
+patterns(DICTIONARIES['zh-Hans'], '', source);
 let mismatched: string[] = [];
-const patterned: [string, (d: (typeof DICTIONARIES)['en']) => string][] = [
-  ['realmStage', (d) => d.realmStage],
-  ['draft.levelStep', (d) => d.draft.levelStep],
-  ['draft.pairsWith', (d) => d.draft.pairsWith],
-  ['draft.triadWith', (d) => d.draft.triadWith],
-  ['trial.survived', (d) => d.trial.survived],
-  ['trial.overwhelmed', (d) => d.trial.overwhelmed],
-  ['trial.arena', (d) => d.trial.arena],
-  ['trial.nourishing', (d) => d.trial.nourishing],
-  ['trial.charmCount', (d) => d.trial.charmCount],
-];
-for (const [name, pick] of patterned) {
-  const want = holes(pick(DICTIONARIES['zh-Hans'])).join(',');
-  for (const tag of LOCALES) {
-    const got = holes(pick(DICTIONARIES[tag])).join(',');
-    if (got !== want) mismatched.push(`${name} in ${tag}: ${got || '(none)'} vs ${want}`);
+for (const tag of LOCALES) {
+  const theirs = new Map<string, string>();
+  patterns(DICTIONARIES[tag], '', theirs);
+  for (const [where, want] of source) {
+    const got = theirs.get(where) ?? '(none)';
+    if (got !== want) mismatched.push(`${where} in ${tag}: ${got} vs ${want}`);
+  }
+  for (const where of theirs.keys()) {
+    if (!source.has(where)) mismatched.push(`${where} in ${tag}: a hole the source does not have`);
   }
 }
 check(`every pattern takes the same holes${mismatched.length ? ': ' + mismatched.join('; ') : ''}`, mismatched.length, 0);
+checkTrue('and there are patterns to check', source.size > 10);
 
 // Counts that are fixed by the game rather than by the language.
 let wrongCounts = 0;
@@ -1483,6 +1502,93 @@ checkTrue('an empty list still returns something', localeFor([]) === 'en');
 
 checkTrue('a stored locale is recognised', isLocale('ja'));
 checkTrue('and junk in the save is not', !isLocale('xx') && !isLocale(7) && !isLocale(null));
+
+// -------------------------------------------------------------------------------------------------
+// Fitting words into a fixed box.
+//
+// The card is 186 pixels wide and was sized when every string in it was Chinese. Both of the bugs
+// this section guards were invisible in the language the app was written in and unmissable in the
+// other four, which is the whole reason the measurement is injected: these run under Node against
+// a fake metric, so the breaks can be asserted without a canvas.
+
+// Latin at 8 a character, CJK at 16 — close enough to real proportions for the rules to bite.
+const metric = (text: string): number => {
+  let sum = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    sum += code > 0x2000 && code < 0xd800 ? 16 : 8;
+  }
+  return sum;
+};
+
+// 1. **A Latin word is never cut in half.** This is the bug that shipped: the old loop broke
+//    between any two characters, so an English blurb read "…breath, an / d none of them miss".
+const english = wrap('A charm every breath, and none of them miss', 160, metric);
+const cut = english.filter((line, i) => i > 0 && !/^[A-Za-z]*\b/.test(line));
+checkTrue('English wraps onto more than one line at that width', english.length > 1);
+check(`no English line starts mid-word${cut.length ? ': ' + cut.join(' | ') : ''}`, cut.length, 0);
+checkTrue(
+  'and the words all survive the trip',
+  english.join(' ') === 'A charm every breath, and none of them miss',
+);
+
+// 2. **Chinese still breaks between characters**, which is the behaviour the old code had right.
+const chinese = wrap('\u4e00\u606f\u4e00\u7b26\uff0c\u4e14\u7bad\u7bad\u4e0d\u7a7a', 64, metric);
+checkTrue('Chinese breaks between characters', chinese.length > 1);
+checkTrue('and loses nothing doing it', chinese.join('') === '\u4e00\u606f\u4e00\u7b26\uff0c\u4e14\u7bad\u7bad\u4e0d\u7a7a');
+
+// 3. 禁则: a line does not begin with the punctuation that closes the line before it.
+const leading = wrap('\u4e00\u606f\u4e00\u7b26\uff0c\u4e14\u7bad\u7bad\u4e0d\u7a7a\u3002', 64, metric).filter((line) =>
+  '\uff0c\u3002\u3001'.includes(line[0] ?? ''),
+);
+check('no line starts with closing punctuation', leading.length, 0);
+
+// 4. Korean has spaces in it, so it breaks at them like English rather than like Chinese.
+const korean = wrap('\uc228\ud560 \ub54c\ub9c8\ub2e4 \ubd80\uc801 \ud558\ub098', 48, metric);
+checkTrue('Korean breaks at its spaces', korean.every((line) => !line.startsWith(' ')));
+checkTrue('and keeps its words whole', korean.join(' ') === '\uc228\ud560 \ub54c\ub9c8\ub2e4 \ubd80\uc801 \ud558\ub098');
+
+// 5. A word longer than the whole box is broken rather than allowed to hang out of it.
+const long = wrap('Supercalifragilisticexpialidocious', 80, metric);
+checkTrue('an over-long word is broken up', long.length > 1);
+checkTrue('and every piece fits', long.every((line) => metric(line) <= 80));
+
+// 6. **The title ladder.** Four Chinese characters keep the top size; the English evolution names
+//    do not, and the point of walking down is that the language with no problem pays nothing.
+const sizes = [27, 24, 21, 19, 17];
+const at = (size: number, text: string): number => (metric(text) * size) / 16;
+const zhTitle = fit('\u4e07\u7b26\u9f50\u53d1', 166, sizes, 2, at);
+check('Chinese keeps the full title size', zhTitle.size, 27);
+check('on one line', zhTitle.lines.length, 1);
+
+// The fake metric is kinder to English than Segoe UI is, so what is asserted is the property that
+// has to hold under any metric: it lands inside the card, in at most two lines, by wrapping or by
+// shrinking or by both. Pinning the size here would pin the fake.
+const enTitle = fit('Ten Thousand Talismans', 166, sizes, 2, at);
+checkTrue('English takes the room it needs', enTitle.lines.length > 1 || enTitle.size < 27);
+checkTrue('never more than two lines', enTitle.lines.length <= 2);
+checkTrue(
+  'and every line is inside the card',
+  enTitle.lines.every((line) => at(enTitle.size, line) <= 166),
+);
+
+// 7. Every name that actually ships has to land inside a card, in all five.
+let overflowing: string[] = [];
+for (const tag of LOCALES) {
+  const dict = DICTIONARIES[tag];
+  const titles = [
+    ...SCHOOLS.map((k) => dict.schools[k].name),
+    ...SCHOOLS.map((k) => dict.evolutions[k].name),
+    ...Object.values(dict.combos).map((c) => c.name),
+    ...Object.values(dict.triads).map((t) => t.name),
+    dict.draft.mendTitle,
+  ];
+  for (const title of titles) {
+    const laid = fit(title, 166, sizes, 2, at);
+    if (laid.lines.some((line) => at(laid.size, line) > 166)) overflowing.push(`${tag}: ${title}`);
+  }
+}
+check(`every card title fits its card${overflowing.length ? ': ' + overflowing.join(', ') : ''}`, overflowing.length, 0);
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

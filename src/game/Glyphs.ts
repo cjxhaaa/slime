@@ -267,7 +267,11 @@ export function drawTalisman(
   // The key itself, in cinnabar, in a serif face. The letter is the one thing here that has to
   // stay plainly legible — it is the point of the charm, and it is a letter you really pressed.
   context.fillStyle = '#9d2f22';
-  context.font = '700 15px Georgia, "Songti SC", "SimSun", serif';
+  // A serif face, and deliberately **not** a Chinese one. The character here is a key you really
+  // pressed — a Latin letter or a digit — so naming SimSun bought nothing, and naming it would send
+  // a Japanese or Korean reader's fallback through a Chinese font the moment anything else lands
+  // here. Georgia has the letters; the system serif has the rest, in the reader's own forms.
+  context.font = '700 15px Georgia, serif';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.fillText(char, 0, 0.5);

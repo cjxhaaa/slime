@@ -19,6 +19,7 @@ export const zhHant: Dictionary = {
   ascended: '已飛昇',
   stages: ['一', '二', '三', '四', '五', '六', '七', '八', '九'],
   realmStage: '{realm}{stage}層',
+  fullness: ['修為初凝', '修為漸盈', '修為將滿', '可突破'],
 
   schools: {
     符: { name: '符籙', blurb: '擲符，一符一敵' },
@@ -103,6 +104,18 @@ export const zhHant: Dictionary = {
     '打了個嗝，竟吐出靈光',
   ],
 
+  pet: {
+    readyToBreak: '{stage} · 可突破\n點擊渡劫',
+    ordealSure: '渡劫無虞',
+    ordealSteady: '渡劫穩妥 · 再攸 {short} 張無虞',
+    ordealFair: '渡劫可試 · 再攸 {short} 張無虞',
+    ordealPerilous: '渡劫凶險 · 再攸 {short} 張無虞',
+    refineLeft: '今日尚可煉化 {left} 次',
+    ordealFailed: '渡劫未成\n符籙盡散 · 修為有損',
+    ascendedIdle: '此身已證大道\n設定中可轉生重歷',
+    firstBreath: '此物似有靈性\n正吞吐天地之氣',
+  },
+
   menu: {
     settings: '設定…',
     enterTrial: '入歷練',
@@ -116,6 +129,7 @@ export const zhHant: Dictionary = {
     raise: '精進',
     evolve: '★ 進化',
     mend: '調息',
+    mendTitle: '護體',
     mendBlurb: '回復三分護體',
     levelStep: '{from}重 → {to}重',
     pairsWith: '與{school}合 · {combo}',
@@ -141,8 +155,35 @@ export const zhHant: Dictionary = {
     combosLabel: '合',
     triadLabel: '三合',
     noCombo: '這幾個不相合。',
+    listItem: '{name}（{blurb}）',
+    listSep: '、',
+    listColon: '：',
     languageTitle: '語言',
     languageBlurb: '預設跟隨系統。改了立刻生效，兩個視窗一起換。',
+    languageAuto: '（目前跟隨系統）',
     quitLabel: '結束 Slime',
+
+    rebirthTitle: '轉生',
+    rebirthBlurb:
+      '重歷八境，從練氣起。已飛昇的次數、產出倍率和每日煉化檔位都保留，身上的霞光也不會散。',
+    rebirthButton: '轉生重歷',
+    rebirthConfirm: '確定？再點一次',
+    rebirthWarn: '當前境界、層數與修為會清零，無法復原。',
+    rebirthState: '{realm} · 已飛昇 {times} 次 · 產出 ×{rate}',
+
+    quietTitle: '靜修',
+    quietLabel: '閉關',
+    quietBlurb:
+      '讓史萊姆不再讀取鍵盤，也不再對任何事有反應。牠仍舊慢慢修煉，在你回來之前一句話也不說。',
+    quietNote: '這不是過濾。開著的時候，Windows 會被告知不要再把按鍵送到 Slime。',
+
+    behaviourTitle: '習性',
+    behaviourDrag:
+      '拖曳可以挪牠，也可以把牠甩出去。點一下是戳牠。右鍵開啟這個視窗。沒人理牠就會睡著，你伸手牠就醒。',
+    behaviourKeys:
+      '在 Windows 上牠還吃你敲的鍵：每隔幾秒身邊冒出一個，牠蹦過去，吞下去就長一點。那個字是你真按過的，從最近幾秒裡隨機取，順序打亂。',
+    behaviourEat:
+      '按住牠停在一個視窗上兩秒，牠會把那個視窗吃掉。身體還沒裹完就拉開，這頓就算了。',
+    behaviourQuit: 'Ctrl+Alt+Shift+Q 在任何地方都能結束，哪怕懸浮層已經不動了。',
   },
 };

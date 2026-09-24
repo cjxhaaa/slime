@@ -36,6 +36,7 @@ export const en: Dictionary = {
   ascended: 'Ascended',
   stages: ['1', '2', '3', '4', '5', '6', '7', '8', '9'],
   realmStage: '{realm} {stage}',
+  fullness: ['Barely gathered', 'Gathering', 'Nearly full', 'Ready to break through'],
 
   schools: {
     符: { name: 'Talisman', blurb: 'One charm, one target' },
@@ -132,6 +133,18 @@ export const en: Dictionary = {
     'Burped, and out came a little spirit light',
   ],
 
+  pet: {
+    readyToBreak: '{stage} · ready\nClick to face the ordeal',
+    ordealSure: 'The ordeal holds no danger',
+    ordealSteady: 'Steady · {short} more charms to be sure',
+    ordealFair: 'Worth attempting · {short} more charms to be sure',
+    ordealPerilous: 'Perilous · {short} more charms to be sure',
+    refineLeft: '{left} refinings left today',
+    ordealFailed: 'The ordeal was not passed\nThe charms are spent · some progress lost',
+    ascendedIdle: 'This body has proven the Way\nRebirth waits in the settings',
+    firstBreath: 'There seems to be a spirit in this thing\nIt is drawing breath from the world',
+  },
+
   menu: {
     settings: 'Settings…',
     enterTrial: 'Enter the Trial',
@@ -145,6 +158,7 @@ export const en: Dictionary = {
     raise: 'Deepen',
     evolve: '★ Evolve',
     mend: 'Mend',
+    mendTitle: 'Guard',
     mendBlurb: 'Restores three of your guard',
     levelStep: 'Level {from} → {to}',
     pairsWith: 'With {school} · {combo}',
@@ -170,8 +184,36 @@ export const en: Dictionary = {
     combosLabel: 'Pairings',
     triadLabel: 'Triad',
     noCombo: 'These do not combine.',
+    listItem: '{name} ({blurb})',
+    listSep: ', ',
+    listColon: ': ',
     languageTitle: 'Language',
     languageBlurb: 'Follows the system by default. Takes effect at once, in both windows.',
+    languageAuto: '(currently following the system)',
     quitLabel: 'Quit Slime',
+
+    rebirthTitle: 'Rebirth',
+    rebirthBlurb:
+      'Walk the eight realms again from Qi Refining. Your ascension count, output multiplier and daily refining tier are all kept, and the glow stays on you.',
+    rebirthButton: 'Begin again',
+    rebirthConfirm: 'Sure? Click again',
+    rebirthWarn: 'Your realm, stage and progress are cleared. This cannot be undone.',
+    rebirthState: '{realm} · Ascended {times}× · output ×{rate}',
+
+    quietTitle: 'Quiet',
+    quietLabel: 'Seclusion',
+    quietBlurb:
+      'Stops the slime reading your keyboard, and stops it reacting to anything. It keeps cultivating, slowly, and says nothing until you come back for it.',
+    quietNote:
+      'This is not a filter. While it is on, Windows is told to stop delivering keystrokes to Slime at all.',
+
+    behaviourTitle: 'Behaviour',
+    behaviourDrag:
+      'Drag the slime to move it, or throw it. Click it to poke it. Right-click it to open this window. It falls asleep when left alone, and wakes when you reach for it.',
+    behaviourKeys:
+      'On Windows it also eats the keys you type: one turns up beside it every few seconds, it hops over, and swallowing it is what makes it stronger. The letter is one you really pressed, drawn at random from the last few seconds and shown out of order.',
+    behaviourEat:
+      'Holding it still over a window for two seconds makes it eat the window. Pulling it off before the body finishes wrapping calls the meal off.',
+    behaviourQuit: 'Ctrl+Alt+Shift+Q quits from anywhere, even if the overlay stops responding.',
   },
 };

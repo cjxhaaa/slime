@@ -16,6 +16,8 @@
  * stops working.
  */
 
+import { words } from '../i18n/index.js';
+
 /**
  * The shortest and longest wait between finds, in seconds.
  *
@@ -97,9 +99,16 @@ export function findValue(random: () => number): number {
   return LeastSeconds + random() * (MostSeconds - LeastSeconds);
 }
 
-/** Which line it says. */
+/**
+ * Which line it says.
+ *
+ * The roll picks an *index*, and the index is looked up in the dictionary. Keeping `FINDS` as the
+ * source means a reader of this file still sees the twenty lines in the place the design describes
+ * them, and the check suite pins the two copies together.
+ */
 export function findText(random: () => number): string {
-  return FINDS[Math.min(FINDS.length - 1, Math.floor(random() * FINDS.length))];
+  const i = Math.min(FINDS.length - 1, Math.floor(random() * FINDS.length));
+  return words().finds[i] ?? FINDS[i];
 }
 
 /**

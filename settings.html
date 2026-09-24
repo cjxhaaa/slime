@@ -10,13 +10,11 @@
       <h1>Slime</h1>
 
       <section id="rebirth-box" hidden>
-        <h2>转生</h2>
+        <h2 id="rebirth-title"></h2>
         <p id="rebirth-state" class="muted"></p>
-        <p class="muted">
-          重历八境，从练气起。已飞升的次数、产出倍率和每日炼化档位都保留，身上的霞光也不会散。
-        </p>
+        <p id="rebirth-blurb" class="muted"></p>
         <div class="row">
-          <button id="rebirth" class="secondary">转生重历</button>
+          <button id="rebirth" class="secondary"></button>
         </div>
         <p id="rebirth-warn" class="muted"></p>
       </section>
@@ -37,43 +35,27 @@
       </section>
 
       <section id="language-box">
-        <h2 id="language-title">语言</h2>
+        <h2 id="language-title"></h2>
         <div id="language-chips" class="chips"></div>
         <p id="language-blurb" class="muted"></p>
       </section>
 
       <section>
-        <h2>Quiet</h2>
+        <h2 id="quiet-title"></h2>
         <label class="check">
           <input id="quiet" type="checkbox" />
-          <span>Seclusion</span>
+          <span id="quiet-label"></span>
         </label>
-        <p class="muted">
-          Stops the slime reading your keyboard, and stops it reacting to anything. It keeps
-          cultivating, slowly, and says nothing until you come back for it.
-        </p>
-        <p class="muted">
-          This is not a filter. While it is on, Windows is told to stop delivering keystrokes to
-          Slime at all.
-        </p>
+        <p id="quiet-blurb" class="muted"></p>
+        <p id="quiet-note" class="muted"></p>
       </section>
 
       <section>
-        <h2>Behaviour</h2>
-        <p class="muted">
-          Drag the slime to move it, or throw it. Click it to poke it. Right-click it to open this
-          window. It falls asleep when left alone, and wakes when you reach for it.
-        </p>
-        <p class="muted">
-          On Windows it also eats the keys you type: one turns up beside it every few seconds, it
-          hops over, and swallowing it is what makes it stronger. The letter is one you really
-          pressed, drawn at random from the last few seconds and shown out of order.
-        </p>
-        <p class="muted">
-          Holding it still over a window for two seconds makes it eat the window.
-          Pulling it off before the body finishes wrapping calls the meal off.
-        </p>
-        <p class="muted">Ctrl+Alt+Shift+Q quits from anywhere, even if the overlay stops responding.</p>
+        <h2 id="behaviour-title"></h2>
+        <p id="behaviour-drag" class="muted"></p>
+        <p id="behaviour-keys" class="muted"></p>
+        <p id="behaviour-eat" class="muted"></p>
+        <p id="behaviour-quit" class="muted"></p>
       </section>
 
       <footer>

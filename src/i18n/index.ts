@@ -17,12 +17,20 @@
  *
  * ## Falling back
  *
- * A missing key returns the **simplified Chinese** string rather than the key, because that is the
- * source text: a half-translated dictionary should read as a half-translated game, not as
- * `draft.pairsWith` on a card. The checks assert that no dictionary is missing anything, so this
- * path should be dead — it exists for the release where somebody adds a key and forgets four files.
+ * Most of the dictionary is typed tightly enough that a missing key is a compile error: `schools`
+ * and `evolutions` are keyed by a union, and the rest are named fields. Two tables are not, and
+ * cannot be — `combos` and `triads` are keyed by school characters joined into a string, which is
+ * a `Record<string, …>`, and **TypeScript does not check that an index into one of those exists**.
+ * `words().combos['风剑'].name` on a typo is not a compile error; it is `undefined.name` in the
+ * draw loop, in whichever language nobody tested.
+ *
+ * So those two are read through `combo()` and `triad()` instead of indexed directly. They fall back
+ * to the **simplified Chinese** string, because that is the source text: a half-translated
+ * dictionary should read as a half-translated game rather than crash, and reading as `符雷` beats
+ * reading as a blank card. The checks assert no dictionary is missing a key, so the fallback should
+ * be dead — it exists for the release where somebody adds a pairing and forgets four files.
  */
-import type { Dictionary, Locale } from './types.js';
+import type { Dictionary, Locale, Named } from './types.js';
 import { LOCALES } from './types.js';
 import { zhHans } from './zh-Hans.js';
 import { zhHant } from './zh-Hant.js';
@@ -52,6 +60,9 @@ export function localeFor(tags: readonly string[]): Locale {
   for (const raw of tags) {
     const tag = raw.toLowerCase();
     if (tag.startsWith('zh')) {
+      // An explicit script wins over the region: `zh-Hans-MO` is a simplified reader in Macau, and
+      // matching 'mo' first would hand them traditional on the strength of where they are.
+      if (tag.includes('hans')) return 'zh-Hans';
       const traditional =
         tag.includes('hant') || tag.includes('tw') || tag.includes('hk') || tag.includes('mo');
       return traditional ? 'zh-Hant' : 'zh-Hans';
@@ -100,9 +111,19 @@ export function words(): Dictionary {
   return dictionary;
 }
 
-/** The source text, for falling back to when a key is missing from a translation. */
-export function source(): Dictionary {
-  return zhHans;
+/**
+ * A pairing's words, falling back to the source text rather than to `undefined`.
+ *
+ * Keyed by the two school characters in the order `COMBOS` declares them — `符雷`, not `雷符`.
+ * Callers pass `pair.join('')` and never build the key by hand.
+ */
+export function combo(key: string): Named {
+  return dictionary.combos[key] ?? zhHans.combos[key] ?? { name: key, blurb: '' };
+}
+
+/** The same, for the three-school forms. Keyed by the three characters `TRIADS` declares. */
+export function triad(key: string): Named {
+  return dictionary.triads[key] ?? zhHans.triads[key] ?? { name: key, blurb: '' };
 }
 
 /**

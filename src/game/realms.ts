@@ -4,9 +4,12 @@
  * Eight realms of nine stages each, then ascension. Everything here is a pure function of
  * (realm, stage) — no state, no clock — so the pacing can be checked by reading it.
  */
+import { fill, words } from '../i18n/index.js';
+
 export const REALMS = ['练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘'] as const;
 export const StagesPerRealm = 9;
-const STAGE_NUMERALS = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
+/** Exported so the check suite can pin it against the dictionary, like every other table here. */
+export const STAGE_NUMERALS = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
 
 /** The realm index that means "past the top of the ladder". */
 export const Ascended = REALMS.length;
@@ -41,10 +44,19 @@ export function baseRate(realm: number, stage: number): number {
   return RatePerRealm ** capped * RatePerStage ** stages;
 }
 
-/** "练气七层", or "已飞升" past the top. */
+/**
+ * "练气七层", or "已飞升" past the top.
+ *
+ * Built from a pattern rather than by concatenation, because the order is not the same everywhere:
+ * Chinese and Japanese put the numeral inside the name and English puts it after with a space.
+ */
 export function stageName(realm: number, stage: number): string {
-  if (realm >= Ascended) return '已飞升';
-  return `${REALMS[realm]}${STAGE_NUMERALS[stage] ?? '一'}层`;
+  const w = words();
+  if (realm >= Ascended) return w.ascended;
+  return fill(w.realmStage, {
+    realm: w.realms[realm] ?? w.realms[0],
+    stage: w.stages[stage] ?? w.stages[0],
+  });
 }
 
 /**
@@ -55,8 +67,9 @@ export function stageName(realm: number, stage: number): string {
  * the only question anyone actually has, which is "soon?".
  */
 export function fullness(progress: number): string {
-  if (progress >= 1) return '可突破';
-  if (progress >= 0.85) return '修为将满';
-  if (progress >= 0.45) return '修为渐盈';
-  return '修为初凝';
+  const w = words();
+  if (progress >= 1) return w.fullness[3];
+  if (progress >= 0.85) return w.fullness[2];
+  if (progress >= 0.45) return w.fullness[1];
+  return w.fullness[0];
 }

@@ -11,6 +11,7 @@ export const zhHans: Dictionary = {
   ascended: '已飞升',
   stages: ['一', '二', '三', '四', '五', '六', '七', '八', '九'],
   realmStage: '{realm}{stage}层',
+  fullness: ['修为初凝', '修为渐盈', '修为将满', '可突破'],
 
   schools: {
     符: { name: '符箓', blurb: '掷符，一符一敌' },
@@ -95,6 +96,18 @@ export const zhHans: Dictionary = {
     '打了个嗝，竟吐出灵光',
   ],
 
+  pet: {
+    readyToBreak: '{stage} · 可突破\n点击渡劫',
+    ordealSure: '渡劫无虞',
+    ordealSteady: '渡劫稳妥 · 再攸 {short} 张无虞',
+    ordealFair: '渡劫可试 · 再攸 {short} 张无虞',
+    ordealPerilous: '渡劫凶险 · 再攸 {short} 张无虞',
+    refineLeft: '今日尚可炼化 {left} 次',
+    ordealFailed: '渡劫未成\n符箓尽散 · 修为有损',
+    ascendedIdle: '此身已证大道\n设置中可转生重历',
+    firstBreath: '此物似有灵性\n正吞吐天地之气',
+  },
+
   menu: {
     settings: '设置…',
     enterTrial: '入历练',
@@ -108,6 +121,7 @@ export const zhHans: Dictionary = {
     raise: '精进',
     evolve: '★ 进化',
     mend: '调息',
+    mendTitle: '护体',
     mendBlurb: '回复三分护体',
     levelStep: '{from}重 → {to}重',
     pairsWith: '与{school}合 · {combo}',
@@ -133,8 +147,35 @@ export const zhHans: Dictionary = {
     combosLabel: '合',
     triadLabel: '三合',
     noCombo: '这几个不相合。',
+    listItem: '{name}（{blurb}）',
+    listSep: '、',
+    listColon: '：',
     languageTitle: '语言',
     languageBlurb: '默认跟随系统。改了立刻生效，两个窗口一起换。',
+    languageAuto: '（当前跟随系统）',
     quitLabel: '退出 Slime',
+
+    rebirthTitle: '转生',
+    rebirthBlurb:
+      '重历八境，从练气起。已飞升的次数、产出倍率和每日炼化档位都保留，身上的霞光也不会散。',
+    rebirthButton: '转生重历',
+    rebirthConfirm: '确定？再点一次',
+    rebirthWarn: '当前境界、层数与修为会清零，无法撤销。',
+    rebirthState: '{realm} · 已飞升 {times} 次 · 产出 ×{rate}',
+
+    quietTitle: '静修',
+    quietLabel: '闭关',
+    quietBlurb:
+      '让史莱姆不再读取键盘，也不再对任何事有反应。它仍旧慢慢修炼，在你回来之前一句话也不说。',
+    quietNote: '这不是过滤。开着的时候，Windows 会被告知不要再把按键送到 Slime。',
+
+    behaviourTitle: '习性',
+    behaviourDrag:
+      '拖动可以挪它，也可以把它甩出去。点一下是戳它。右键打开这个窗口。没人理它就会睡着，你伸手它就醒。',
+    behaviourKeys:
+      '在 Windows 上它还吃你敲的键：每隔几秒身边冒出一个，它蹦过去，吞下去就长一点。那个字是你真按过的，从最近几秒里随机取，顺序打乱。',
+    behaviourEat:
+      '按住它停在一个窗口上两秒，它会把那个窗口吃掉。身体还没裹完就拉开，这顿就算了。',
+    behaviourQuit: 'Ctrl+Alt+Shift+Q 在任何地方都能退出，哪怕悬浮层已经不动了。',
   },
 };

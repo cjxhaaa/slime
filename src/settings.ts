@@ -1,7 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { MaxLevel, SCHOOLS, type School, activeCombos, activeTriads } from './game/schools';
-import { ENDONYMS, LOCALES, type Locale, isLocale, setLocale, words } from './i18n';
+import {
+  ENDONYMS,
+  LOCALES,
+  type Locale,
+  combo as comboWords,
+  fill,
+  isLocale,
+  locale,
+  setLocale,
+  triad as triadWords,
+  words,
+} from './i18n';
 
 // A settings page that fails silently is indistinguishable from one that never loaded, which is
 // exactly the hole this fell into: a blank white window with no way to tell whether the document,
@@ -48,10 +59,9 @@ const rebirthWarn = el<HTMLParagraphElement>('rebirth-warn');
 void listen<{ ascended: boolean; ascensions: number; realm: string }>('pet-state', (event) => {
   const state = event.payload;
   rebirthBox.hidden = !state.ascended;
-  rebirthState.textContent = `${state.realm} · 已飞升 ${state.ascensions} 次 · 产出 ×${(1 + 0.5 * state.ascensions).toFixed(1)}`;
+  ascended = state;
   armed = false;
-  rebirthButton.textContent = '转生重历';
-  rebirthWarn.textContent = '';
+  paintRebirth();
 });
 void emit('want-state');
 
@@ -63,24 +73,59 @@ void emit('want-state');
  */
 let armed = false;
 let armedTimer: number | null = null;
+/** The last thing the overlay said about the save, kept so a language change can redraw it. */
+let ascended: { ascensions: number; realm: string } | null = null;
+
+/**
+ * The rebirth section, in whatever language and whatever state the two clicks are in.
+ *
+ * `armed` is read here rather than reset, because a language change must not quietly un-arm a
+ * confirmation that is on screen — the button would go back to saying "begin again" while the
+ * next click still went through.
+ */
+function paintRebirth(): void {
+  const w = words();
+  el<HTMLHeadingElement>('rebirth-title').textContent = w.settings.rebirthTitle;
+  el<HTMLParagraphElement>('rebirth-blurb').textContent = w.settings.rebirthBlurb;
+  rebirthButton.textContent = armed ? w.settings.rebirthConfirm : w.settings.rebirthButton;
+  rebirthWarn.textContent = armed ? w.settings.rebirthWarn : '';
+  rebirthState.textContent = ascended
+    ? fill(w.settings.rebirthState, {
+        realm: ascended.realm,
+        times: ascended.ascensions,
+        rate: (1 + 0.5 * ascended.ascensions).toFixed(1),
+      })
+    : '';
+}
+
+/** The two sections that are nothing but prose. */
+function paintProse(): void {
+  const w = words();
+  el<HTMLHeadingElement>('quiet-title').textContent = w.settings.quietTitle;
+  el<HTMLSpanElement>('quiet-label').textContent = w.settings.quietLabel;
+  el<HTMLParagraphElement>('quiet-blurb').textContent = w.settings.quietBlurb;
+  el<HTMLParagraphElement>('quiet-note').textContent = w.settings.quietNote;
+  el<HTMLHeadingElement>('behaviour-title').textContent = w.settings.behaviourTitle;
+  el<HTMLParagraphElement>('behaviour-drag').textContent = w.settings.behaviourDrag;
+  el<HTMLParagraphElement>('behaviour-keys').textContent = w.settings.behaviourKeys;
+  el<HTMLParagraphElement>('behaviour-eat').textContent = w.settings.behaviourEat;
+  el<HTMLParagraphElement>('behaviour-quit').textContent = w.settings.behaviourQuit;
+}
 
 rebirthButton.addEventListener('click', () => {
   if (!armed) {
     armed = true;
-    rebirthButton.textContent = '确定？再点一次';
-    rebirthWarn.textContent = '当前境界、层数与修为会清零，无法撤销。';
+    paintRebirth();
     if (armedTimer !== null) window.clearTimeout(armedTimer);
     armedTimer = window.setTimeout(() => {
       armed = false;
-      rebirthButton.textContent = '转生重历';
-      rebirthWarn.textContent = '';
+      paintRebirth();
     }, 5000);
     return;
   }
   armed = false;
   if (armedTimer !== null) window.clearTimeout(armedTimer);
-  rebirthButton.textContent = '转生重历';
-  rebirthWarn.textContent = '';
+  paintRebirth();
   void emit('rebirth');
 });
 
@@ -133,14 +178,21 @@ let chosen: Locale | null = null;
 function paintLanguage(): void {
   const w = words();
   el<HTMLHeadingElement>('language-title').textContent = w.settings.languageTitle;
-  el<HTMLParagraphElement>('language-blurb').textContent = w.settings.languageBlurb;
+  // The blurb says the language is inherited; the lit chip says *which* one was inherited. Lighting
+  // nothing while following the system — which is the state everybody starts in — read as a row of
+  // five buttons none of which was selected, in a window that was plainly in one of them.
+  el<HTMLParagraphElement>('language-blurb').textContent =
+    chosen === null
+      ? `${w.settings.languageBlurb} ${w.settings.languageAuto}`
+      : w.settings.languageBlurb;
+  const lit = locale();
   languageChips.replaceChildren(
     ...LOCALES.map((tag) => {
       const chip = document.createElement('button');
       chip.className = 'chip';
       chip.type = 'button';
       chip.textContent = ENDONYMS[tag];
-      chip.setAttribute('aria-pressed', String(tag === chosen));
+      chip.setAttribute('aria-pressed', String(tag === lit));
       chip.addEventListener('click', () => {
         chosen = tag;
         setLocale(tag);
@@ -165,8 +217,13 @@ function paintArena(): void {
 
 /** Everything in this window that has words in it. */
 function paintAll(): void {
+  // Tells the browser what it is laying out, which is what picks the right CJK glyph forms when a
+  // font has to be fallen back to — the shapes of 直 and 類 are not the same in all three.
+  document.documentElement.lang = locale();
   paintLanguage();
+  paintRebirth();
   paintArena();
+  paintProse();
   render();
 }
 
@@ -290,16 +347,14 @@ function render(): void {
   const forms = activeTriads(schools);
   // 三合 first, because a build that has one is defined by it — it costs three of the four slots.
   const lines: string[] = [];
-  for (const triad of forms) {
-    const said = w.triads[triad.of.join('')];
-    lines.push(`${w.settings.triadLabel} · ${said.name}（${said.blurb}）`);
+  const item = (named: { name: string; blurb: string }): string =>
+    fill(w.settings.listItem, { name: named.name, blurb: named.blurb });
+  for (const form of forms) {
+    lines.push(`${w.settings.triadLabel} · ${item(triadWords(form.of.join('')))}`);
   }
   if (made.length) {
-    const said = made.map((c) => {
-      const one = w.combos[c.pair.join('')];
-      return `${one.name}（${one.blurb}）`;
-    });
-    lines.push(`${w.settings.combosLabel}：${said.join('、')}`);
+    const said = made.map((c) => item(comboWords(c.pair.join(''))));
+    lines.push(`${w.settings.combosLabel}${w.settings.listColon}${said.join(w.settings.listSep)}`);
   }
   comboLine.textContent = lines.length
     ? lines.join('\n')

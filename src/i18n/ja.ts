@@ -24,6 +24,7 @@ export const ja: Dictionary = {
   ascended: '飛昇済み',
   stages: ['一', '二', '三', '四', '五', '六', '七', '八', '九'],
   realmStage: '{realm}{stage}層',
+  fullness: ['修為初凝', '修為漸盈', '修為將満', '突破可能'],
 
   schools: {
     符: { name: '符籙', blurb: '符を投じ、一符一敵' },
@@ -108,6 +109,18 @@ export const ja: Dictionary = {
     'げっぷをしたら、霊光が出てきた',
   ],
 
+  pet: {
+    readyToBreak: '{stage} · 突破可能\nクリックで渡劫',
+    ordealSure: '渡劫に憂いなし',
+    ordealSteady: '渡劫は穩当 · あと {short} 枚で憂いなし',
+    ordealFair: '渡劫は試すに足る · あと {short} 枚で憂いなし',
+    ordealPerilous: '渡劫は険しい · あと {short} 枚で憂いなし',
+    refineLeft: '本日はあと {left} 回鍉化できる',
+    ordealFailed: '渡劫ならず\n符籙は尽き · 修為を損なう',
+    ascendedIdle: 'この身すでに大道を証す\n設定から転生できる',
+    firstBreath: 'この物、霊性あるらしく\n天地の気を吞吐している',
+  },
+
   menu: {
     settings: '設定…',
     enterTrial: '歴練に入る',
@@ -121,6 +134,7 @@ export const ja: Dictionary = {
     raise: '精進',
     evolve: '★ 進化',
     mend: '調息',
+    mendTitle: '護体',
     mendBlurb: '護体を三つ回復',
     levelStep: '{from}重 → {to}重',
     pairsWith: '{school}と合 · {combo}',
@@ -146,8 +160,37 @@ export const ja: Dictionary = {
     combosLabel: '合',
     triadLabel: '三合',
     noCombo: 'これらは噛み合わない。',
+    listItem: '{name}（{blurb}）',
+    listSep: '、',
+    listColon: '：',
     languageTitle: '言語',
     languageBlurb: '既定はシステムに従う。変更は両方の窓にすぐ反映される。',
+    languageAuto: '（現在はシステムに従っている）',
     quitLabel: 'Slime を終了',
+
+    rebirthTitle: '転生',
+    rebirthBlurb:
+      '八境をもう一度、練気から。飛昇の回数、産出倍率、日ごとの錬化段位はそのまま残り、身にまとった霞光も消えない。',
+    rebirthButton: '転生してやり直す',
+    rebirthConfirm: 'よろしいか？もう一度',
+    rebirthWarn: '今の境地・層・修為はすべて零に戻る。取り消せない。',
+    rebirthState: '{realm} · 飛昇 {times} 回 · 産出 ×{rate}',
+
+    quietTitle: '静修',
+    quietLabel: '閉関',
+    quietBlurb:
+      'スライムがキーボードを読むのをやめ、何にも反応しなくなる。ゆっくりと修行だけは続け、戻ってくるまで何も言わない。',
+    quietNote:
+      'これは絞り込みではない。有効な間、Windows には Slime へキー入力を渡さないよう伝えられる。',
+
+    behaviourTitle: '習性',
+    behaviourDrag:
+      'ドラッグで動かせるし、放り投げることもできる。クリックでつつく。右クリックでこの窓が開く。放っておくと眠り、手を伸ばすと起きる。',
+    behaviourKeys:
+      'Windows では打ったキーも食べる。数秒おきに一つ傍に現れ、跳んでいって、飲み込むたびに少し強くなる。その文字は実際に押したもので、直近数秒から無作為に、順を崩して選ばれる。',
+    behaviourEat:
+      '窓の上で二秒じっと押さえていると、その窓を食べる。体が包み終わる前に引き離せば、食事は取り消される。',
+    behaviourQuit:
+      'Ctrl+Alt+Shift+Q はどこからでも終了する。オーバーレイが応答しなくなっていても。',
   },
 };

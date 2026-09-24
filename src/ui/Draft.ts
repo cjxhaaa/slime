@@ -17,7 +17,9 @@
  */
 import { clear } from '../slime/colour.js';
 import type { Card } from '../game/Arsenal.js';
-import { EVOLUTIONS, SPECS, type School, comboFor } from '../game/schools.js';
+import { SPECS, type School, comboFor } from '../game/schools.js';
+import { combo as comboWords, fill, onLocaleChange, words } from '../i18n/index.js';
+import { fit, wrap } from './text.js';
 
 export interface Rect {
   x: number;
@@ -33,7 +35,17 @@ const Radius = 14;
 /** How far above the middle of the screen the row sits. A little high, so the body is still visible. */
 const Rise = 26;
 
-const TitleFont = '600 27px system-ui, sans-serif';
+/**
+ * The title's sizes, largest first.
+ *
+ * Four Chinese characters are 108 pixels at 27 and always were; "Ten Thousand Talismans" is 330,
+ * and the card is 186 wide. So the size is not a constant any more — it is the first rung that
+ * lands inside the card in at most two lines. Chinese and Korean never leave the top rung, which
+ * is the point of walking down rather than picking one size that suits the worst case.
+ */
+const TitleSizes = [27, 24, 21, 19, 17] as const;
+const TitleLines = 2;
+const titleFont = (size: number): string => `600 ${size}px system-ui, sans-serif`;
 const BodyFont = '13px system-ui, sans-serif';
 const PairFont = '600 13px system-ui, sans-serif';
 const HeadFont = '600 15px system-ui, sans-serif';
@@ -55,8 +67,6 @@ interface Face {
   jackpot: boolean;
 }
 
-const LEVELS = ['', '一', '二', '三', '四', '五'];
-
 /** Just enough of a holding for a card to describe itself. */
 export interface Held {
   school: School;
@@ -65,12 +75,20 @@ export interface Held {
 
 export class Draft {
   private cards: Card[] = [];
+  private holding: Held[] = [];
   private faces: Face[] = [];
   private open = false;
   private hot = -1;
   private boxes: Rect[] = [];
   /** Counts up on open, so the row can arrive rather than appear. */
   private age = 0;
+
+  constructor() {
+    // The cards are laid out once and held; a language change while they are up has to reach them.
+    onLocaleChange(() => {
+      if (this.open) this.relabel();
+    });
+  }
 
   get isOpen(): boolean {
     return this.open;
@@ -85,6 +103,7 @@ export class Draft {
    */
   show(cards: Card[], holding: Held[]): void {
     this.cards = cards;
+    this.holding = holding;
     this.faces = cards.map((card) => face(card, holding));
     this.open = true;
     this.hot = -1;
@@ -92,9 +111,21 @@ export class Draft {
     this.boxes = [];
   }
 
+  /**
+   * Rebuilds the wording after the language changes.
+   *
+   * The cards are worked out once on open and the run is **paused** while they are up — which is
+   * exactly long enough for somebody to open Settings and switch language with three cards on
+   * screen. Without this they would keep the old language until the next offer.
+   */
+  private relabel(): void {
+    this.faces = this.cards.map((card) => face(card, this.holding));
+  }
+
   hide(): void {
     this.open = false;
     this.cards = [];
+    this.holding = [];
     this.faces = [];
     this.boxes = [];
     this.hot = -1;
@@ -183,7 +214,7 @@ export class Draft {
     context.fillStyle = 'rgba(255, 255, 255, 0.86)';
     context.shadowColor = 'rgba(0, 0, 0, 0.55)';
     context.shadowBlur = 8;
-    context.fillText('择一', width / 2, heading);
+    context.fillText(words().draft.choose, width / 2, heading);
     context.shadowBlur = 0;
 
     for (let i = 0; i < this.boxes.length; i++) {
@@ -240,9 +271,17 @@ export class Draft {
     context.fillStyle = face.jackpot ? '#ffd98a' : 'rgba(255, 255, 255, 0.45)';
     context.fillText(face.kind, middle, y + 26);
 
-    context.font = TitleFont;
+    // The title is the one line with no room to wrap by default, so it is measured before it is
+    // drawn rather than trusted to fit.
+    const title = fit(face.title, box.width - 20, TitleSizes, TitleLines, (size, text) => {
+      context.font = titleFont(size);
+      return context.measureText(text).width;
+    });
+    context.font = titleFont(title.size);
     context.fillStyle = face.tint;
-    context.fillText(face.title, middle, y + 74);
+    const lead = title.size * 1.06;
+    const first = y + 74 - ((title.lines.length - 1) * lead) / 2;
+    title.lines.forEach((line, i) => context.fillText(line, middle, first + i * lead));
 
     if (face.step) {
       context.font = StepFont;
@@ -252,7 +291,7 @@ export class Draft {
 
     context.font = BodyFont;
     context.fillStyle = 'rgba(255, 255, 255, 0.76)';
-    wrapped(context, face.blurb, middle, y + 136, box.width - 26, 19);
+    wrapped(context, face.blurb, middle, y + 136, box.width - 26, 19, 3);
 
     if (face.pairing) {
       // The one line that gets a rule above it, because it is the decision the mode is about.
@@ -265,13 +304,19 @@ export class Draft {
       context.stroke();
       context.font = PairFont;
       context.fillStyle = '#9fe8b4';
-      wrapped(context, face.pairing, middle, line + 22, box.width - 22, 17);
+      wrapped(context, face.pairing, middle, line + 22, box.width - 22, 17, 2);
     }
     context.restore();
   }
 }
 
-/** Fits a line into the card, breaking between characters when it has to. */
+/**
+ * Lays a phrase into the card.
+ *
+ * `most` is a hard ceiling rather than a hint: a fourth line of blurb would be drawn straight
+ * through the pairing rule underneath it, and a card that overlaps itself is worse than one that
+ * says slightly less.
+ */
 function wrapped(
   context: CanvasRenderingContext2D,
   text: string,
@@ -279,47 +324,40 @@ function wrapped(
   top: number,
   width: number,
   step: number,
+  most: number,
 ): void {
-  const lines: string[] = [];
-  let line = '';
-  for (const ch of text) {
-    const next = line + ch;
-    if (context.measureText(next).width > width && line.length > 0) {
-      lines.push(line);
-      line = ch;
-    } else {
-      line = next;
-    }
-  }
-  if (line) lines.push(line);
+  const lines = wrap(text, width, (piece) => context.measureText(piece).width).slice(0, most);
   for (let i = 0; i < lines.length; i++) context.fillText(lines[i], middle, top + i * step);
 }
 
 /** What a card says. Pulled out of the draw pass so the wording is in one readable place. */
 function face(card: Card, holding: Held[]): Face {
+  const w = words();
+
   if (card.kind === 'mend') {
     return {
-      title: '护体',
+      title: w.draft.mendTitle,
       tint: '#ffd9a8',
-      blurb: '回复三分护体',
+      blurb: w.draft.mendBlurb,
       pairing: null,
-      kind: '调息',
+      kind: w.draft.mend,
       step: '',
       jackpot: false,
     };
   }
 
   const spec = SPECS[card.school];
+  const said = w.schools[card.school];
 
   if (card.kind === 'evolve') {
-    const evolution = EVOLUTIONS[card.school];
+    const evolution = w.evolutions[card.school];
     return {
       title: evolution.name,
       tint: '#ffd98a',
-      blurb: evolution.effect,
+      blurb: evolution.blurb,
       pairing: null,
-      kind: '★ 进化',
-      step: spec.name,
+      kind: w.draft.evolve,
+      step: said.name,
       jackpot: true,
     };
   }
@@ -329,32 +367,39 @@ function face(card: Card, holding: Held[]): Face {
   let pairing: string | null = null;
   for (const other of holding) {
     if (other.school === card.school) continue;
-    const combo = comboFor(card.school, other.school);
-    if (combo) {
-      pairing = `与${SPECS[other.school].name}合 · ${combo.name}`;
+    const pair = comboFor(card.school, other.school);
+    if (pair) {
+      pairing = fill(w.draft.pairsWith, {
+        school: w.schools[other.school].name,
+        combo: comboWords(pair.pair.join('')).name,
+      });
       break;
     }
   }
 
   if (card.kind === 'raise') {
     const level = holding.find((h) => h.school === card.school)?.level ?? 1;
+    // The numerals are the realm stages' — 一二三 in Chinese and Japanese, 1 2 3 in English and
+    // Korean — so a level reads the way that language counts rather than the way the source did.
+    const numeral = (n: number): string => w.stages[n - 1] ?? String(n);
     return {
-      title: spec.name,
+      title: said.name,
       tint: spec.tint,
-      blurb: spec.blurb,
+      blurb: said.blurb,
       pairing,
-      kind: '精进',
-      step: level > 0 ? `${LEVELS[level] ?? ''}重 → ${LEVELS[level + 1] ?? '五'}重` : '',
+      kind: w.draft.raise,
+      step:
+        level > 0 ? fill(w.draft.levelStep, { from: numeral(level), to: numeral(level + 1) }) : '',
       jackpot: false,
     };
   }
 
   return {
-    title: spec.name,
+    title: said.name,
     tint: spec.tint,
-    blurb: spec.blurb,
+    blurb: said.blurb,
     pairing,
-    kind: '新法',
+    kind: w.draft.newSchool,
     step: '',
     jackpot: false,
   };

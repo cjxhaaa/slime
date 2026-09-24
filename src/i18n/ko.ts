@@ -23,6 +23,7 @@ export const ko: Dictionary = {
   ascended: '비승함',
   stages: ['1', '2', '3', '4', '5', '6', '7', '8', '9'],
   realmStage: '{realm} {stage}층',
+  fullness: ['수위 초응', '수위 점영', '수위 임박', '돌파 가능'],
 
   schools: {
     符: { name: '부적', blurb: '부적을 던져, 한 장에 적 하나' },
@@ -107,6 +108,18 @@ export const ko: Dictionary = {
     '트림을 했더니 영광이 나왔다',
   ],
 
+  pet: {
+    readyToBreak: '{stage} · 돌파 가능\n눌러서 도겁',
+    ordealSure: '도겁에 근심이 없다',
+    ordealSteady: '도겁이 온당하다 · {short}장이면 근심이 없다',
+    ordealFair: '도겁을 시도할 만하다 · {short}장이면 근심이 없다',
+    ordealPerilous: '도겁이 위험하다 · {short}장이면 근심이 없다',
+    refineLeft: '오늘은 {left}번 더 연화할 수 있다',
+    ordealFailed: '도겁에 실패했다\n부록이 모두 흑어지고 · 수위를 잃었다',
+    ascendedIdle: '이 몸은 이미 대도를 증명했다\n설정에서 환생할 수 있다',
+    firstBreath: '이것에 영성이 있는 듯\n천지의 기를 삼키고 뱉는다',
+  },
+
   menu: {
     settings: '설정…',
     enterTrial: '역련 들어가기',
@@ -120,6 +133,7 @@ export const ko: Dictionary = {
     raise: '정진',
     evolve: '★ 진화',
     mend: '조식',
+    mendTitle: '호체',
     mendBlurb: '호체를 셋 회복',
     levelStep: '{from}중 → {to}중',
     pairsWith: '{school}과 합 · {combo}',
@@ -145,8 +159,37 @@ export const ko: Dictionary = {
     combosLabel: '합',
     triadLabel: '삼합',
     noCombo: '이것들은 서로 맞지 않는다.',
+    listItem: '{name} ({blurb})',
+    listSep: ', ',
+    listColon: ': ',
     languageTitle: '언어',
     languageBlurb: '기본은 시스템을 따른다. 바꾸면 두 창에 바로 적용된다.',
+    languageAuto: '(지금은 시스템을 따르는 중)',
     quitLabel: 'Slime 종료',
+
+    rebirthTitle: '환생',
+    rebirthBlurb:
+      '여덟 경지를 연기부터 다시 걷는다. 비승 횟수, 산출 배율, 하루 연화 단계는 그대로 남고, 몸에 걸친 노을빛도 흩어지지 않는다.',
+    rebirthButton: '환생하여 다시',
+    rebirthConfirm: '확실한가? 한 번 더',
+    rebirthWarn: '지금의 경지와 층, 수위가 모두 0이 된다. 되돌릴 수 없다.',
+    rebirthState: '{realm} · 비승 {times}회 · 산출 ×{rate}',
+
+    quietTitle: '정수',
+    quietLabel: '폐관',
+    quietBlurb:
+      '슬라임이 키보드를 읽지 않고, 무엇에도 반응하지 않는다. 느리게 수련만 이어가며, 네가 돌아올 때까지 한마디도 하지 않는다.',
+    quietNote:
+      '걸러내는 것이 아니다. 켜져 있는 동안 Windows에 Slime으로 키 입력을 보내지 말라고 전한다.',
+
+    behaviourTitle: '습성',
+    behaviourDrag:
+      '끌어서 옮기거나 던질 수 있다. 누르면 찌르는 것이고, 오른쪽 버튼으로 이 창이 열린다. 내버려 두면 잠들고, 손을 뻗으면 깬다.',
+    behaviourKeys:
+      'Windows에서는 네가 친 키도 먹는다. 몇 초마다 옆에 하나 나타나면 뛰어가 삼키고, 그때마다 조금씩 강해진다. 그 글자는 실제로 누른 것이며, 최근 몇 초에서 무작위로, 순서를 흐트러뜨려 고른다.',
+    behaviourEat:
+      '창 위에서 이 초 동안 가만히 누르고 있으면 그 창을 먹는다. 몸이 다 감싸기 전에 떼면 식사는 취소된다.',
+    behaviourQuit:
+      'Ctrl+Alt+Shift+Q 는 어디서든 종료한다. 오버레이가 멈춰 있어도.',
   },
 };
