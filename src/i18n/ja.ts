@@ -171,8 +171,6 @@ export const ja: Dictionary = {
 
   settings: {
     arenaTitle: '演武場',
-    arenaBlurb: '自分で法脈を組み、木人に打ち込む。木人は反撃せず、倒れてもまた立つ。やめるまで続き、修為は増えない。',
-    arenaRings: '木人は三重の輪に並ぶ。倒れなくなった輪が、その法脈の届く範囲。スライムはドラッグで動かせる。瘴気は歩かないと跡が残らない。スライダーはその場で反映。',
     start: '始める',
     stop: 'やめる',
     combosLabel: '合',
@@ -182,12 +180,10 @@ export const ja: Dictionary = {
     listSep: '、',
     listColon: '：',
     languageTitle: '言語',
-    languageBlurb: '既定はシステムに従う。変更は両方の窓にすぐ反映。',
     languageAuto: '（現在はシステムに従っている）',
     quitLabel: 'Slime を終了',
 
     rebirthTitle: '転生',
-    rebirthBlurb: '練気から八境を歩き直す。飛昇の回数、産出倍率、日ごとの錬化段位はそのまま。霞光も消えない。',
     rebirthButton: '転生してやり直す',
     rebirthConfirm: 'よろしいか？もう一度クリック',
     rebirthWarn: '今の境地・層・修為はすべて零に戻る。取り消せない。',
@@ -195,23 +191,14 @@ export const ja: Dictionary = {
 
     quietTitle: '静修',
     quietLabel: '閉関',
-    quietBlurb: 'キーボードを読むのをやめ、何にも反応しなくなる。修行は続くが、静かになる。',
-    quietNote: '有効な間、Windows は Slime にキー入力を渡さない。こちらで捨てるのではなく、届かない。',
+    quietNote: '普段はキー入力を読むが、傍に落とす文字を選ぶためだけ。有効な間、Windows はそれを渡さない。',
 
     lieLowTitle: '退避',
     lieLowLabel: '全画面のときは身を引く',
-    lieLowBlurb: 'ゲームや動画、プレゼンが画面全体を占めている間は隠れ、デスクトップに戻ると出てくる。最大化しただけの窓は数えない。',
     lieLowUnsupported: 'この環境では判別できないため使えない。',
 
     featsTitle: '見聞',
-    featsBlurb: 'このスライムがしてきたこと。記録だけで、何も与えない。',
     featsLocked: 'まだ',
     featsCount: '{all} のうち {done}',
-
-    behaviourTitle: '習性',
-    behaviourDrag: 'ドラッグで動かせるし投げられる。クリックでつつく。右クリックでこの窓が開く。放っておくと眠り、手を伸ばすと起きる。',
-    behaviourKeys: 'Windows では打ったキーも食べる。傍に文字が現れると跳んでいって飲み込み、少し強くなる。その文字は実際に押したもので、無作為に選ばれ順も崩れている。',
-    behaviourEat: '窓の上で押さえたまま動かさずにいると、その窓を食べる。包み終わる前に引き離せば食事は取り消し。',
-    behaviourQuit: 'Ctrl+Alt+Shift+Q はどこからでも Slime を終了できる。オーバーレイが固まっていても効く。',
   },
 };

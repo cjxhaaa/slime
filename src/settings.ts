@@ -83,7 +83,6 @@ let earned = new Set<string>();
 function paintFeats(): void {
   const w = words();
   el<HTMLHeadingElement>('feats-title').textContent = w.settings.featsTitle;
-  el<HTMLParagraphElement>('feats-blurb').textContent = w.settings.featsBlurb;
   el<HTMLParagraphElement>('feats-count').textContent = fill(w.settings.featsCount, {
     done: FEAT_IDS.filter((id) => earned.has(id)).length,
     all: FEAT_IDS.length,
@@ -127,7 +126,6 @@ let saveState: { ascensions: number; realm: string } | null = null;
 function paintRebirth(): void {
   const w = words();
   el<HTMLHeadingElement>('rebirth-title').textContent = w.settings.rebirthTitle;
-  el<HTMLParagraphElement>('rebirth-blurb').textContent = w.settings.rebirthBlurb;
   rebirthButton.textContent = armed ? w.settings.rebirthConfirm : w.settings.rebirthButton;
   rebirthWarn.textContent = armed ? w.settings.rebirthWarn : '';
   rebirthState.textContent = saveState
@@ -145,24 +143,24 @@ function paintRebirth(): void {
  */
 let lieLowSupported = true;
 
-/** The sections that are nothing but prose, plus the two switches' own words. */
-function paintProse(): void {
+/**
+ * The two switches.
+ *
+ * Only one of them carries a line of text. 静修's note stays because it is the disclosure, not a
+ * description: it says the keyboard is read at all, and what turning this on actually does about
+ * that. 敛息's line is empty unless the platform cannot answer, in which case it says why the
+ * switch is dead rather than leaving it greyed with no reason.
+ */
+function paintSwitches(): void {
   const w = words();
   el<HTMLHeadingElement>('quiet-title').textContent = w.settings.quietTitle;
   el<HTMLSpanElement>('quiet-label').textContent = w.settings.quietLabel;
-  el<HTMLParagraphElement>('quiet-blurb').textContent = w.settings.quietBlurb;
   el<HTMLParagraphElement>('quiet-note').textContent = w.settings.quietNote;
   el<HTMLHeadingElement>('lielow-title').textContent = w.settings.lieLowTitle;
   el<HTMLSpanElement>('lielow-label').textContent = w.settings.lieLowLabel;
-  el<HTMLParagraphElement>('lielow-blurb').textContent = w.settings.lieLowBlurb;
   el<HTMLParagraphElement>('lielow-note').textContent = lieLowSupported
     ? ''
     : w.settings.lieLowUnsupported;
-  el<HTMLHeadingElement>('behaviour-title').textContent = w.settings.behaviourTitle;
-  el<HTMLParagraphElement>('behaviour-drag').textContent = w.settings.behaviourDrag;
-  el<HTMLParagraphElement>('behaviour-keys').textContent = w.settings.behaviourKeys;
-  el<HTMLParagraphElement>('behaviour-eat').textContent = w.settings.behaviourEat;
-  el<HTMLParagraphElement>('behaviour-quit').textContent = w.settings.behaviourQuit;
 }
 
 rebirthButton.addEventListener('click', () => {
@@ -205,7 +203,7 @@ void invoke<boolean>('lie_low_supported')
   .then((supported) => {
     lieLowBox.disabled = !supported;
     lieLowSupported = supported;
-    paintProse();
+    paintSwitches();
   })
   .catch(() => {});
 
@@ -261,13 +259,11 @@ let chosen: Locale | null = null;
 function paintLanguage(): void {
   const w = words();
   el<HTMLHeadingElement>('language-title').textContent = w.settings.languageTitle;
-  // The blurb says the language is inherited; the lit chip says *which* one was inherited. Lighting
-  // nothing while following the system — which is the state everybody starts in — read as a row of
-  // five buttons none of which was selected, in a window that was plainly in one of them.
-  el<HTMLParagraphElement>('language-blurb').textContent =
-    chosen === null
-      ? `${w.settings.languageBlurb} ${w.settings.languageAuto}`
-      : w.settings.languageBlurb;
+  // A chip is always lit, including before anything has been picked, because a row of five with
+  // none selected read as broken in a window that was plainly in one of them. This line is the
+  // difference: it says the lit one was inherited rather than chosen.
+  el<HTMLParagraphElement>('language-auto').textContent =
+    chosen === null ? w.settings.languageAuto : '';
   const lit = locale();
   languageChips.replaceChildren(
     ...LOCALES.map((tag) => {
@@ -291,8 +287,6 @@ function paintLanguage(): void {
 function paintArena(): void {
   const w = words();
   el<HTMLHeadingElement>('arena-title').textContent = w.settings.arenaTitle;
-  el<HTMLParagraphElement>('arena-blurb').textContent = w.settings.arenaBlurb;
-  el<HTMLParagraphElement>('arena-rings').textContent = w.settings.arenaRings;
   el<HTMLButtonElement>('arena-start').textContent = w.settings.start;
   el<HTMLButtonElement>('arena-stop').textContent = w.settings.stop;
   el<HTMLButtonElement>('quit').textContent = w.settings.quitLabel;
@@ -306,7 +300,7 @@ function paintAll(): void {
   paintLanguage();
   paintRebirth();
   paintArena();
-  paintProse();
+  paintSwitches();
   paintFeats();
   render();
 }

@@ -12,7 +12,6 @@
       <section id="rebirth-box" hidden>
         <h2 id="rebirth-title"></h2>
         <p id="rebirth-state" class="muted"></p>
-        <p id="rebirth-blurb" class="muted"></p>
         <div class="row">
           <button id="rebirth" class="secondary"></button>
         </div>
@@ -21,7 +20,6 @@
 
       <section id="arena-box">
         <h2 id="arena-title"></h2>
-        <p id="arena-blurb" class="muted"></p>
 
         <div id="arena-schools" class="chips"></div>
         <div id="arena-picked" class="picked"></div>
@@ -31,13 +29,12 @@
           <button id="arena-start"></button>
           <button id="arena-stop" class="secondary"></button>
         </div>
-        <p id="arena-rings" class="muted"></p>
       </section>
 
       <section id="language-box">
         <h2 id="language-title"></h2>
         <div id="language-chips" class="chips"></div>
-        <p id="language-blurb" class="muted"></p>
+        <p id="language-auto" class="muted"></p>
       </section>
 
       <section>
@@ -46,7 +43,6 @@
           <input id="quiet" type="checkbox" />
           <span id="quiet-label"></span>
         </label>
-        <p id="quiet-blurb" class="muted"></p>
         <p id="quiet-note" class="muted"></p>
       </section>
 
@@ -56,27 +52,18 @@
           <input id="lielow" type="checkbox" />
           <span id="lielow-label"></span>
         </label>
-        <p id="lielow-blurb" class="muted"></p>
         <p id="lielow-note" class="muted"></p>
       </section>
 
       <section>
         <h2 id="feats-title"></h2>
-        <p id="feats-blurb" class="muted"></p>
         <p id="feats-count" class="muted"></p>
         <div id="feats-list" class="feats"></div>
       </section>
 
-      <section>
-        <h2 id="behaviour-title"></h2>
-        <p id="behaviour-drag" class="muted"></p>
-        <p id="behaviour-keys" class="muted"></p>
-        <p id="behaviour-eat" class="muted"></p>
-        <p id="behaviour-quit" class="muted"></p>
-      </section>
-
       <footer>
         <button id="quit" class="link danger">Quit Slime</button>
+        <code class="hotkey">Ctrl+Alt+Shift+Q</code>
       </footer>
     </main>
     <script type="module" src="/src/settings.ts"></script>

@@ -195,10 +195,6 @@ export const en: Dictionary = {
 
   settings: {
     arenaTitle: 'Practice Yard',
-    arenaBlurb:
-      'Build a set by hand and hit the posts with it. They do not hit back, and they get up again. Runs until you stop it, and nothing is gained.',
-    arenaRings:
-      'The posts stand in three rings. Whichever ring stops falling is as far as this set reaches. Drag the slime to move it; Miasma needs you walking to leave a trail. Sliders apply live.',
     start: 'Begin',
     stop: 'Stop',
     combosLabel: 'Pairings',
@@ -208,13 +204,10 @@ export const en: Dictionary = {
     listSep: ', ',
     listColon: ': ',
     languageTitle: 'Language',
-    languageBlurb: 'Follows the system by default. Both windows change at once.',
     languageAuto: '(currently following the system)',
     quitLabel: 'Quit Slime',
 
     rebirthTitle: 'Rebirth',
-    rebirthBlurb:
-      'Walk the eight realms again from Qi Refining. Ascensions, output multiplier and the daily refining tier all stay, and so does the glow.',
     rebirthButton: 'Begin again',
     rebirthConfirm: 'Sure? Click again',
     rebirthWarn: 'Your realm, stage and progress are cleared. This cannot be undone.',
@@ -222,30 +215,15 @@ export const en: Dictionary = {
 
     quietTitle: 'Quiet',
     quietLabel: 'Seclusion',
-    quietBlurb:
-      'Stops reading the keyboard and stops reacting to anything. It keeps cultivating, quietly.',
     quietNote:
-      'While it is on, Windows stops delivering keystrokes to Slime. Not filtered here; never received.',
+      'It reads keystrokes only to pick a glyph to drop beside it. While this is on, Windows stops delivering them.',
 
     lieLowTitle: 'Lie Low',
     lieLowLabel: 'Step aside for full-screen apps',
-    lieLowBlurb:
-      'Hides while a game, a film or a presentation has the whole screen, and comes back when you do. A maximized window does not count.',
     lieLowUnsupported: 'This system cannot tell, so it is unavailable.',
 
     featsTitle: 'Doings',
-    featsBlurb: 'What this slime has done. A record; it grants nothing.',
     featsLocked: 'not yet',
     featsCount: '{done} of {all}',
-
-    behaviourTitle: 'Behaviour',
-    behaviourDrag:
-      'Drag it to move it, or throw it. Click to poke. Right-click opens this window. It sleeps when left alone and wakes when you reach for it.',
-    behaviourKeys:
-      'On Windows it also eats the keys you type. A letter turns up beside it, it hops over and swallows it, and grows a little. The letter is one you really pressed, picked at random and out of order.',
-    behaviourEat:
-      'Hold it still over a window and it eats the window. Pull it away before the body closes and the meal is off.',
-    behaviourQuit:
-      'Ctrl+Alt+Shift+Q quits from anywhere, even if the overlay has stopped responding.',
   },
 };

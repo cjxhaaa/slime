@@ -150,8 +150,6 @@ export interface Dictionary {
 
   settings: {
     arenaTitle: string;
-    arenaBlurb: string;
-    arenaRings: string;
     start: string;
     stop: string;
     combosLabel: string;
@@ -168,13 +166,11 @@ export interface Dictionary {
     listSep: string;
     listColon: string;
     languageTitle: string;
-    languageBlurb: string;
     /** Appended to the blurb while nothing has been chosen and the system is being followed. */
     languageAuto: string;
     quitLabel: string;
 
     rebirthTitle: string;
-    rebirthBlurb: string;
     rebirthButton: string;
     /** The second of the two clicks, and the line that says what it costs. */
     rebirthConfirm: string;
@@ -184,7 +180,6 @@ export interface Dictionary {
 
     quietTitle: string;
     quietLabel: string;
-    quietBlurb: string;
     quietNote: string;
 
     /**
@@ -195,21 +190,14 @@ export interface Dictionary {
      */
     lieLowTitle: string;
     lieLowLabel: string;
-    lieLowBlurb: string;
     /** Shown in place of the switch where the platform cannot tell who owns the screen. */
     lieLowUnsupported: string;
 
     featsTitle: string;
-    featsBlurb: string;
     /** What an unearned row says in place of its blurb. */
     featsLocked: string;
     /** `{done}` of `{all}`. */
     featsCount: string;
 
-    behaviourTitle: string;
-    behaviourDrag: string;
-    behaviourKeys: string;
-    behaviourEat: string;
-    behaviourQuit: string;
   };
 }

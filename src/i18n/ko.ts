@@ -170,9 +170,6 @@ export const ko: Dictionary = {
 
   settings: {
     arenaTitle: '연무장',
-    arenaBlurb: '직접 법맥을 짜서 목인을 친다. 목인은 반격하지 않고, 쓰러져도 다시 선다. 멈출 때까지 계속되며 공력은 늘지 않는다.',
-    arenaRings:
-      '목인은 세 고리로 늘어선다. 더 이상 쓰러지지 않는 고리가 이 법맥이 닿는 거리다. 슬라임은 끌어서 옮긴다. 독무는 걸어야 자국이 남는다. 슬라이더는 바로 적용된다.',
     start: '시작',
     stop: '끝내기',
     combosLabel: '합',
@@ -182,12 +179,10 @@ export const ko: Dictionary = {
     listSep: ', ',
     listColon: ': ',
     languageTitle: '언어',
-    languageBlurb: '기본은 시스템을 따른다. 바꾸면 두 창이 함께 바뀐다.',
     languageAuto: '(지금은 시스템을 따르는 중)',
     quitLabel: 'Slime 종료',
 
     rebirthTitle: '환생',
-    rebirthBlurb: '연기부터 여덟 경지를 다시 걷는다. 비승 횟수, 산출 배율, 하루 연화 단계는 그대로 남고 노을빛도 사라지지 않는다.',
     rebirthButton: '환생하여 다시 걷기',
     rebirthConfirm: '확실한가? 한 번 더',
     rebirthWarn: '지금의 경지와 층, 공력이 모두 0이 된다. 되돌릴 수 없다.',
@@ -195,24 +190,14 @@ export const ko: Dictionary = {
 
     quietTitle: '정좌',
     quietLabel: '폐관',
-    quietBlurb: '키보드를 읽지 않고 무엇에도 반응하지 않는다. 수련은 그대로 이어가되 조용해진다.',
-    quietNote: '켜져 있는 동안 Windows가 Slime에 키 입력을 보내지 않는다. 걸러내는 것이 아니라 아예 받지 않는다.',
+    quietNote: '평소에는 키 입력을 읽지만 옆에 떨어뜨릴 글자를 고르는 데만 쓴다. 켜 두면 Windows가 그것을 보내지 않는다.',
 
     lieLowTitle: '은신',
     lieLowLabel: '전체 화면일 때 물러나기',
-    lieLowBlurb: '게임이나 영상, 발표가 화면 전체를 차지한 동안 숨었다가 바탕 화면으로 돌아오면 나온다. 창을 최대화한 것은 해당하지 않는다.',
     lieLowUnsupported: '이 시스템에서는 판별할 수 없어 사용할 수 없다.',
 
     featsTitle: '견문',
-    featsBlurb: '이 슬라임이 해온 일들. 기록일 뿐 아무것도 주지 않는다.',
     featsLocked: '아직',
     featsCount: '{all} 중 {done}',
-
-    behaviourTitle: '습성',
-    behaviourDrag: '끌어서 옮기거나 던질 수 있다. 누르면 찌른다. 오른쪽 버튼으로 이 창이 열린다. 내버려 두면 자고, 손을 뻗으면 깬다.',
-    behaviourKeys:
-      'Windows에서는 네가 친 키도 먹는다. 옆에 글자가 나타나면 뛰어가 삼키고 조금 강해진다. 그 글자는 네가 실제로 누른 것이며, 무작위로 골라 순서를 흐트러뜨린 것이다.',
-    behaviourEat: '창 위에서 가만히 누르고 있으면 그 창을 먹는다. 다 감싸기 전에 떼면 식사는 취소된다.',
-    behaviourQuit: 'Ctrl+Alt+Shift+Q는 어디서든 종료한다. 오버레이가 멈춰 있어도 작동한다.',
   },
 };

@@ -100,7 +100,16 @@ button.link.danger {
 }
 
 footer {
-  text-align: center;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* The one thing in here that is worth knowing and cannot be discovered by trying it. */
+.hotkey {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* 演武场 */
