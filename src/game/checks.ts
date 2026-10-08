@@ -15,7 +15,7 @@ import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js
 import { Glyphs } from './Glyphs.js';
 import { BreakthroughSpread, Motes, StageSpread } from './Motes.js';
 import { clear, mix } from '../slime/colour.js';
-import { smooth, wispFade } from '../slime/ease.js';
+import { backOut, smooth, wispFade } from '../slime/ease.js';
 import { resolveErrand } from './errand.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
@@ -1765,6 +1765,45 @@ for (const tag of LOCALES) {
 }
 check(`every string fits the box it is drawn in${overBudget.length ? ': ' + overBudget.join('; ') : ''}`, overBudget.length, 0);
 checkTrue('and the budget really was walked', LOCALES.length * 9 * 14 > 600);
+
+// -------------------------------------------------------------------------------------------------
+// The overshoot the pet comes back on.
+//
+// Pure arithmetic, and the reason it is asserted rather than looked at: the two constants in a
+// back-out curve are not independent — the cubic term has to be the overshoot plus one, or the
+// value at zero stops being zero. The first version of this used 2.2 and 3.2, which gives
+// `backOut(0) = 1.0`: the pet would have appeared at **full size**, overshot downwards and settled,
+// which is not a thing anyone would describe as a bug so much as "the animation looks wrong".
+
+checkTrue('a return starts from nothing', backOut(0) === 0);
+checkTrue('and lands exactly on 1', backOut(1) === 1);
+checkTrue('and is clamped either side', backOut(-5) === 0 && backOut(5) === 1);
+
+// It must actually go past 1, or it is not the curve it claims to be — and not by much, or the
+// pet arrives looking inflated.
+let peak = 0;
+for (let i = 0; i <= 100; i++) peak = Math.max(peak, backOut(i / 100));
+checkTrue(`it overshoots (peak ${peak.toFixed(3)})`, peak > 1.02);
+checkTrue('but not wildly', peak < 1.2);
+
+// **Exactly one turn.** Rising past 1 and then settling back onto it is the shape; rising, falling
+// and rising again is a wobble, and a wobble on a body arriving reads as the window glitching. So
+// what is asserted is the number of direction changes, which is 1 for this curve and more than 1
+// for anything that oscillates — rather than plain monotonicity, which this curve deliberately
+// does not have and which the first version of this check wrongly demanded.
+let turns = 0;
+let easeRising = true;
+let lastEase = backOut(0);
+for (let i = 1; i <= 200; i++) {
+  const eased = backOut(i / 200);
+  const up = eased >= lastEase;
+  if (up !== easeRising) {
+    turns++;
+    easeRising = up;
+  }
+  lastEase = eased;
+}
+check('a return turns exactly once', turns, 1);
 
 // -------------------------------------------------------------------------------------------------
 // What actually reaches the screen.

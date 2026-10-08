@@ -177,6 +177,12 @@ export const zhHant: Dictionary = {
       '讓史萊姆不再讀取鍵盤，也不再對任何事有反應。牠仍舊慢慢修煉，在你回來之前一句話也不說。',
     quietNote: '這不是過濾。開著的時候，會讓 Windows 不再把按鍵送到 Slime。',
 
+    lieLowTitle: '斂息',
+    lieLowLabel: '滿螢幕時自己退下',
+    lieLowBlurb:
+      '有東西佔滿整塊螢幕時——遊戲、影片、簡報——史萊姆會退下去，不畫也不算，等你回到桌面再重新聚形。最大化的視窗不算佔滿，牠不會為此躲起來。',
+    lieLowUnsupported: '這個系統上分不出誰佔著螢幕，所以這項用不了。',
+
     behaviourTitle: '習性',
     behaviourDrag:
       '拖曳可以挪牠，也可以把牠甩出去。點一下是戳牠。右鍵開啟這個視窗。沒人理牠就會睡著，你伸手牠就醒。',

@@ -29,6 +29,15 @@ export interface SaveState {
   /** Seclusion: the keyboard is being left alone and nothing asks for attention. */
   quiet: boolean;
   /**
+   * 敛息: step out of the way while something else owns the screen.
+   *
+   * Stored, and **defaults to on** for a save that predates it. The usual rule for a new setting is
+   * to default it off so an upgrade changes nothing, and it is the wrong rule here: the behaviour
+   * this turns on is "do not sit on top of the full-screen thing you are doing", and nobody who
+   * upgrades wants a week of that happening before they find the switch.
+   */
+  lieLow: boolean;
+  /**
    * The chosen language, or null to follow the system.
    *
    * Null rather than a resolved tag, so somebody who never opens the language menu keeps following
@@ -92,6 +101,7 @@ export async function loadSave(): Promise<SaveState | null> {
       settledAt?: unknown;
       seenIntro?: unknown;
       quiet?: unknown;
+      lieLow?: unknown;
       locale?: unknown;
     };
     // A file from a future version is not something this build can reason about, and guessing at
@@ -126,6 +136,8 @@ export async function loadSave(): Promise<SaveState | null> {
       settledAt: numberOr(parsed.settledAt, Date.now() / 1000),
       seenIntro: parsed.seenIntro === true,
       quiet: parsed.quiet === true,
+      // Absent means an older save, and absent means on — see the field's own note.
+      lieLow: parsed.lieLow !== false,
       // Absent in every save written before there was a language menu, which is the common case
       // and not an error: null means "follow the system", and that is the right default for them.
       locale: typeof parsed.locale === 'string' ? parsed.locale : null,

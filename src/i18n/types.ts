@@ -175,6 +175,18 @@ export interface Dictionary {
     quietBlurb: string;
     quietNote: string;
 
+    /**
+     * 敛息 — stepping out of the way of a full-screen application.
+     *
+     * A separate switch from `quiet*` and deliberately so: one answers "do not read my keyboard",
+     * the other "do not sit on top of what I am doing". Somebody can want either without the other.
+     */
+    lieLowTitle: string;
+    lieLowLabel: string;
+    lieLowBlurb: string;
+    /** Shown in place of the switch where the platform cannot tell who owns the screen. */
+    lieLowUnsupported: string;
+
     behaviourTitle: string;
     behaviourDrag: string;
     behaviourKeys: string;

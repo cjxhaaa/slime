@@ -207,6 +207,12 @@ export const en: Dictionary = {
     quietNote:
       'This is not a filter. While it is on, Windows is told to stop delivering keystrokes to Slime at all.',
 
+    lieLowTitle: 'Lie Low',
+    lieLowLabel: 'Step aside for full-screen apps',
+    lieLowBlurb:
+      'When something takes the whole screen — a game, a film, a presentation — the slime withdraws, stops drawing and stops counting, and condenses back once you return to the desktop. A maximized window does not count as taking the screen, so it will not hide for one.',
+    lieLowUnsupported: 'This system cannot say who owns the screen, so this is unavailable here.',
+
     behaviourTitle: 'Behaviour',
     behaviourDrag:
       'Drag the slime to move it, or throw it. Click it to poke it. Right-click it to open this window. It falls asleep when left alone, and wakes when you reach for it.',

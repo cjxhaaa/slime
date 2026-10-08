@@ -98,13 +98,25 @@ function paintRebirth(): void {
     : '';
 }
 
-/** The two sections that are nothing but prose. */
+/**
+ * Whether this platform can tell who owns the screen. Starts true so the row is not momentarily
+ * greyed on every open while the answer is in flight.
+ */
+let lieLowSupported = true;
+
+/** The sections that are nothing but prose, plus the two switches' own words. */
 function paintProse(): void {
   const w = words();
   el<HTMLHeadingElement>('quiet-title').textContent = w.settings.quietTitle;
   el<HTMLSpanElement>('quiet-label').textContent = w.settings.quietLabel;
   el<HTMLParagraphElement>('quiet-blurb').textContent = w.settings.quietBlurb;
   el<HTMLParagraphElement>('quiet-note').textContent = w.settings.quietNote;
+  el<HTMLHeadingElement>('lielow-title').textContent = w.settings.lieLowTitle;
+  el<HTMLSpanElement>('lielow-label').textContent = w.settings.lieLowLabel;
+  el<HTMLParagraphElement>('lielow-blurb').textContent = w.settings.lieLowBlurb;
+  el<HTMLParagraphElement>('lielow-note').textContent = lieLowSupported
+    ? ''
+    : w.settings.lieLowUnsupported;
   el<HTMLHeadingElement>('behaviour-title').textContent = w.settings.behaviourTitle;
   el<HTMLParagraphElement>('behaviour-drag').textContent = w.settings.behaviourDrag;
   el<HTMLParagraphElement>('behaviour-keys').textContent = w.settings.behaviourKeys;
@@ -138,6 +150,36 @@ void invoke<boolean>('quiet_state')
     quietBox.checked = quiet;
   })
   .catch(() => {});
+
+/**
+ * 敛息. Rust owns both the detection and the window, so this is a switch and nothing more.
+ *
+ * Asked rather than assumed, like `quiet` above: Rust starts with it on, the overlay pushes the
+ * saved value at startup, and this window renders whatever the answer turned out to be rather than
+ * keeping a third copy that can disagree with the other two.
+ */
+const lieLowBox = el<HTMLInputElement>('lielow');
+
+void invoke<boolean>('lie_low_supported')
+  .then((supported) => {
+    lieLowBox.disabled = !supported;
+    lieLowSupported = supported;
+    paintProse();
+  })
+  .catch(() => {});
+
+void invoke<boolean>('lie_low_state')
+  .then((on) => {
+    lieLowBox.checked = on;
+  })
+  .catch(() => {});
+
+lieLowBox.addEventListener('change', () => {
+  const lieLow = lieLowBox.checked;
+  void invoke('set_lie_low', { lieLow }).catch(() => {});
+  // Same division as quiet: Rust acts on it, the overlay writes it down.
+  void emit('lie-low-changed', lieLow);
+});
 
 quietBox.addEventListener('change', () => {
   const quiet = quietBox.checked;

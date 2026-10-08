@@ -1,5 +1,6 @@
 mod devour;
 mod gather;
+mod presence;
 mod save;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -242,6 +243,9 @@ pub fn run() {
             gather::take_input,
             gather::set_quiet,
             gather::quiet_state,
+            presence::set_lie_low,
+            presence::lie_low_state,
+            presence::lie_low_supported,
             save::load_save,
             save::write_save,
             devour::devour_supported,
@@ -330,6 +334,13 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let mut last = (f64::NAN, f64::NAN);
                 loop {
+                    // Nothing on screen is following the pointer, so this is 30 polls and up to 30
+                    // IPC messages a second spent on a pet nobody can see. It is the only loop in
+                    // the process with a cost worth naming while concealed.
+                    if presence::is_concealed() {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
                     if cursor_handle.state::<ClickState>().pointer_owned.load(Ordering::SeqCst) {
                         tokio::time::sleep(Duration::from_millis(33)).await;
                         continue;
@@ -351,6 +362,7 @@ pub fn run() {
             });
 
             gather::start();
+            presence::watch(handle.clone());
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -182,6 +182,12 @@ export const ko: Dictionary = {
     quietNote:
       '걸러내는 것이 아니다. 켜져 있는 동안 Windows에 Slime으로 키 입력을 보내지 말라고 전한다.',
 
+    lieLowTitle: '은신',
+    lieLowLabel: '전체 화면일 때 물러나기',
+    lieLowBlurb:
+      '무언가가 화면 전체를 차지하면——게임, 영상, 발표——슬라임은 물러나서 그리지도 세지도 않고, 네가 바탕 화면으로 돌아오면 다시 모여 형체를 이룬다. 최대화한 창은 전체 화면으로 치지 않으므로 그때는 숨지 않는다.',
+    lieLowUnsupported: '이 시스템에서는 누가 화면을 차지했는지 알 수 없어서 이 기능을 쓸 수 없다.',
+
     behaviourTitle: '습성',
     behaviourDrag:
       '끌어서 옮기거나 던질 수 있다. 누르면 찌르는 것이고, 오른쪽 버튼으로 이 창이 열린다. 내버려 두면 잠들고, 손을 뻗으면 깬다.',

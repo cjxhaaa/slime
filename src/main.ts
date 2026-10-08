@@ -20,6 +20,7 @@ import { Arsenal, type Holding } from './game/Arsenal';
 import { activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
+import { backOut } from './slime/ease';
 import {
   combo as comboWords,
   fill,
@@ -460,6 +461,61 @@ interface Rect {
  */
 let previousDirty: Rect | null = null;
 let fullRepaint = true;
+
+/**
+ * 敛息 — whether something else owns the screen and the pet has stepped out of the way.
+ *
+ * Owned by the Rust side, which hides the window itself; this flag only decides what the loop does
+ * about it. Two things follow from the window actually being hidden rather than merely unpainted,
+ * and both are the point:
+ *
+ * - **`requestAnimationFrame` stops firing on its own.** A document that is not visible does not
+ *   get animation callbacks, per spec — so the loop parks without anyone parking it, and comes
+ *   back when the window does. Nothing here restarts the chain by hand, because a second chain
+ *   started next to a sleeping one is two simulations running at once, and that is a bug that only
+ *   shows up as the pet moving at double speed some of the time.
+ * - **The trial stops, and cultivation does not.** A run counts seconds off the frame loop, so a
+ *   parked loop is a paused run — which closes the hole where you start a 历练, launch a
+ *   full-screen game and come back to an hour of free 邀气. Cultivation settles off the wall clock
+ *   instead, so idle progress is untouched. Neither of those is a special case written for this
+ *   feature; they fall out of where each clock already lives.
+ */
+let concealed = false;
+
+/** How long the pet takes to condense back. */
+const RevealMs = 820;
+/** How many motes it gathers itself out of. */
+const RevealMotes = 34;
+/** `performance.now()` when the return began, or 0 when there is nothing to play. */
+let revealAt = 0;
+
+/**
+ * How far back the pet is, 0 to 1.
+ *
+ * Eased with an overshoot rather than a plain curve: the body arriving slightly too big and
+ * settling is what reads as *arriving*, where a linear grow reads as a window being resized.
+ */
+function revealed(now: number): number {
+  if (revealAt === 0) return 1;
+  const t = (now - revealAt) / RevealMs;
+  if (t >= 1) {
+    revealAt = 0;
+    return 1;
+  }
+  return t <= 0 ? 0 : t;
+}
+
+/**
+ * The body's scale during the return: 0.42 of full size, overshooting slightly, settling at 1.
+ *
+ * The overshoot is the whole point — arriving a touch too big and settling reads as *arriving*,
+ * where a plain curve reads as a window being resized.
+ */
+const RevealFrom = 0.42;
+
+function revealScale(t: number): number {
+  return RevealFrom + (1 - RevealFrom) * backOut(t);
+}
 let pointerDown = false;
 let showingPaw = false;
 
@@ -810,6 +866,7 @@ function currentSave(): SaveState {
     fortune: fortune.snapshot(),
     seenIntro,
     quiet,
+    lieLow,
     locale: chosenLocale,
   };
 }
@@ -864,6 +921,8 @@ let restX: number | null = null;
 /** True while the pet is fetching a charm or walking back from one. */
 let onErrand = false;
 let quiet = false;
+/** 敛息, mirrored here only so it can be written into the save; Rust is what acts on it. */
+let lieLow = true;
 
 /**
  * How far the pet can take a glyph from, and it grows with the realm.
@@ -1053,6 +1112,19 @@ function homeSlime(width: number, height: number): void {
 function frame(now: number): void {
   const width = window.innerWidth;
   const height = window.innerHeight;
+
+  // Stepped aside. Time spent here is dropped rather than owed — the same treatment as a frame
+  // without a viewport, and for the same reason: the pet was not idle, it was not there.
+  //
+  // This re-arms rather than returning outright. While the window is hidden the callback does not
+  // fire at all, so the cost of the re-arm is zero; the one frame it does cost is the first one
+  // after the window comes back but before the event announcing it has been delivered, which would
+  // otherwise paint a frozen pet at full size for an instant before the reveal started.
+  if (concealed) {
+    lastTick = now;
+    requestAnimationFrame(frame);
+    return;
+  }
 
   if (width < 2 * slime.blob.restRadius || height < 2 * slime.blob.restRadius) {
     // Time spent without a viewport is dropped, not owed.
@@ -1367,6 +1439,12 @@ function frame(now: number): void {
   const shouldPaint = animating || slime.hasSlowAnimation || wasAnimating || forced;
   wasAnimating = animating;
 
+  // The return is drawn as a transform around everything, so nothing below has to know about it.
+  // Scaling rather than fading, because every layer in the paint below sets `globalAlpha` for its
+  // own reasons and an outer alpha would simply be overwritten by the first one that did.
+  const back = revealed(now);
+  if (back < 1) fullRepaint = true;
+
   if (shouldPaint && regions.length > 0) {
     context.save();
     const clip = new Path2D();
@@ -1375,6 +1453,13 @@ function frame(now: number): void {
       context.clearRect(region.x, region.y, region.width, region.height);
     }
     context.clip(clip);
+
+    if (back < 1) {
+      const scale = revealScale(back);
+      context.translate(slime.drawX, slime.drawY);
+      context.scale(scale, scale);
+      context.translate(-slime.drawX, -slime.drawY);
+    }
 
     if (inTrial) {
       if (arena !== null) arena.dummies.draw(context);
@@ -1634,8 +1719,13 @@ async function main(): Promise<void> {
         seenIntro = saved.seenIntro;
         chosenLocale = saved.locale;
         quiet = saved.quiet;
+        lieLow = saved.lieLow;
         // Rust starts out listening, so a save that says otherwise has to say so out loud.
         if (quiet) void invoke('set_quiet', { quiet: true }).catch(() => {});
+        // Told every time rather than only when false. Rust starts this on, so saying so when it is
+        // on is redundant — but a setting that is only ever pushed in one direction is one restart
+        // away from disagreeing with the file it came from.
+        void invoke('set_lie_low', { lieLow }).catch(() => {});
       } else {
         seenIntro = false;
       }
@@ -1902,6 +1992,43 @@ async function main(): Promise<void> {
   });
 
   // Settings changes it; this window is what writes it down, because this window owns the save.
+  /**
+   * 敛息. Rust hides and shows the window; this reacts to its having done so.
+   *
+   * Going needs nothing played — by definition the thing that triggered it is already covering the
+   * screen, so a farewell animation is one nobody can watch. The canvas is cleared instead, so that
+   * the instant between the window being shown again and this event arriving shows an empty overlay
+   * rather than a frozen pet.
+   */
+  await listen<{ concealed: boolean }>('presence', (event) => {
+    const next = event.payload.concealed;
+    if (next === concealed) return;
+    concealed = next;
+    if (next) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      previousDirty = null;
+      fullRepaint = true;
+      return;
+    }
+    // Back. Everything the parked time is owed is settled in one call, and nothing is owed to the
+    // frame clock — `lastTick` is moved up rather than caught up.
+    cultivation.settle();
+    const now = performance.now();
+    lastTick = now;
+    accumulator = 0;
+    revealAt = now;
+    fullRepaint = true;
+    // It gathers itself out of the ambient qi: the same motes it absorbs from a swallowed window,
+    // spawned wide and converging, which is the one effect in this app that already reads as
+    // something becoming solid.
+    motes.spawn(RevealMotes, slime.x, slime.y, slime.blob.restRadius * 6, 1);
+  });
+
+  await listen<boolean>('lie-low-changed', (event) => {
+    lieLow = event.payload;
+    requestSave(currentSave());
+  });
+
   await listen<boolean>('quiet-changed', (event) => {
     quiet = event.payload;
     if (quiet) slime.clearAlert();

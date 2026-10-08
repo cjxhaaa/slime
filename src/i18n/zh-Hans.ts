@@ -169,6 +169,12 @@ export const zhHans: Dictionary = {
       '让史莱姆不再读取键盘，也不再对任何事有反应。它仍旧慢慢修炼，在你回来之前一句话也不说。',
     quietNote: '这不是过滤。开着的时候，会让 Windows 不再把按键送到 Slime。',
 
+    lieLowTitle: '敛息',
+    lieLowLabel: '满屏时自己退下',
+    lieLowBlurb:
+      '有东西占满整块屏幕时——游戏、影片、演示——史莱姆会退下去，不画也不算，等你回到桌面再重新聚形。最大化的窗口不算占满，它不会为此躲起来。',
+    lieLowUnsupported: '这个系统上分不出谁占着屏幕，所以这项用不了。',
+
     behaviourTitle: '习性',
     behaviourDrag:
       '拖动可以挪它，也可以把它甩出去。点一下是戳它。右键打开这个窗口。没人理它就会睡着，你伸手它就醒。',
