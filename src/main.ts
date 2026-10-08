@@ -485,11 +485,13 @@ let concealed = false;
 /**
  * How long the pet takes to creep back.
  *
- * Long, because it is a sequence rather than a transition: the charm flies, a head comes out, it
- * waits a full second, it shoves twice, and then it is through. Most of that is the wait, which is
- * the beat the rest hangs off — shorten it and the two shoves run together into a shiver.
+ * Long, because it is a sequence rather than a transition: **the charm goes first and lands**, and
+ * only then does a head come out, wait a full second, shove twice and get through. The two beats
+ * the length is spent on are the charm's flight, which has to finish before the pet moves or the
+ * two read as one cluttered event, and the wait, which is what the shoves hang off — shorten
+ * either and they run together into a shiver.
  */
-const RevealMs = 3000;
+const RevealMs = 3600;
 
 /**
  * The charm flicked out of the gap ahead of the pet.

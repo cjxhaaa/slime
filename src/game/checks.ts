@@ -12,7 +12,7 @@
 declare const process: { exit(code: number): never };
 
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
-import { Glyphs } from './Glyphs.js';
+import { Glyphs, LongestFlightSeconds } from './Glyphs.js';
 import { BreakthroughSpread, Motes, StageSpread } from './Motes.js';
 import { clear, mix } from '../slime/colour.js';
 import { smooth, wispFade } from '../slime/ease.js';
@@ -95,6 +95,7 @@ import {
 import { DICTIONARIES, LOCALES, fill, isLocale, locale, localeFor, setLocale } from '../i18n/index.js';
 import { fit, wrap } from '../ui/text.js';
 import {
+  HiddenUntil,
   crawl,
   crawlDistance,
   emerged,
@@ -1789,7 +1790,7 @@ const stage = { width: 1200, height: 800 };
 const standing = { x: 700, y: 800 - 12 - 46, radius: 46 };
 const plan = planCrawl(standing, stage);
 // Mirrors `RevealMs` in main.ts; the wait below is asserted in seconds, so it needs the duration.
-const RevealSeconds = 3;
+const RevealSeconds = 3.6;
 
 // **It comes from the floor**, because that is the edge it is nearest — the whole reading ("it
 // climbs out from behind the taskbar") rests on this being true by default rather than chosen.
@@ -1832,11 +1833,28 @@ for (let i = 0; i <= 1000; i++) {
 }
 checkTrue('it funnels — narrow across the gap, stretched along it', reached);
 
-// **A head first.** Something is through early, and then it stops — that nub sitting there while
-// the body works is what the rhythm is built on.
-const head = emerged(0.24);
-checkTrue(`a head gets out early (${head.toFixed(2)})`, head > 0.1 && head < 0.25);
-checkTrue('and then it stalls', emerged(0.34) - head < 0.05);
+// **The charm goes first, alone.** The pet must still be completely out of sight when its own
+// charm lands, or the throw and the emergence read as one cluttered event instead of two beats.
+// Checked against the charm's own worst-case flight rather than against a number typed here, so
+// that changing how hard a slip is thrown cannot silently put the two back on top of each other.
+checkTrue(
+  `the pet does not move until the charm has landed (${(HiddenUntil * RevealSeconds).toFixed(2)}s against ${LongestFlightSeconds.toFixed(2)}s of flight)`,
+  HiddenUntil * RevealSeconds > LongestFlightSeconds,
+);
+let stirred = 0;
+for (let i = 0; i <= 2000; i++) {
+  if (emerged(i / 2000) > 0) {
+    stirred = i / 2000;
+    break;
+  }
+}
+checkTrue(`and is flat behind the edge until then (first stirs at ${stirred.toFixed(2)})`, stirred >= HiddenUntil);
+
+// **A head next.** Something is through, and then it stops — that nub sitting in the gap while the
+// body works is what the rhythm is built on.
+const head = emerged(0.3);
+checkTrue(`a head gets out (${head.toFixed(2)})`, head > 0.1 && head < 0.25);
+checkTrue('and then it stalls', emerged(0.4) - head < 0.05);
 
 // **The wait.** A full second with the head out and nothing happening. This is the beat the whole
 // sequence hangs off, and it is the first thing a later "this feels slow" edit would take out — so
@@ -1891,15 +1909,15 @@ check('and none of them is wasted effort', wasted, 0);
 // three. An earlier version of this check kept the sample points of a previous table and so
 // compared two intervals that no longer contained the pushes; it passed, and it was measuring
 // nothing. The numbers in the label are there to be read for that reason.
-const shoveOne = emerged(0.73) - emerged(0.66);
-const shoveTwo = emerged(0.85) - emerged(0.78);
-const shoveFree = emerged(0.95) - emerged(0.9);
+const shoveOne = emerged(0.71) - emerged(0.64);
+const shoveTwo = emerged(0.83) - emerged(0.76);
+const shoveFree = emerged(0.95) - emerged(0.89);
 checkTrue(`the two shoves gain ground (${shoveOne.toFixed(2)}, ${shoveTwo.toFixed(2)})`, shoveOne > 0.1 && shoveTwo > 0.1);
 checkTrue(
   `and the last one frees it (${shoveFree.toFixed(2)} against ${Math.max(shoveOne, shoveTwo).toFixed(2)})`,
   shoveFree > 2 * Math.max(shoveOne, shoveTwo),
 );
-checkTrue('with over half still stuck right up to then', emerged(0.9) < 0.6);
+checkTrue('with over half still stuck right up to then', emerged(0.89) < 0.6);
 
 // **The hop.** What finally gets it through is a shove, not a slide, so it goes *past* where it
 // belongs and drops back. The old assertions here demanded a curve that stopped exactly at 1 and

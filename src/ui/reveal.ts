@@ -21,7 +21,9 @@
  *
  * ## There is a charm, and that is the reason it comes out
  *
- * A charm is flicked out of the gap first, and once the pet is through it goes and eats it. That
+ * A charm is flicked out of the gap first — **alone**, with the pet still out of sight until it has
+ * landed, so the two are separate events rather than one busy one — and once the pet is through it
+ * goes and eats it. That
  * is not decoration on top of the animation — it is the thing that makes the animation make sense.
  * Every version before it was a creature appearing *because the window came back*, which is a
  * reason the pet does not have. This one is a creature coming out **to get something**, and the
@@ -87,24 +89,33 @@ interface Key {
   across: number;
 }
 
+/**
+ * How much of the sequence passes before the pet so much as moves.
+ *
+ * The charm has to be thrown, seen, and **landed** first; a pet that starts climbing out while its
+ * own charm is still in the air turns two beats into one cluttered one. Asserted against the
+ * charm's own worst-case flight time rather than eyeballed.
+ */
+export const HiddenUntil = 0.2;
+
 const SQUEEZE: readonly Key[] = [
-  // Flattened under the edge, going nowhere. The charm is in the air through all of this.
+  // Flattened under the edge, going nowhere — and staying there while the charm flies and lands.
   { at: 0.0, out: 0.0, along: 0.7, across: 1.3 },
-  { at: 0.14, out: 0.02, along: 0.76, across: 1.24 },
-  // A head gets through — and that is all that is coming for now.
-  { at: 0.26, out: 0.15, along: 1.08, across: 0.93 },
+  { at: HiddenUntil, out: 0.0, along: 0.72, across: 1.28 },
+  // Only now. A head gets through — and that is all that is coming for the moment.
+  { at: 0.29, out: 0.15, along: 1.08, across: 0.93 },
   // **The wait.** A full second of a nub sitting in the gap, deciding. The transform barely moves;
   // the body underneath is still breathing, which is what keeps a held pose from reading as a
   // frozen frame.
-  { at: 0.6, out: 0.15, along: 1.05, across: 0.95 },
+  { at: 0.58, out: 0.15, along: 1.05, across: 0.95 },
   // Gather, push. Twice, and neither is enough.
-  { at: 0.66, out: 0.16, along: 0.88, across: 1.12 },
-  { at: 0.73, out: 0.32, along: 1.22, across: 0.83 },
-  { at: 0.78, out: 0.33, along: 0.9, across: 1.1 },
-  { at: 0.85, out: 0.5, along: 1.26, across: 0.79 },
+  { at: 0.64, out: 0.16, along: 0.88, across: 1.12 },
+  { at: 0.71, out: 0.32, along: 1.22, across: 0.83 },
+  { at: 0.76, out: 0.33, along: 0.9, across: 1.1 },
+  { at: 0.83, out: 0.5, along: 1.26, across: 0.79 },
   // One last crouch, and then the whole thing comes out at once — past where it belongs, because
   // what gets it through is a shove rather than a slide.
-  { at: 0.9, out: 0.52, along: 0.92, across: 1.08 },
+  { at: 0.89, out: 0.52, along: 0.92, across: 1.08 },
   { at: 0.95, out: 1.1, along: 1.14, across: 0.9 },
   // Lands, squashes, done.
   { at: 0.98, out: 1.0, along: 0.9, across: 1.11 },

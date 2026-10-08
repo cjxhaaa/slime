@@ -27,6 +27,18 @@ interface Glyph {
 
 /** Same gravity as the body, so the two read as being in the same world. */
 const Gravity = 2100;
+/** How hard a slip is thrown upward, slowest and fastest. */
+const ThrowUpLeast = 330;
+const ThrowUpMost = 490;
+/**
+ * The longest a thrown slip can be in the air, in seconds.
+ *
+ * Exported because something depends on it: the pet's return after 敛息 flicks a charm out of the
+ * gap **before** climbing out after it, and "before" is only legible if the charm has landed by
+ * the time the pet moves. Deriving that from the throw rather than copying the number means
+ * changing the throw cannot silently put the two back on top of each other.
+ */
+export const LongestFlightSeconds = (2 * ThrowUpMost) / Gravity;
 /** How long a landed glyph waits. Long enough to cross a screen for, short enough to feel fleeting. */
 const LifeSeconds = 14;
 const FadeSeconds = 1.2;
@@ -84,7 +96,7 @@ export class Glyphs {
       x,
       y,
       vx: away * (190 + Math.random() * 240),
-      vy: -(330 + Math.random() * 160),
+      vy: -(ThrowUpLeast + Math.random() * (ThrowUpMost - ThrowUpLeast)),
       life: LifeSeconds,
       landed: false,
       spin: (Math.random() - 0.5) * 0.6,
