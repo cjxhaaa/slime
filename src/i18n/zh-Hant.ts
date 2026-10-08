@@ -166,10 +166,8 @@ export const zhHant: Dictionary = {
 
   settings: {
     arenaTitle: '演武場',
-    arenaBlurb:
-      '自己搭一套法脈，對著木樁打。樁不動、不還手、倒了就站回來，也沒有時間限制，不點結束就一直打。不結算任何修為。',
-    arenaRings:
-      '樁排成三圈（150 / 290 / 430 像素）——哪一圈不再倒，就是這套法脈的射程邊界。拖曳史萊姆可以換位置（瘴氣需要走起來才留痕）。拉滑桿當場生效。',
+    arenaBlurb: '自己搭一套法脈，對著木樁打。樁不還手，倒了會站回來。想打多久打多久，不算修為。',
+    arenaRings: '樁分三圈。哪一圈不再倒，就是這套法脈打得到的地方。拖曳史萊姆換位置，瘴氣要走起來才留痕。滑桿當場生效。',
     start: '上樁',
     stop: '結束',
     combosLabel: '合',
@@ -179,13 +177,12 @@ export const zhHant: Dictionary = {
     listSep: '、',
     listColon: '：',
     languageTitle: '語言',
-    languageBlurb: '預設跟隨系統。改了立刻生效，兩個視窗一起換。',
+    languageBlurb: '預設跟隨系統。改完兩個視窗一起換。',
     languageAuto: '（目前跟隨系統）',
     quitLabel: '退出 Slime',
 
     rebirthTitle: '轉生',
-    rebirthBlurb:
-      '重歷八境，從練氣起。已飛昇的次數、產出倍率和每日煉化檔位都保留，身上的霞光也不會散。',
+    rebirthBlurb: '從練氣重走八境。飛昇次數、產出倍率、每日煉化檔位都留著，身上的霞光也不會散。',
     rebirthButton: '轉生重歷',
     rebirthConfirm: '確定？再點一次',
     rebirthWarn: '目前境界、層數與修為會清零，無法復原。',
@@ -193,28 +190,23 @@ export const zhHant: Dictionary = {
 
     quietTitle: '靜修',
     quietLabel: '閉關',
-    quietBlurb:
-      '讓史萊姆不再讀取鍵盤，也不再對任何事有反應。牠仍舊慢慢修煉，在你回來之前一句話也不說。',
-    quietNote: '這不是過濾。開著的時候，會讓 Windows 不再把按鍵送到 Slime。',
+    quietBlurb: '不再讀鍵盤，也不對任何事做反應。修煉照常，只是安靜。',
+    quietNote: '開著時 Windows 不會再把按鍵送給 Slime。不是程式裡濾掉，是根本收不到。',
 
     lieLowTitle: '斂息',
     lieLowLabel: '滿螢幕時自己退下',
-    lieLowBlurb:
-      '有東西佔滿整塊螢幕時——遊戲、影片、簡報——史萊姆會退下去，不畫也不算，等你回到桌面再重新聚形。最大化的視窗不算佔滿，牠不會為此躲起來。',
-    lieLowUnsupported: '這個系統上分不出誰佔著螢幕，所以這項用不了。',
+    lieLowBlurb: '遊戲、影片、簡報佔滿螢幕時自動躲起來，回到桌面再出來。視窗最大化不算佔滿。',
+    lieLowUnsupported: '這個系統判斷不了，用不了。',
 
     featsTitle: '見聞',
-    featsBlurb: '這隻史萊姆做過的事。只是記錄 —— 不給任何東西，也不會來找你。',
+    featsBlurb: '做過的事記在這兒。不給任何東西。',
     featsLocked: '未歷',
     featsCount: '已得 {done} / {all}',
 
     behaviourTitle: '習性',
-    behaviourDrag:
-      '拖曳可以挪牠，也可以把牠甩出去。點一下是戳牠。右鍵開啟這個視窗。沒人理牠就會睡著，你伸手牠就醒。',
-    behaviourKeys:
-      '在 Windows 上牠還吃你敲的鍵：每隔幾秒身邊冒出一個，牠蹦過去，吞下去就長一點。那個字是你真按過的，從最近幾秒裡隨機取，順序打亂。',
-    behaviourEat:
-      '按住牠停在一個視窗上兩秒，牠會把那個視窗吃掉。身體還沒裹完就拉開，這頓就算了。',
-    behaviourQuit: 'Ctrl+Alt+Shift+Q 在任何地方都能退出，哪怕懸浮層已經不動了。',
+    behaviourDrag: '拖曳能挪牠，也能甩出去。點一下是戳。右鍵開這個視窗。沒人理會睡著，伸手就醒。',
+    behaviourKeys: 'Windows 上牠還吃你敲的鍵。身邊時不時冒出一個字，牠蹦過去吞掉，就長一點。那個字是你真按過的，隨機挑一個，順序打亂。',
+    behaviourEat: '按住牠停在一個視窗上不動，牠會把視窗吃掉。沒裹完就拉開，這頓作罷。',
+    behaviourQuit: 'Ctrl+Alt+Shift+Q 隨處可結束，懸浮層卡死也能用。',
   },
 };

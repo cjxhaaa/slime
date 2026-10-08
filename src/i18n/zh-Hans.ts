@@ -158,10 +158,8 @@ export const zhHans: Dictionary = {
 
   settings: {
     arenaTitle: '演武场',
-    arenaBlurb:
-      '自己搭一套法脉，对着木桩打。桩不动、不还手、倒了就站回来，也没有时间限制，不点结束就一直打。不结算任何修为。',
-    arenaRings:
-      '桩排成三圈（150 / 290 / 430 像素）——哪一圈不再倒，就是这套法脉的射程边界。拖动史莱姆可以换位置（瘴气需要走起来才留痕）。拉滑块当场生效。',
+    arenaBlurb: '自己搭一套法脉，对着木桩打。桩不还手，倒了会站回来。想打多久打多久，不算修为。',
+    arenaRings: '桩分三圈。哪一圈不再倒，就是这套法脉打得到的地方。拖动史莱姆换位置，瘴气要走起来才留痕。滑块当场生效。',
     start: '上桩',
     stop: '结束',
     combosLabel: '合',
@@ -171,13 +169,12 @@ export const zhHans: Dictionary = {
     listSep: '、',
     listColon: '：',
     languageTitle: '语言',
-    languageBlurb: '默认跟随系统。改了立刻生效，两个窗口一起换。',
+    languageBlurb: '默认跟随系统。改完两个窗口一起换。',
     languageAuto: '（当前跟随系统）',
     quitLabel: '退出 Slime',
 
     rebirthTitle: '转生',
-    rebirthBlurb:
-      '重历八境，从练气起。已飞升的次数、产出倍率和每日炼化档位都保留，身上的霞光也不会散。',
+    rebirthBlurb: '从练气重走八境。飞升次数、产出倍率、每日炼化档位都留着，身上的霞光也不会散。',
     rebirthButton: '转生重历',
     rebirthConfirm: '确定？再点一次',
     rebirthWarn: '当前境界、层数与修为会清零，无法撤销。',
@@ -185,28 +182,23 @@ export const zhHans: Dictionary = {
 
     quietTitle: '静修',
     quietLabel: '闭关',
-    quietBlurb:
-      '让史莱姆不再读取键盘，也不再对任何事有反应。它仍旧慢慢修炼，在你回来之前一句话也不说。',
-    quietNote: '这不是过滤。开着的时候，会让 Windows 不再把按键送到 Slime。',
+    quietBlurb: '不再读键盘，也不对任何事做反应。修炼照常，只是安静。',
+    quietNote: '开着时 Windows 不会再把按键送给 Slime。不是程序里滤掉，是根本收不到。',
 
     lieLowTitle: '敛息',
     lieLowLabel: '满屏时自己退下',
-    lieLowBlurb:
-      '有东西占满整块屏幕时——游戏、影片、演示——史莱姆会退下去，不画也不算，等你回到桌面再重新聚形。最大化的窗口不算占满，它不会为此躲起来。',
-    lieLowUnsupported: '这个系统上分不出谁占着屏幕，所以这项用不了。',
+    lieLowBlurb: '游戏、影片、演示占满屏幕时自动躲起来，回到桌面再出来。窗口最大化不算占满。',
+    lieLowUnsupported: '这个系统判断不了，用不了。',
 
     featsTitle: '见闻',
-    featsBlurb: '这只史莱姆做过的事。只是记录 —— 不给任何东西，也不会来找你。',
+    featsBlurb: '做过的事记在这儿。不给任何东西。',
     featsLocked: '未历',
     featsCount: '已得 {done} / {all}',
 
     behaviourTitle: '习性',
-    behaviourDrag:
-      '拖动可以挪它，也可以把它甩出去。点一下是戳它。右键打开这个窗口。没人理它就会睡着，你伸手它就醒。',
-    behaviourKeys:
-      '在 Windows 上它还吃你敲的键：每隔几秒身边冒出一个，它蹦过去，吞下去就长一点。那个字是你真按过的，从最近几秒里随机取，顺序打乱。',
-    behaviourEat:
-      '按住它停在一个窗口上两秒，它会把那个窗口吃掉。身体还没裹完就拉开，这顿就算了。',
-    behaviourQuit: 'Ctrl+Alt+Shift+Q 在任何地方都能退出，哪怕悬浮层已经不动了。',
+    behaviourDrag: '拖动能挪它，也能甩出去。点一下是戳。右键开这个窗口。没人理会睡着，伸手就醒。',
+    behaviourKeys: 'Windows 上它还吃你敲的键。身边时不时冒出一个字，它蹦过去吞掉，就长一点。那个字是你真按过的，随机挑一个，顺序打乱。',
+    behaviourEat: '按住它停在一个窗口上不动，它会把窗口吃掉。没裹完就拉开，这顿作罢。',
+    behaviourQuit: 'Ctrl+Alt+Shift+Q 随处可退，悬浮层卡死也能用。',
   },
 };
