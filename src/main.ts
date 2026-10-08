@@ -800,6 +800,9 @@ function leaveTrial(): void {
   arena = null;
   draft.hide();
   attacks.reset();
+  // Before `planar` goes: `pursue` is a no-op off the plane, so clearing it afterwards would
+  // leave a hop running with gravity switched back on under it.
+  slime.pursue(null);
   slime.planar = false;
   if (trialReturn) slime.teleportTo(trialReturn.x, trialReturn.y);
   trialReturn = null;
@@ -1241,6 +1244,18 @@ function frame(now: number): void {
   accumulator = Math.min(MAX_BACKLOG, accumulator + elapsed);
   const steps = Math.floor(accumulator / STEP);
   accumulator -= steps * STEP;
+  // 追形. In 历练 the body goes where you point, hop by hop — see `game/pursuit.ts` for why it
+  // hops rather than glides, and why this replaced steering by drag.
+  //
+  // **Not in the yard.** The arena exists to watch how far a build reaches from where the slime
+  // is standing, and a pet that follows the hand across to the settings window every time you
+  // move a slider cannot be stood anywhere. There you still drag it.
+  //
+  // Paused with everything else while a draft is up: the cards are the one thing in this mode
+  // that stops the clock, and a body still crossing the screen behind them would arrive
+  // somewhere nobody chose.
+  const chasing = inTrial && arena === null && !draft.isOpen;
+  slime.pursue(chasing ? cursor : null);
   for (let i = 0; i < steps; i++) {
     slime.update(STEP, { width, height, cursor });
   }
@@ -1257,7 +1272,13 @@ function frame(now: number): void {
   // slime wrapped around a maximized window would otherwise claim every click inside that window
   // for the duration — which is the exact failure the lease exists to make impossible. So the
   // handle stays a body-sized patch in the middle of the meal.
-  const overBody = cursor !== null && slime.hitTest(cursor.x, cursor.y);
+  //
+  // Never while it is chasing the cursor. The body is under the pointer by construction for the
+  // whole run, so granting the lease on a hover would hand the overlay every click on the
+  // desktop for ninety seconds — which is the hostage-taking that steering by drag used to do
+  // explicitly, arriving by the back door.
+  const overBody =
+    cursor !== null && !slime.isPursuing && slime.hitTest(cursor.x, cursor.y);
 
   // Holding the slime still over a window starts a meal. Measured from the last time the hand
   // moved appreciably, so this fires on stillness rather than on elapsed grab time.
@@ -1443,6 +1464,10 @@ function frame(now: number): void {
   paw.setPressed(pointerDown);
   if (cursor) paw.moveTo(cursor.x, cursor.y);
 
+  // Where the mark is this frame, or null. Read once: it decides both what is painted and what
+  // is cleared, and those two disagreeing is a smear left on the desktop.
+  const ghostAt = chasing && cursor !== null ? cursor : null;
+
   // Repaint just what moved.
   const painted = unionRect(
     slime.bounds(),
@@ -1450,7 +1475,13 @@ function frame(now: number): void {
       unionRect(
         unionRect(unionRect(glyphs.bounds(), motes.bounds()), volley.bounds()),
         inTrial
-          ? unionRect(arena !== null ? arena.dummies.bounds() : trial.bounds(), attacks.bounds())
+          ? unionRect(
+              unionRect(
+                arena !== null ? arena.dummies.bounds() : trial.bounds(),
+                attacks.bounds(),
+              ),
+              ghostAt ? slime.ghostBounds(ghostAt.x, ghostAt.y) : null,
+            )
           : null,
       ),
       unionRect(
@@ -1543,6 +1574,10 @@ function frame(now: number): void {
       else trial.draw(context);
       attacks.draw(context);
     }
+    // Under the 邪气 and under the body: it is a mark on the ground, and anything that draws
+    // over it is a thing in the world. Over the attacks would make it look like a target being
+    // fired at rather than a place being walked to.
+    if (ghostAt) slime.drawGhost(context, ghostAt.x, ghostAt.y);
     motes.draw(context, slime.bodyColour);
     glyphs.draw(context, slime.bodyColour);
     slime.draw(context);

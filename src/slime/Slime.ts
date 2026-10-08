@@ -16,6 +16,7 @@ import {
   stepShards,
 } from './Breakthrough';
 import { HaloReach } from '../game/Glyphs';
+import { type Hop, arch, planHop } from '../game/pursuit';
 import { BreakthroughSpread, StageSpread } from '../game/Motes';
 import { clear, mix } from './colour';
 import { smooth } from './ease';
@@ -352,6 +353,41 @@ export class Slime {
   private nextDecisionAt = 3;
   private hopsLeft = 0;
   private facing = 1;
+
+  /**
+   * Where the body is trying to get to, or null. Only ever set in a plane seen from above.
+   *
+   * Held as a point rather than a direction because the hop re-aims at the moment it leaves the
+   * ground and not before: the target moves continuously (it is the cursor), and a hop committed
+   * to a heading two hundred milliseconds ago would land somewhere nobody pointed at.
+   */
+  private pursuit: { x: number; y: number } | null = null;
+
+  /**
+   * The hop in progress. `from`/`to` are fixed when it launches, so the body lands where it
+   * committed to even if the cursor has moved on.
+   */
+  private hop: {
+    phase: 'gather' | 'air' | 'rest';
+    left: number;
+    plan: Hop;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+  } | null = null;
+
+  /**
+   * How far off the plane the body is, in pixels — a drawing offset, not a position.
+   *
+   * There is no gravity here to be lifted against, so this is never integrated: it is read
+   * straight off the hop's arch. Keeping it out of `y` is the whole trick. `y` stays where the
+   * contact shadow belongs, so the shadow, the dirty rect's floor and `groundFor` all keep
+   * answering correctly without any of them knowing a hop exists.
+   */
+  private lift = 0;
+  private prevLift = 0;
+  private renderLift = 0;
   private grabbed = false;
   private grabOffset = { x: 0, y: 0 };
   private trail = { x: 0, y: 0 };
@@ -468,6 +504,11 @@ export class Slime {
     this.vy = 0;
     this.hopsLeft = 0;
     this.chaseX = null;
+    this.pursuit = null;
+    this.hop = null;
+    this.lift = 0;
+    this.prevLift = 0;
+    this.renderLift = 0;
     this.mood = 'idle';
     this.moodUntil = this.clock;
     this.blob.pulse(70);
@@ -836,10 +877,17 @@ export class Slime {
       // body behind the hand — the very lag that made smoothing the wrong answer for the drag.
       this.renderX = this.x;
       this.renderY = this.y;
+      this.renderLift = 0;
     } else {
       const t = Math.max(0, Math.min(1, alpha));
       this.renderX = this.prevX + (this.x - this.prevX) * t;
       this.renderY = this.prevY + (this.y - this.prevY) * t;
+      this.renderLift = this.prevLift + (this.lift - this.prevLift) * t;
+      // Taken out of the drawn position rather than added to a separate one, so every single
+      // thing that reads `renderY` — the body, the eyes, the bubble's anchor, the halo — goes up
+      // with the hop without being told about it. The shadow is the one that must not, and it
+      // asks `shadowY` instead.
+      this.renderY -= this.renderLift;
     }
 
     // Directional stretch: the body elongates along the travel direction, which is what turns a
@@ -873,6 +921,11 @@ export class Slime {
   get isAnimating(): boolean {
     return (
       this.grabbed ||
+      // A hop between two points a fifth of a second apart spends most of its time with the body
+      // at rest and the velocity written straight rather than integrated, so none of the motion
+      // tests below sees it.
+      this.pursuit !== null ||
+      this.hop !== null ||
       this.devour !== null ||
       // A morph moves the rest shape while the offsets sit quietly at zero, so `energy()` below
       // reads it as settled. Without this the loop stands down mid-engulf and the body freezes
@@ -943,7 +996,7 @@ export class Slime {
    * changed instead of the whole overlay.
    */
   bounds(): { x: number; y: number; width: number; height: number } {
-    const ground = this.groundFor(this.envHeight);
+    const ground = this.shadowY;
 
     // Measured off the outline `beginFrame` just traced, so this covers exactly what `draw` is
     // about to paint — squash, wobble, morph and stretch included — rather than a padded guess at
@@ -1039,6 +1092,19 @@ export class Slime {
    * Used for the initial placement and for keeping it on screen after a resize — anywhere the
    * position changes without the simulation having moved it there.
    */
+  /**
+   * The plane directly under the drawn body — where the contact shadow sits, and the floor of the
+   * region that has to be repainted.
+   *
+   * In a plane seen from above this is the drawn position with the hop's lift put back, rather
+   * than `y` itself. Using `y` leaves the shadow a frame out of step with the body on any axis
+   * the interpolation is working on, which at six hundred pixels a second is ten pixels of the
+   * shadow visibly swimming around underneath.
+   */
+  private get shadowY(): number {
+    return this.planar ? this.renderY + this.renderLift : this.groundFor(this.envHeight);
+  }
+
   teleportTo(x: number, y: number): void {
     this.x = x;
     this.y = y;
@@ -1228,6 +1294,11 @@ export class Slime {
     this.lastInteraction = this.clock;
     this.blob.pulse(-60);
     this.hopsLeft = 0;
+    // A hand on the body outranks wherever it was going. `pursue` refuses while grabbed, so this
+    // stays cleared until the caller asks again after the release.
+    this.pursuit = null;
+    this.hop = null;
+    this.lift = 0;
   }
 
   /**
@@ -1263,6 +1334,149 @@ export class Slime {
     // continuously instead of snapping back to a circle at the moment of release.
     this.trail.x = this.vx;
     this.trail.y = this.vy;
+  }
+
+  /**
+   * Chase a point, hop by hop, or stop chasing.
+   *
+   * Takes effect only in a plane seen from above — a side-on pet has gravity and a floor, and
+   * hopping toward a cursor there would be a different animal entirely. Clearing it does not
+   * abort a hop that is already in the air: a creature that stops dead halfway through a jump is
+   * the one thing that would give away that none of this is physics.
+   */
+  pursue(target: { x: number; y: number } | null): void {
+    if (!this.planar || this.grabbed) {
+      this.pursuit = null;
+      return;
+    }
+    this.pursuit = target;
+  }
+
+  /** True while there is somewhere to be, or a hop still carrying it there. */
+  get isPursuing(): boolean {
+    return this.pursuit !== null || this.hop !== null;
+  }
+
+  /**
+   * One frame of the chase.
+   *
+   * Phases are advanced with a `while`, not an `if`, because the shortest phase here is 30 ms and
+   * a stalled frame is routinely longer than that — the overlay stands down to 20 Hz and the
+   * caller clamps a step at 250 ms. Advancing one phase per frame would turn a hiccup into a
+   * visibly slower pet.
+   */
+  private stepPursuit(dt: number): void {
+    let left = dt;
+    while (left > 0) {
+      if (this.hop === null) {
+        if (this.pursuit === null) return;
+        const plan = planHop(Math.hypot(this.pursuit.x - this.x, this.pursuit.y - this.y));
+        // Arrived. Not a state — the next frame asks again, and the cursor will have moved.
+        if (plan === null) return;
+        this.hop = {
+          phase: 'gather',
+          left: plan.gather,
+          plan,
+          fromX: this.x,
+          fromY: this.y,
+          toX: this.x,
+          toY: this.y,
+        };
+        // Down onto its haunches. The crouch is what makes the launch read as a decision rather
+        // than as the body being moved by something off screen.
+        this.blob.squash(0.1 + plan.rise / 300);
+      }
+
+      const hop = this.hop;
+      const spend = Math.min(left, hop.left);
+      hop.left -= spend;
+      left -= spend;
+
+      if (hop.phase === 'air') {
+        const t = 1 - hop.left / hop.plan.air;
+        // Straight line at a constant rate: that is what a hop does between two contacts, and an
+        // eased one reads as a hover. The arch is the only thing that is shaped.
+        this.x = hop.fromX + (hop.toX - hop.fromX) * t;
+        this.y = hop.fromY + (hop.toY - hop.fromY) * t;
+        this.lift = arch(t, hop.plan.rise);
+        // Handed to the same velocity the throw and the drag write, so the body elongates along
+        // travel through `trail` without this knowing how that works.
+        this.vx = (hop.toX - hop.fromX) / hop.plan.air;
+        this.vy = (hop.toY - hop.fromY) / hop.plan.air;
+      }
+
+      if (hop.left > 0) return;
+
+      if (hop.phase === 'gather') {
+        // Aimed now, not when the hop was planned. `plan.reach` was decided a tenth of a second
+        // ago against a distance that has since changed; the direction is taken fresh and the
+        // distance is re-clipped so a cursor that came closer mid-crouch is not overshot.
+        const target = this.pursuit;
+        if (target === null) {
+          this.hop = null;
+          this.lift = 0;
+          return;
+        }
+        const dx = target.x - this.x;
+        const dy = target.y - this.y;
+        const away = Math.hypot(dx, dy) || 1;
+        const reach = Math.min(hop.plan.reach, away);
+        hop.fromX = this.x;
+        hop.fromY = this.y;
+        hop.toX = this.x + (dx / away) * reach;
+        hop.toY = this.y + (dy / away) * reach;
+        if (Math.abs(dx) > 1) this.facing = dx > 0 ? 1 : -1;
+        hop.phase = 'air';
+        hop.left = hop.plan.air;
+        // Stretched along the way up, which unwinds over the arch.
+        this.blob.squash(-0.08 - hop.plan.rise / 330);
+      } else if (hop.phase === 'air') {
+        this.x = hop.toX;
+        this.y = hop.toY;
+        this.lift = 0;
+        this.vx = 0;
+        this.vy = 0;
+        hop.phase = 'rest';
+        hop.left = hop.plan.rest;
+        // Touchdown. Scaled by how far it fell, so a shuffle lands softly and a full bound slaps.
+        this.blob.squash(0.12 + hop.plan.rise / 230);
+        this.blob.pulse(18 + hop.plan.rise);
+      } else {
+        this.hop = null;
+      }
+    }
+  }
+
+  /**
+   * A translucent copy of the body, wherever you are pointing.
+   *
+   * Traced from `this.points`, which `beginFrame` has already filled with the outline about to be
+   * painted — so the mark wobbles, stretches and squashes in lockstep with the real body. A
+   * circle was tried first and reads as a reticle; what makes this say "the slime goes here" is
+   * that it is unmistakably the same animal.
+   */
+  drawGhost(context: CanvasRenderingContext2D, x: number, y: number): void {
+    const palette = this.bodyLook.palette;
+    context.save();
+    context.translate(x, y);
+    Blob.trace(context, this.points, this.blob.count);
+    context.globalAlpha = 0.12;
+    context.fillStyle = palette.core;
+    context.fill();
+    context.globalAlpha = 0.55;
+    context.strokeStyle = palette.core;
+    context.lineWidth = 2;
+    // Dashed, so it never reads as a second pet — a solid outline at this alpha looked like the
+    // slime had been duplicated and one of them was lagging.
+    context.setLineDash([6, 5]);
+    context.stroke();
+    context.restore();
+  }
+
+  /** What `drawGhost` touches, for the dirty rect. */
+  ghostBounds(x: number, y: number): { x: number; y: number; width: number; height: number } {
+    const reach = this.radius * 1.5 + 4;
+    return { x: x - reach, y: y - reach, width: reach * 2, height: reach * 2 };
   }
 
   /** A click that was not a drag: the slime reacts and says so. */
@@ -1332,6 +1546,7 @@ export class Slime {
   update(dt: number, env: Env): void {
     this.prevX = this.x;
     this.prevY = this.y;
+    this.prevLift = this.lift;
     this.clock += dt;
     this.envHeight = env.height;
     const ground = this.groundFor(env.height);
@@ -1407,17 +1622,26 @@ export class Slime {
       this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 8);
       this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 8);
     } else if (this.planar) {
-      // Seen from above: nothing falls, and drag applies to both axes equally so a release glides
-      // to a stop in whatever direction it was going rather than curving downward.
-      const drag = Math.exp(-dt / PlanarDragTau);
-      this.vx *= drag;
-      this.vy *= drag;
-      this.x += this.vx * dt;
-      this.y += this.vy * dt;
-      this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 6);
-      this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 6);
-      if (Math.abs(this.vx) < 3) this.vx = 0;
-      if (Math.abs(this.vy) < 3) this.vy = 0;
+      if (this.pursuit !== null || this.hop !== null) {
+        // The hop owns the position outright. Integrating a velocity under it as well would mean
+        // a throw's leftover momentum still carrying the body between hops, which lands it short
+        // of or past where it committed to and makes the chase look like it is sliding on ice.
+        this.stepPursuit(dt);
+        this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 6);
+        this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 6);
+      } else {
+        // Seen from above: nothing falls, and drag applies to both axes equally so a release glides
+        // to a stop in whatever direction it was going rather than curving downward.
+        const drag = Math.exp(-dt / PlanarDragTau);
+        this.vx *= drag;
+        this.vy *= drag;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.trail.x += (this.vx - this.trail.x) * Math.min(1, dt * 6);
+        this.trail.y += (this.vy - this.trail.y) * Math.min(1, dt * 6);
+        if (Math.abs(this.vx) < 3) this.vx = 0;
+        if (Math.abs(this.vy) < 3) this.vy = 0;
+      }
 
       // The walls **stop** it rather than bouncing it.
       //
@@ -1952,7 +2176,7 @@ export class Slime {
   }
 
   draw(context: CanvasRenderingContext2D): void {
-    const ground = this.groundFor(this.envHeight);
+    const ground = this.shadowY;
     const airborne = Math.max(0, ground - this.renderY);
     // Sleep is no longer a branch in here, it is a blend laid over whatever the answer would
     // otherwise have been. Which also means an alert that fires on a sleeping pet slides from blue
@@ -2029,7 +2253,11 @@ export class Slime {
     // and means nothing for a body latched onto a window halfway up the screen, where it would be
     // an ellipse sitting on the taskbar with nothing above it.
     if (!this.devour) {
-      const shadowScale = Math.max(0.35, 1 - airborne / 420);
+      // The two views leave the ground at completely different scales: a side-on throw arcs
+      // hundreds of pixels, a hop in the plane clears about one body. One divisor cannot serve
+      // both — at 420 a 58-pixel hop shrinks the shadow by a seventh, which is a shadow that
+      // never visibly detaches, and the detaching is the entire reason this is drawn.
+      const shadowScale = Math.max(0.35, 1 - airborne / (this.planar ? 130 : 420));
       context.save();
       context.globalAlpha = 0.22 * shadowScale;
       context.fillStyle = '#0b2a24';

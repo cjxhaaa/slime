@@ -3,8 +3,10 @@
  *
  * 邪气 drift in from the edges of the desktop toward the slime. What the slime does about them is
  * whatever it drafted — see `schools.ts` for the nine, and `Attacks.ts` for them running. You steer
- * by dragging, which is the gesture that already moved the pet, so the mode adds no controls.
- * Ninety seconds, then it is over.
+ * by pointing: the body hops toward the cursor, and a mark shows where it is headed. See
+ * `pursuit.ts`, which also records why this replaced steering by drag — a drag has to hold the
+ * click lease, so the old scheme made the desktop unclickable for the whole run. Ninety seconds,
+ * then it is over.
  *
  * **It costs nothing but time.** No charms — those are realm insurance now, and a play mode that
  * quietly eats your 渡劫 odds is the same trap the automatic stages and the 御符 throw each set

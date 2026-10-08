@@ -104,6 +104,7 @@ import {
   planCrawl,
   squeezeAt,
 } from '../ui/reveal.js';
+import { MaxReach, MinReach, Settle, arch, cycleSeconds, pace, planHop } from './pursuit.js';
 import { TRIADS as TRIAD_TABLE } from './schools.js';
 import { REALMS as REALM_NAMES } from './realms.js';
 
@@ -2034,6 +2035,99 @@ checkTrue('筑基 earns the first rung', Feats.forRealm(1) === 'realm1');
 checkTrue('大乘 earns the last', Feats.forRealm(7) === 'realm7');
 checkTrue('and 练气 earns none', Feats.forRealm(0) === null);
 checkTrue('nor does anything past the top', Feats.forRealm(Ascended + 1) === null);
+
+// -------------------------------------------------------------------------------------------------
+// 追形 — the hop that carries the body to where you are pointing.
+//
+// The mode is steered by a cursor now rather than by a drag, and a chase has two ways to be wrong
+// that are invisible in a screenshot: it can fail to converge, and it can be slower than the thing
+// chasing *it*. Both are arithmetic, so both are checked here rather than discovered at 大乘.
+
+// 1. It never lands past what it was aiming at. An overshoot does not read as a miss, it reads as
+//    indecision — the body ends up oscillating either side of a stationary cursor forever.
+let overshot = 0;
+for (let distance = 1; distance <= 2000; distance += 1) {
+  const hop = planHop(distance);
+  if (hop !== null && hop.reach > distance + 1e-9) overshot++;
+}
+check('no hop lands past the point it was aimed at', overshot, 0);
+
+// 2. Inside the settle radius there is nothing to do. Without this the body twitches under a
+//    resting cursor, which is the single most visible thing a follow mode can get wrong.
+checkTrue('arrived is a state with no hop in it', planHop(Settle) === null && planHop(0) === null);
+checkTrue('and one pixel further out there is', planHop(Settle + 1) !== null);
+
+// 3. Bigger hops take longer to wind up, go higher, stay up longer, and barely pause on landing.
+const near = planHop(Settle + 2);
+const far = planHop(5_000);
+if (near === null || far === null) {
+  checkTrue('both ends of the range plan a hop', false);
+} else {
+  checkTrue('a long hop crouches longer than a short one', far.gather > near.gather);
+  checkTrue('and is in the air longer', far.air > near.air);
+  checkTrue('and gets higher', far.rise > near.rise);
+  // The pause is what gives a shuffle its beat; a bound has somewhere to be.
+  checkTrue('and spends less time standing afterwards', far.rest < near.rest);
+  check('a hop is capped rather than scaled without limit', far.reach, MaxReach);
+}
+
+// 4. Reach only ever grows with distance. A dip would mean some band of distances is approached
+//    more slowly than a band further out, which is the kind of thing nobody ever finds by playing.
+let dipped = 0;
+let previousReach = 0;
+for (let distance = Settle + 1; distance <= 2000; distance += 1) {
+  const hop = planHop(distance);
+  if (hop === null) continue;
+  if (hop.reach < previousReach - 1e-9) dipped++;
+  previousReach = hop.reach;
+}
+check('reach never goes backwards as the target gets further away', dipped, 0);
+
+// 5. **It outpaces what is chasing it.** 邪气 close in at 52 px/s at 筑基 and 106 at 大乘. A
+//    pursuit that cannot clear that by a wide margin is not a control scheme, it is a handicap —
+//    and this is the number that would quietly rot if somebody retuned the cycle for feel.
+const FastestMenace = 106;
+const flatOut = planHop(5_000);
+checkTrue(
+  `at full stretch the chase runs at ${flatOut === null ? 0 : Math.round(pace(flatOut))} px/s, against ${FastestMenace} for the fastest 邪气`,
+  flatOut !== null && pace(flatOut) > FastestMenace * 5,
+);
+
+// 6. And it converges. Hop by hop from a corner-to-corner distance, counting both the hops and the
+//    seconds — a scheme that arrives in forty small hops is convergent and still unplayable.
+let left = 1_200;
+let hops = 0;
+let seconds = 0;
+while (hops < 100) {
+  const hop = planHop(left);
+  if (hop === null) break;
+  left -= hop.reach;
+  seconds += cycleSeconds(hop);
+  hops++;
+}
+checkTrue(`1200 px takes ${hops} hops`, hops <= 10);
+checkTrue(`and ${seconds.toFixed(2)}s to cross`, seconds < 3.5);
+checkTrue('and it does arrive', left <= Settle);
+
+// 7. The arch. It has to leave and land at exactly zero — the contact shadow is drawn from this,
+//    and a shadow that is still shrunk at the moment of touchdown is a body hovering.
+check('the hop starts on the ground', arch(0, 40), 0);
+check('and ends on it', arch(1, 40), 0);
+check('and is at its highest halfway', arch(0.5, 40), 40);
+let turns = 0;
+let climbing = true;
+let height = arch(0, 40);
+for (let i = 1; i <= 200; i++) {
+  const next = arch(i / 200, 40);
+  const rising = next > height;
+  if (rising !== climbing) turns++;
+  climbing = rising;
+  height = next;
+}
+// Exactly one: up, then down. Two would be a bounce in mid-air.
+check('and it goes up once and comes down once', turns, 1);
+checkTrue('the shortest hop still leaves the ground', (planHop(Settle + 1)?.rise ?? 0) > 1);
+checkTrue('and the smallest reach is not below the floor', (planHop(1_000)?.reach ?? 0) >= MinReach);
 
 // -------------------------------------------------------------------------------------------------
 // What actually reaches the screen.
