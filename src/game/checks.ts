@@ -94,7 +94,7 @@ import {
 } from './realms.js';
 import { DICTIONARIES, LOCALES, fill, isLocale, locale, localeFor, setLocale } from '../i18n/index.js';
 import { fit, wrap } from '../ui/text.js';
-import { creep, risen } from '../ui/reveal.js';
+import { crawl, crawlDistance, emerged, nearestEdge, planCrawl } from '../ui/reveal.js';
 import { TRIADS as TRIAD_TABLE } from './schools.js';
 import { REALMS as REALM_NAMES } from './realms.js';
 
@@ -1771,65 +1771,106 @@ checkTrue('and the budget really was walked', LOCALES.length * 9 * 14 > 600);
 // How the pet comes back.
 //
 // The shape is the content here: 敛息 is a feature about not interrupting anybody, so a return that
-// reads as an entrance undoes it. What makes it read as *sneaking* is the hold halfway up — not the
+// reads as an entrance undoes it. What makes it read as *sneaking* is the hold partway out — not the
 // curve, the pause in the middle of it — and a pause is the one thing an easing function is most
 // likely to lose when somebody later "cleans up" the piecewise branches into a single smooth call.
 // So the hold is asserted, not just the endpoints.
 
-// It ends exactly neutral. A posture that lands at 0.98 leaves the body permanently slightly
-// squashed, which is invisible in motion and wrong in every screenshot afterwards.
-const back = creep(1);
+// A pet with gravity stands GROUND_MARGIN + radius above the bottom, which is where these numbers
+// come from: a 46-radius body on an 800-tall stage rests at y = 742 with its feet 12 px up.
+const stage = { width: 1200, height: 800 };
+const standing = { x: 700, y: 800 - 12 - 46, radius: 46 };
+const plan = planCrawl(standing, stage);
+
+// **It comes from the floor**, because that is the edge it is actually nearest — the whole reading
+// ("it climbs out from behind the taskbar") rests on this being true by default rather than chosen.
+check('a grounded pet comes back from the bottom edge', nearestEdge(standing, stage) === 'bottom' ? 1 : 0, 1);
+checkTrue(
+  'and only travels far enough to have been hidden',
+  crawlDistance('bottom', standing, stage) > 2 * standing.radius &&
+    crawlDistance('bottom', standing, stage) < 3.3 * standing.radius,
+);
+// Jammed into the left corner it comes in sideways instead.
+const cornered = { x: 20, y: 800 - 12 - 46, radius: 46 };
+check('a cornered pet comes from the side it is against', nearestEdge(cornered, stage) === 'left' ? 1 : 0, 1);
+// And with no edge near — the middle of the screen, which only a 历练 produces — it is capped
+// rather than crossing the desktop in plain sight.
+const adrift = { x: 600, y: 400, radius: 46 };
+checkTrue('an adrift pet does not cross the desktop', crawlDistance(nearestEdge(adrift, stage), adrift, stage) <= 3.2 * 46 + 1e-9);
+
+// It ends exactly where it belongs, with nothing offset and nothing squashed. A posture that lands
+// at 0.98 leaves the body permanently slightly squashed.
+const home = crawl(1, plan, standing);
 checkTrue(
   'a return ends with the body exactly as it was',
-  back.lift === 0 && back.glance === 0 && back.squashX === 1 && back.squashY === 1,
+  home.dx === 0 && home.dy === 0 && home.scaleX === 1 && home.scaleY === 1,
 );
 
-// It starts sunk, and wider than it is tall — pressed into the desktop, which is the posture of a
-// thing that has been keeping its head down.
-const down = creep(0);
-checkTrue('and starts sunk', down.lift > 0.5);
-checkTrue('and pressed flat', down.squashX > 1 && down.squashY < 1);
+// It starts behind the edge, pressed flat against it.
+const hidden = crawl(0, plan, standing);
+checkTrue('and starts below the floor', hidden.dy > 2 * standing.radius);
+checkTrue('and squeezed the way it is travelling', hidden.scaleY < 1 && hidden.scaleX > 1);
+checkTrue('pivoting on the side facing the edge', hidden.anchorY === standing.y + standing.radius);
 
 // **The beat before anything moves.**
-checkTrue('nothing moves for the first moment', risen(0.05) === 0 && risen(0) === 0);
+checkTrue('nothing moves for the first moment', emerged(0.05) === 0 && emerged(0) === 0);
 
-// **The hold.** Somewhere in the middle there is a stretch where it does not rise at all, and it is
-// a real stretch rather than a single flat sample.
+// **The hold.** Somewhere in the middle there is a stretch where it does not emerge at all, and it
+// is a real stretch rather than a single flat sample.
 let held = 0;
 for (let i = 0; i < 1000; i++) {
-  const a = risen(i / 1000);
-  const b = risen((i + 1) / 1000);
+  const a = emerged(i / 1000);
+  const b = emerged((i + 1) / 1000);
   if (Math.abs(b - a) < 1e-12 && a > 0.1 && a < 0.95) held++;
 }
-checkTrue(`it holds still partway up (${held} of 1000 steps)`, held > 150);
+checkTrue(`it holds still partway out (${held} of 1000 steps)`, held > 150);
 
-// And it never goes backwards: a creature that rises, dips and rises again is stumbling, not
-// peeking. This is the one place the old curve differed — it overshot and came back down.
+// And it never slides back: a creature that emerges, retreats and emerges again is stumbling, not
+// peeking. This is where the first curve differed — it overshot and came back down.
 let slipped = false;
-let highest = 0;
+let furthest = 0;
 for (let i = 0; i <= 1000; i++) {
-  const value = risen(i / 1000);
-  if (value < highest - 1e-12) slipped = true;
-  highest = Math.max(highest, value);
+  const value = emerged(i / 1000);
+  if (value < furthest - 1e-12) slipped = true;
+  furthest = Math.max(furthest, value);
 }
-checkTrue('and never slips back down', !slipped);
-check('and gets all the way up', highest, 1);
+checkTrue('and never slides back', !slipped);
+check('and gets all the way out', furthest, 1);
 
-// **The glance.** One sweep, both ways, starting and ending at nothing — and only while it holds.
+// **The glance.** One sweep, both ways, and only while it is holding still — a glance during the
+// climb would read as a stumble. Across the direction of travel, so a pet coming up from the floor
+// looks left and right.
 let left = 0;
 let right = 0;
-let movingWhileRising = false;
+let swayedWhileClimbing = false;
 for (let i = 0; i <= 1000; i++) {
   const t = i / 1000;
-  const g = creep(t).glance;
-  if (g < left) left = g;
-  if (g > right) right = g;
-  // Before the hold begins it should still be dead centre.
-  if (t < 0.4 && Math.abs(g) > 1e-12) movingWhileRising = true;
+  const sway = crawl(t, plan, standing).dx;
+  if (sway < left) left = sway;
+  if (sway > right) right = sway;
+  if (t < 0.45 && Math.abs(sway) > 1e-12) swayedWhileClimbing = true;
 }
-checkTrue('it glances both ways', left < -0.05 && right > 0.05);
-checkTrue('and only once it has stopped climbing', !movingWhileRising);
-checkTrue('and is centred again by the end', creep(0.999).glance === 0 || creep(1).glance === 0);
+checkTrue('it glances both ways', left < -1 && right > 1);
+checkTrue('and only once it has stopped climbing', !swayedWhileClimbing);
+checkTrue('and is centred again by the end', crawl(1, plan, standing).dx === 0);
+
+// **The edge is decided once.** A wandering pet that drifts past the midpoint between two edges
+// must not change which one it is emerging from halfway through emerging from it. The plan is
+// fixed at the start, so the same plan against a body that has since moved still comes from the
+// same side — and the offsets stay monotone, which is how a frame strip caught the version that
+// recomputed per frame: its numbers ran backwards through the animation.
+const wandered = { x: 40, y: standing.y, radius: 46 };
+check('a pet that wanders keeps the edge it started from', crawl(0.3, plan, wandered).edge === 'bottom' ? 1 : 0, 1);
+let wentBackwards = false;
+let closest = Infinity;
+for (let i = 0; i <= 400; i++) {
+  // Same plan throughout, body drifting left across the midpoint as it would while walking.
+  const walking = { x: 700 - i, y: standing.y, radius: 46 };
+  const dy = crawl(i / 400, plan, walking).dy;
+  if (dy > closest + 1e-9) wentBackwards = true;
+  closest = Math.min(closest, dy);
+}
+checkTrue('and never retreats behind the edge while walking out of it', !wentBackwards);
 
 // -------------------------------------------------------------------------------------------------
 // What actually reaches the screen.

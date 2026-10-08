@@ -20,7 +20,7 @@ import { Arsenal, type Holding } from './game/Arsenal';
 import { activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
-import { creep } from './ui/reveal';
+import { type Plan, crawl, planCrawl } from './ui/reveal';
 import {
   combo as comboWords,
   fill,
@@ -491,6 +491,8 @@ let concealed = false;
 const RevealMs = 1180;
 /** `performance.now()` when the return began, or 0 when there is nothing to play. */
 let revealAt = 0;
+/** Which edge this return is coming from. Fixed when it starts — see `ui/reveal.ts`. */
+let revealPlan: Plan | null = null;
 
 /**
  * How far back the pet is, 0 to 1.
@@ -1448,15 +1450,14 @@ function frame(now: number): void {
     context.clip(clip);
 
     if (back < 1) {
-      // Sunk, squashed and glancing about — see `ui/reveal.ts` for why it is a posture rather than
-      // a flourish. Anchored at the bottom of the body rather than its middle, so pressing flat
-      // keeps it sitting on the desktop instead of sinking through it.
-      const posture = creep(back);
-      const radius = slime.blob.restRadius;
-      const foot = slime.drawY + radius;
-      context.translate(slime.drawX + posture.glance * radius, foot + posture.lift * radius);
-      context.scale(posture.squashX, posture.squashY);
-      context.translate(-slime.drawX, -foot);
+      // Climbing out from behind the nearest edge — which, for a pet with gravity standing twelve
+      // pixels above the bottom of the overlay, is the taskbar. See `ui/reveal.ts`.
+      const body = { x: slime.drawX, y: slime.drawY, radius: slime.blob.restRadius };
+      const posture = crawl(back, revealPlan ?? planCrawl(body, { width, height }), body);
+      context.translate(posture.dx, posture.dy);
+      context.translate(posture.anchorX, posture.anchorY);
+      context.scale(posture.scaleX, posture.scaleY);
+      context.translate(-posture.anchorX, -posture.anchorY);
     }
 
     if (inTrial) {
@@ -2015,6 +2016,12 @@ async function main(): Promise<void> {
     lastTick = now;
     accumulator = 0;
     revealAt = now;
+    // Decided here, once, rather than per frame: a wandering pet that crosses the midpoint would
+    // otherwise change which edge it is emerging from halfway through emerging from it.
+    revealPlan = planCrawl(
+      { x: slime.x, y: slime.y, radius: slime.blob.restRadius },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
     fullRepaint = true;
     // Nothing is spawned. The motes that used to gather here were the whole reason this read as an
     // entrance; a pet checking whether it is safe to come out does not arrive in a shower of light.
