@@ -17,9 +17,10 @@ import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
 import { Arsenal, type Holding } from './game/Arsenal';
-import { activeCombos } from './game/schools';
+import { Slots, activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
+import { type FeatId, Feats, SlayerKills, featBlurb, featName } from './game/feats';
 import { type Plan, crawl, planCrawl } from './ui/reveal';
 import {
   combo as comboWords,
@@ -335,7 +336,10 @@ async function runSwallow(hwnd: number): Promise<void> {
   }
   slime.finishDevour(outcome);
   reportBite(outcome);
-  if (outcome === 'closed' || outcome === 'killed') claimSpoils();
+  if (outcome === 'closed' || outcome === 'killed') {
+    achieve('devour');
+    claimSpoils();
+  }
 }
 
 /**
@@ -658,6 +662,7 @@ function trialUnlocked(): boolean {
 }
 
 function enterTrial(width: number, height: number): void {
+  achieve('trialFirst');
   if (inTrial || !trialUnlocked()) return;
   inTrial = true;
   trialReturn = { x: slime.x, y: slime.y };
@@ -716,7 +721,11 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
   if (mend > 0) trial.mend(mend);
   attacks.carry(arsenal.held, arsenal.combos());
   // The rarest card in the mode used to be taken in silence. Say it, and show it.
+  if (arsenal.held.length >= Slots) achieve('fullSet');
+  if (arsenal.combos().length > before.length) achieve('pair');
+  if (arsenal.triads().length > beforeTriads.length) achieve('triad');
   if (card.kind === 'evolve') {
+    achieve('evolve');
     attacks.herald(card.school);
     trialSaid = words().evolutions[card.school].name;
     trialUntil = performance.now() + 3_200;
@@ -769,6 +778,13 @@ function settleTrial(): void {
     cultivation.bestow(earned);
     applyLook();
   }
+  if (trial.outcome === 'survived') {
+    achieve('trialSurvived');
+    // Untouched. `integrity` is 1 only while nothing has landed at all, so this is exactly the run
+    // where the body was never reached rather than one that merely ended healthy.
+    if (trial.integrity >= 1) achieve('trialUnhurt');
+  }
+  if (trial.killCount >= SlayerKills) achieve('trialSlayer');
   trialUntil = performance.now() + TrialBubbleMs;
   trialSaid =
     trial.outcome === 'survived'
@@ -821,6 +837,7 @@ function sawActivity(): void {
 /** Takes the find on offer, if there is one. */
 function takeFortune(): boolean {
   if (fortuneText === null) return false;
+  achieve('fortune');
   cultivation.settle();
   cultivation.bestow(fortuneWorth);
   fortuneText = null;
@@ -835,6 +852,35 @@ function takeFortune(): boolean {
   return true;
 }
 let seenIntro = true;
+
+/**
+ * 见闻 — a record of what this pet has done. See `game/feats.ts` for what it is allowed to be.
+ *
+ * Nothing here grants anything; it is written down and shown in the settings window if somebody
+ * opens it. Nothing counts keystrokes, which is the one line this feature must not cross.
+ */
+const feats = new Feats();
+/** What the bubble says about a feat just earned, or null. Fades like every other line. */
+let featSaid: string | null = null;
+let featUntil = 0;
+const FeatBubbleMs = 3_400;
+
+/**
+ * Records a feat, and says so once if it is new.
+ *
+ * Called without checking first — from the frame loop, from event handlers, from the middle of a
+ * breakthrough — so it has to be cheap and idempotent rather than correct-only-if-guarded.
+ */
+function achieve(id: FeatId): void {
+  if (!feats.mark(id)) return;
+  // So an open settings window fills in while you are looking at it, rather than next time it
+  // happens to hear about something else.
+  emitPetState();
+  featSaid = `${fill(words().pet.featEarned, { feat: featName(id) })}
+${featBlurb(id)}`;
+  featUntil = performance.now() + FeatBubbleMs;
+  requestSave(currentSave());
+}
 
 /**
  * The language the player picked, or null for "follow the system".
@@ -875,6 +921,7 @@ function currentSave(): SaveState {
     seenIntro,
     quiet,
     lieLow,
+    feats: feats.snapshot(),
     locale: chosenLocale,
   };
 }
@@ -998,6 +1045,10 @@ function emitPetState(): void {
     ascended: cultivation.ascended,
     ascensions: cultivation.ascensions,
     realm: cultivation.describe(),
+    // Settings keeps no copy of the save; it renders what this window says, same as everything
+    // else over there. Sent with the rest rather than on its own channel because they change at
+    // the same moments and one message is one fewer thing that can arrive out of order.
+    feats: feats.snapshot(),
   }).catch(() => {});
 }
 
@@ -1050,6 +1101,7 @@ function takeBreakThrough(): boolean {
     bubble.hide();
     slime.clearAlert();
     slime.failRealm();
+    achieve('ordealFailed');
     failUntil = performance.now() + FailBubbleMs;
     applyLook();
     requestSave(currentSave());
@@ -1058,7 +1110,15 @@ function takeBreakThrough(): boolean {
 
   if (!cultivation.breakThrough()) return false;
 
+  // The rung, if this breakthrough reached a new one. Marked before the branches below, because
+  // the ascension path and the realm path and the stage path all arrive here having possibly moved
+  // the realm, and only one of them is about to return.
+  const rung = Feats.forRealm(cultivation.realm);
+  if (rung !== null) achieve(rung);
+
   if (!wasAscended && cultivation.ascended) {
+    achieve('ascend');
+    if (cultivation.ascensions >= 3) achieve('thrice');
     applyLook();
     slime.ascend();
     // Said once, on the one occasion someone has just finished the whole thing. Not an
@@ -1290,6 +1350,7 @@ function frame(now: number): void {
       // collision is eight moments in a run, and missing a find is defined to cost nothing.
       (trialSaid !== null && now < trialUntil ? trialSaid : null) ??
       fortuneText ??
+      (featSaid !== null && now < featUntil ? featSaid : null) ??
       (now < failUntil ? words().pet.ordealFailed : null) ??
       (now < ascendUntil ? words().pet.ascendedIdle : null) ??
       (now < introUntil ? words().pet.firstBreath : null) ??
@@ -1736,6 +1797,7 @@ async function main(): Promise<void> {
         chosenLocale = saved.locale;
         quiet = saved.quiet;
         lieLow = saved.lieLow;
+        feats.restore(saved.feats);
         // Rust starts out listening, so a save that says otherwise has to say so out loud.
         if (quiet) void invoke('set_quiet', { quiet: true }).catch(() => {});
         // Told every time rather than only when false. Rust starts this on, so saying so when it is
@@ -1997,6 +2059,7 @@ async function main(): Promise<void> {
   });
 
   await listen('rebirth', () => {
+    achieve('reborn');
     cultivation.settle();
     if (!cultivation.rebirth()) return;
     // Otherwise the second climb inherits the first one's pity and is quietly easier for a reason
@@ -2021,6 +2084,7 @@ async function main(): Promise<void> {
     if (next === concealed) return;
     concealed = next;
     if (next) {
+      achieve('lieLow');
       context.clearRect(0, 0, canvas.width, canvas.height);
       previousDirty = null;
       fullRepaint = true;

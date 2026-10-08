@@ -79,6 +79,16 @@ export interface Dictionary {
   finds: string[];
 
   /**
+   * 见闻 — what the pet has done, keyed by the ids in `game/feats.ts`.
+   *
+   * The seven realm rungs are **not** in here. They take their names from `realms` above, so that
+   * a realm renamed in one place cannot end up called something else in the other.
+   */
+  feats: Record<string, Named>;
+  /** The blurb every realm rung shares. `{realm}` is substituted. */
+  featRealm: string;
+
+  /**
    * What the pet says about its own state, in the bubble and in the alert.
    *
    * These lived in `main.ts` as literals longer than anything else here, because they read as part
@@ -96,6 +106,8 @@ export interface Dictionary {
     refineLeft: string;
     /** Two-liners, each shown for a while after the thing it describes. */
     ordealFailed: string;
+    /** Said once when a 见闻 is earned. `{feat}` is substituted. */
+    featEarned: string;
     ascendedIdle: string;
     firstBreath: string;
   };
@@ -186,6 +198,13 @@ export interface Dictionary {
     lieLowBlurb: string;
     /** Shown in place of the switch where the platform cannot tell who owns the screen. */
     lieLowUnsupported: string;
+
+    featsTitle: string;
+    featsBlurb: string;
+    /** What an unearned row says in place of its blurb. */
+    featsLocked: string;
+    /** `{done}` of `{all}`. */
+    featsCount: string;
 
     behaviourTitle: string;
     behaviourDrag: string;

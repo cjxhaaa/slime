@@ -133,6 +133,25 @@ export const en: Dictionary = {
     'Burped, and out came a little spirit light',
   ],
 
+  feats: {
+    ascend: { name: 'Ascended', blurb: 'Walked the eight realms to the end of them' },
+    reborn: { name: 'Reborn', blurb: 'Began the eight realms again from Qi Refining' },
+    thrice: { name: 'Three Lives', blurb: 'Ascended three times' },
+    ordealFailed: { name: 'The Ordeal Failed', blurb: 'The charms were spent and progress was lost' },
+    trialFirst: { name: 'Into the Trial', blurb: 'Went in for the first time' },
+    trialSurvived: { name: 'Trial Complete', blurb: 'Lasted a whole run' },
+    trialUnhurt: { name: 'Untouched', blurb: 'Lasted a whole run without the guard being reached' },
+    trialSlayer: { name: 'Three Hundred', blurb: 'Three hundred slain in a single run' },
+    pair: { name: 'Paired', blurb: 'Put two schools together' },
+    triad: { name: 'Triad', blurb: 'Put three schools together' },
+    evolve: { name: 'Evolved', blurb: 'Drew a jackpot' },
+    fullSet: { name: 'Four Schools', blurb: 'Filled all four slots' },
+    devour: { name: 'Window Eaten', blurb: 'Swallowed a window whole' },
+    fortune: { name: 'A Find', blurb: 'Came across something' },
+    lieLow: { name: 'Lay Low', blurb: 'Stepped aside for something else once' },
+  },
+  featRealm: 'Reached {realm} for the first time',
+
   pet: {
     readyToBreak: '{stage} · ready to break through\nClick to face the ordeal',
     ordealSure: 'The ordeal holds no danger',
@@ -141,6 +160,7 @@ export const en: Dictionary = {
     ordealPerilous: 'Ordeal risky · {short} charms short of sure',
     refineLeft: 'Refinings left today · {left}',
     ordealFailed: 'The ordeal was not passed\nThe charms are spent · some progress lost',
+    featEarned: 'Earned · {feat}',
     ascendedIdle: 'This body has proven the Way\nRebirth waits in the settings',
     firstBreath: 'There seems to be a spirit in this thing\nIt is drawing breath from the world',
   },
@@ -212,6 +232,12 @@ export const en: Dictionary = {
     lieLowBlurb:
       'When something takes the whole screen — a game, a film, a presentation — the slime withdraws, stops drawing and stops counting, and condenses back once you return to the desktop. A maximized window does not count as taking the screen, so it will not hide for one.',
     lieLowUnsupported: 'This system cannot say who owns the screen, so this is unavailable here.',
+
+    featsTitle: 'Doings',
+    featsBlurb:
+      'What this slime has done. A record only — it grants nothing, and it will never ask for your attention.',
+    featsLocked: 'not yet',
+    featsCount: '{done} of {all}',
 
     behaviourTitle: 'Behaviour',
     behaviourDrag:

@@ -13,6 +13,7 @@ declare const process: { exit(code: number): never };
 
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
 import { Glyphs, LongestFlightSeconds } from './Glyphs.js';
+import { FEAT_IDS, Feats, REALM_FEATS, featBlurb, featName } from './feats.js';
 import { BreakthroughSpread, Motes, StageSpread } from './Motes.js';
 import { clear, mix } from '../slime/colour.js';
 import { smooth, wispFade } from '../slime/ease.js';
@@ -1978,6 +1979,61 @@ for (let i = 0; i <= 400; i++) {
   closest = Math.min(closest, dy);
 }
 checkTrue('and never retreats behind the edge while walking out of it', !wentBackwards);
+
+// -------------------------------------------------------------------------------------------------
+// 见闻.
+//
+// A list, which §6 rejects three times over — so most of what is asserted here is the set of lines
+// that make having one survivable, rather than the list itself working.
+
+check('every feat id is distinct', new Set(FEAT_IDS).size, FEAT_IDS.length);
+
+// **Ids are permanent.** They go into the save, so renaming one silently un-earns whatever somebody
+// did. Pinned by name here so a rename has to be a deliberate act that updates this line too.
+checkTrue(
+  'the ids in the save are the ones this build writes',
+  FEAT_IDS.includes('ascend') && FEAT_IDS.includes('trialUnhurt') && FEAT_IDS.includes('lieLow'),
+);
+
+// **The realm rungs borrow the realm's own name** rather than having a second copy in the feats
+// table — so a realm renamed in one place cannot end up called something else in the other.
+let strayFeats: string[] = [];
+let namelessFeats: string[] = [];
+for (const tag of LOCALES) {
+  setLocale(tag);
+  for (const id of FEAT_IDS) {
+    if (featName(id).trim().length === 0) namelessFeats.push(`${tag} ${id}`);
+    if (featBlurb(id).trim().length === 0) namelessFeats.push(`${tag} ${id} blurb`);
+  }
+  for (const id of Object.keys(DICTIONARIES[tag].feats)) {
+    if (!(FEAT_IDS as readonly string[]).includes(id)) strayFeats.push(`${tag} ${id}`);
+    if (id in REALM_FEATS) strayFeats.push(`${tag} ${id} duplicates a realm name`);
+  }
+}
+setLocale('zh-Hans');
+check(`every feat is named in every language${namelessFeats.length ? ': ' + namelessFeats.join(', ') : ''}`, namelessFeats.length, 0);
+check(`and the table carries nothing spare${strayFeats.length ? ': ' + strayFeats.join(', ') : ''}`, strayFeats.length, 0);
+checkTrue('a realm rung is named after its realm', featName('realm1') === DICTIONARIES['zh-Hans'].realms[1]);
+
+// **Earning one is idempotent.** Callers fire these from the frame loop without checking first, so
+// the second call has to be free and silent rather than a second announcement.
+const record = new Feats();
+checkTrue('the first time counts', record.mark('ascend'));
+checkTrue('the second does not', !record.mark('ascend'));
+check('and it is recorded once', record.done, 1);
+
+// **A save from a newer build survives being opened by an older one.** Ids this build has never
+// heard of are carried through rather than dropped, or downgrading once would erase them forever.
+record.restore(['ascend', 'somethingFromTheFuture']);
+checkTrue('unknown ids are kept', record.snapshot().includes('somethingFromTheFuture'));
+check('but not counted', record.done, 1);
+checkTrue('and known ones still read back', record.has('ascend'));
+
+// The rung a breakthrough earns, at both ends of the ladder and past it.
+checkTrue('筑基 earns the first rung', Feats.forRealm(1) === 'realm1');
+checkTrue('大乘 earns the last', Feats.forRealm(7) === 'realm7');
+checkTrue('and 练气 earns none', Feats.forRealm(0) === null);
+checkTrue('nor does anything past the top', Feats.forRealm(Ascended + 1) === null);
 
 // -------------------------------------------------------------------------------------------------
 // What actually reaches the screen.

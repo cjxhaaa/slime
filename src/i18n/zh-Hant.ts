@@ -104,6 +104,25 @@ export const zhHant: Dictionary = {
     '打了個嗝，竟吐出靈光',
   ],
 
+  feats: {
+    ascend: { name: '飛昇', blurb: '走到了八境的盡頭' },
+    reborn: { name: '轉生', blurb: '重歷八境，從練氣起' },
+    thrice: { name: '三世', blurb: '飛昇過三回' },
+    ordealFailed: { name: '渡劫未成', blurb: '符籙盡散，修為有損' },
+    trialFirst: { name: '初入歷練', blurb: '第一次進去' },
+    trialSurvived: { name: '歷練已成', blurb: '撐滿了一整局' },
+    trialUnhurt: { name: '毫髮無傷', blurb: '撐滿一局，護體一分未失' },
+    trialSlayer: { name: '除邪三百', blurb: '一局之內除邪三百' },
+    pair: { name: '相合', blurb: '湊出一個兩合' },
+    triad: { name: '三合', blurb: '湊出一個三合' },
+    evolve: { name: '進化', blurb: '抽中一次大獎' },
+    fullSet: { name: '四脈俱全', blurb: '四個槽位全滿' },
+    devour: { name: '吞窗', blurb: '吞掉了一個視窗' },
+    fortune: { name: '機緣', blurb: '遇上一次機緣' },
+    lieLow: { name: '斂息', blurb: '為別的東西讓過一次位' },
+  },
+  featRealm: '首次抵達{realm}',
+
   pet: {
     readyToBreak: '{stage} · 可突破\n點擊渡劫',
     ordealSure: '渡劫無虞',
@@ -112,6 +131,7 @@ export const zhHant: Dictionary = {
     ordealPerilous: '渡劫凶險 · 再攢 {short} 張無虞',
     refineLeft: '今日尚可煉化 {left} 次',
     ordealFailed: '渡劫未成\n符籙盡散 · 修為有損',
+    featEarned: '得 · {feat}',
     ascendedIdle: '此身已證大道\n設定中可轉生重歷',
     firstBreath: '此物似有靈性\n正吞吐天地之氣',
   },
@@ -182,6 +202,11 @@ export const zhHant: Dictionary = {
     lieLowBlurb:
       '有東西佔滿整塊螢幕時——遊戲、影片、簡報——史萊姆會退下去，不畫也不算，等你回到桌面再重新聚形。最大化的視窗不算佔滿，牠不會為此躲起來。',
     lieLowUnsupported: '這個系統上分不出誰佔著螢幕，所以這項用不了。',
+
+    featsTitle: '見聞',
+    featsBlurb: '這隻史萊姆做過的事。只是記錄 —— 不給任何東西，也不會來找你。',
+    featsLocked: '未歷',
+    featsCount: '已得 {done} / {all}',
 
     behaviourTitle: '習性',
     behaviourDrag:

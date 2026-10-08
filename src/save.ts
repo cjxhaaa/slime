@@ -26,6 +26,14 @@ export interface SaveState {
   settledAt: number;
   /** The one line said on a first run has been said. */
   seenIntro: boolean;
+  /**
+   * 见闻 — the ids of everything this pet has done, in no particular order.
+   *
+   * Latched rather than derived: a rebirth puts `realm` back to zero, so "reached 大乘" cannot be
+   * recovered from the rest of this file an hour later. Ids are stable strings and are never
+   * renamed, because a rename would silently un-earn something somebody did.
+   */
+  feats: string[];
   /** Seclusion: the keyboard is being left alone and nothing asks for attention. */
   quiet: boolean;
   /**
@@ -100,6 +108,7 @@ export async function loadSave(): Promise<SaveState | null> {
       fortune?: { nextAt?: unknown };
       settledAt?: unknown;
       seenIntro?: unknown;
+      feats?: unknown;
       quiet?: unknown;
       lieLow?: unknown;
       locale?: unknown;
@@ -135,6 +144,9 @@ export async function loadSave(): Promise<SaveState | null> {
       fortune: { nextAt: numberOr(parsed.fortune?.nextAt, 0) },
       settledAt: numberOr(parsed.settledAt, Date.now() / 1000),
       seenIntro: parsed.seenIntro === true,
+      // Ids this build has never heard of are kept, not dropped: a save written by a newer version
+      // must survive being opened by an older one without losing what it recorded.
+      feats: Array.isArray(parsed.feats) ? parsed.feats.filter((id) => typeof id === 'string') : [],
       quiet: parsed.quiet === true,
       // Absent means an older save, and absent means on — see the field's own note.
       lieLow: parsed.lieLow !== false,

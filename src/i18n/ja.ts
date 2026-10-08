@@ -109,6 +109,25 @@ export const ja: Dictionary = {
     'げっぷをしたら、霊光が出てきた',
   ],
 
+  feats: {
+    ascend: { name: '飛昇', blurb: '八境の終わりまで歩いた' },
+    reborn: { name: '転生', blurb: '八境をもう一度、練気から' },
+    thrice: { name: '三度の生', blurb: '三度飛昇した' },
+    ordealFailed: { name: '渡劫ならず', blurb: '符籙は尽き、修為を損なった' },
+    trialFirst: { name: '初めての歴練', blurb: '一度目に入った' },
+    trialSurvived: { name: '歴練成れり', blurb: '一局を最後まで持ちこたえた' },
+    trialUnhurt: { name: '無傷', blurb: '護体に一つも受けず一局を終えた' },
+    trialSlayer: { name: '除魔三百', blurb: '一局で三百除いた' },
+    pair: { name: '合', blurb: '二つの流派を組み合わせた' },
+    triad: { name: '三合', blurb: '三つの流派を組み合わせた' },
+    evolve: { name: '進化', blurb: '大当たりを引いた' },
+    fullSet: { name: '四脈', blurb: '四つの枠をすべて埋めた' },
+    devour: { name: '窓を食う', blurb: 'ウィンドウを丸ごと飲み込んだ' },
+    fortune: { name: '機縁', blurb: '何かに出くわした' },
+    lieLow: { name: '退避', blurb: '一度、他の何かのために身を引いた' },
+  },
+  featRealm: 'はじめて{realm}に至った',
+
   pet: {
     readyToBreak: '{stage} · 突破可能\nクリックで渡劫',
     ordealSure: '渡劫に憂いなし',
@@ -117,6 +136,7 @@ export const ja: Dictionary = {
     ordealPerilous: '渡劫は危うい · あと {short} 枚で憂いなし',
     refineLeft: '本日はあと {left} 回錬化できる',
     ordealFailed: '渡劫成らず\n符籙は尽き散り · 修為に損あり',
+    featEarned: '得たり · {feat}',
     ascendedIdle: 'この身すでに大道を証せり\n設定から転生できる',
     firstBreath: 'この物、霊性あるらしく\n天地の気を呑吐している',
   },
@@ -188,6 +208,12 @@ export const ja: Dictionary = {
     lieLowBlurb:
       '何かが画面全体を占めるとき——ゲーム、映像、プレゼン——スライムは退き、描くのも数えるのもやめて、デスクトップに戻るとまた形を結ぶ。最大化したウィンドウは全画面とは数えないので、それで隠れることはない。',
     lieLowUnsupported: 'この環境では画面を誰が占めているか判別できないため、これは使えない。',
+
+    featsTitle: '見聞',
+    featsBlurb:
+      'このスライムがしてきたこと。記録だけで、何も与えないし、こちらから周知することもない。',
+    featsLocked: 'まだ',
+    featsCount: '{all} のうち {done}',
 
     behaviourTitle: '習性',
     behaviourDrag:

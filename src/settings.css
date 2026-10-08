@@ -207,3 +207,51 @@ button.secondary {
   color: var(--ink);
 }
 
+/*
+ * 见闻. A list, which this app otherwise refuses to have — so it is built to be ignorable: no
+ * badge, no colour that reads as "attention", and an unearned row that recedes rather than nags.
+ * Nothing outside this section ever says how many are left.
+ *
+ * Written against the file's own tokens rather than literal colours. The first version used
+ * hex values picked for a dark panel, which inverted the whole point in the light theme: the
+ * earned rows came out nearly invisible and the unearned ones read as the emphasised ones.
+ */
+.feats {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.feat {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 11px;
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.feat:first-child {
+  border-top: 0;
+}
+
+.feat b {
+  font-weight: 600;
+  min-width: 118px;
+  color: var(--ink);
+}
+
+.feat span {
+  color: var(--muted);
+}
+
+/* Unearned: the whole row recedes. It is a gap in a record, not a task. */
+.feat.todo b,
+.feat.todo span {
+  color: var(--muted);
+  opacity: 0.55;
+  font-weight: 400;
+}

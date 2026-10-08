@@ -108,6 +108,25 @@ export const ko: Dictionary = {
     '트림을 했더니 서광이 뿜어져 나왔다',
   ],
 
+  feats: {
+    ascend: { name: '비승', blurb: '여덟 경지의 끝까지 걸었다' },
+    reborn: { name: '환생', blurb: '여덟 경지를 연기부터 다시 걷기 시작했다' },
+    thrice: { name: '세 번째 삶', blurb: '세 번 비승했다' },
+    ordealFailed: { name: '도겁 실패', blurb: '부적이 모두 흩어지고 공력을 잃었다' },
+    trialFirst: { name: '첫 시련', blurb: '처음으로 들어갔다' },
+    trialSurvived: { name: '시련을 마침', blurb: '한 판을 끝까지 버텼다' },
+    trialUnhurt: { name: '상처 없이', blurb: '호체가 한 번도 닿지 않은 채로 한 판을 끝냈다' },
+    trialSlayer: { name: '퇴마 삼백', blurb: '한 판에서 삼백을 물리쳤다' },
+    pair: { name: '합', blurb: '두 법맥을 짝지었다' },
+    triad: { name: '삼합', blurb: '세 법맥을 짝지었다' },
+    evolve: { name: '진화', blurb: '큰 것을 뽑았다' },
+    fullSet: { name: '네 법맥', blurb: '네 칸을 모두 채웠다' },
+    devour: { name: '창을 삼키다', blurb: '창 하나를 통째로 삼켰다' },
+    fortune: { name: '기연', blurb: '무언가와 마주쳤다' },
+    lieLow: { name: '은신', blurb: '한 번, 다른 것을 위해 물러났다' },
+  },
+  featRealm: '처음 {realm}에 닿았다',
+
   pet: {
     readyToBreak: '{stage} · 돌파 가능\n눌러서 도겁',
     ordealSure: '도겁에 근심이 없다',
@@ -116,6 +135,7 @@ export const ko: Dictionary = {
     ordealPerilous: '도겁이 위험하다 · {short}장 더 모으면 근심이 없다',
     refineLeft: '오늘은 {left}번 더 연화할 수 있다',
     ordealFailed: '도겁에 실패했다\n부적이 모두 흩어지고 · 공력이 상했다',
+    featEarned: '얻음 · {feat}',
     ascendedIdle: '이 몸은 이미 대도를 이루었다\n설정에서 환생하여 다시 걸을 수 있다',
     firstBreath: '이것에 영성이 있는 듯\n천지의 기를 삼키고 뱉는다',
   },
@@ -187,6 +207,12 @@ export const ko: Dictionary = {
     lieLowBlurb:
       '무언가가 화면 전체를 차지하면——게임, 영상, 발표——슬라임은 물러나서 그리지도 세지도 않고, 네가 바탕 화면으로 돌아오면 다시 모여 형체를 이룬다. 최대화한 창은 전체 화면으로 치지 않으므로 그때는 숨지 않는다.',
     lieLowUnsupported: '이 시스템에서는 누가 화면을 차지했는지 알 수 없어서 이 기능을 쓸 수 없다.',
+
+    featsTitle: '견문',
+    featsBlurb:
+      '이 슬라임이 해온 일들. 기록일 뿐이고, 아무것도 주지 않으며, 먼저 찾아오지도 않는다.',
+    featsLocked: '아직',
+    featsCount: '{all} 중 {done}',
 
     behaviourTitle: '습성',
     behaviourDrag:

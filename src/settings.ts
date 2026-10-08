@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { MaxLevel, SCHOOLS, type School, activeCombos, activeTriads } from './game/schools';
+import { FEAT_IDS, featBlurb, featName } from './game/feats';
 import {
   ENDONYMS,
   LOCALES,
@@ -56,13 +57,53 @@ const rebirthWarn = el<HTMLParagraphElement>('rebirth-warn');
  * for a thing you cannot do for four days is exactly the kind of furniture the rest of this app
  * refuses to put on screen.
  */
-void listen<{ ascended: boolean; ascensions: number; realm: string }>('pet-state', (event) => {
-  const state = event.payload;
-  rebirthBox.hidden = !state.ascended;
-  saveState = state;
-  armed = false;
-  paintRebirth();
-});
+void listen<{ ascended: boolean; ascensions: number; realm: string; feats: string[] }>(
+  'pet-state',
+  (event) => {
+    const state = event.payload;
+    rebirthBox.hidden = !state.ascended;
+    saveState = state;
+    earned = new Set(state.feats ?? []);
+    armed = false;
+    paintRebirth();
+    paintFeats();
+  },
+);
+
+/**
+ * 见闻. The overlay owns the record; this renders it.
+ *
+ * Everything about this section is built to be ignorable, because a list is the one thing the
+ * plan's guardrails reject outright and the only honest way to have one is to make sure it never
+ * asks for anything. No badge, no count anywhere but inside here, no colour that reads as
+ * attention, and an unearned row that recedes rather than nags.
+ */
+let earned = new Set<string>();
+
+function paintFeats(): void {
+  const w = words();
+  el<HTMLHeadingElement>('feats-title').textContent = w.settings.featsTitle;
+  el<HTMLParagraphElement>('feats-blurb').textContent = w.settings.featsBlurb;
+  el<HTMLParagraphElement>('feats-count').textContent = fill(w.settings.featsCount, {
+    done: FEAT_IDS.filter((id) => earned.has(id)).length,
+    all: FEAT_IDS.length,
+  });
+  el<HTMLDivElement>('feats-list').replaceChildren(
+    ...FEAT_IDS.map((id) => {
+      const row = document.createElement('div');
+      const got = earned.has(id);
+      row.className = got ? 'feat' : 'feat todo';
+      const name = document.createElement('b');
+      name.textContent = featName(id);
+      const blurb = document.createElement('span');
+      // An unearned row still shows what it is called. Hiding the name behind question marks
+      // would turn the list into a puzzle to be solved, which is the nagging this has to avoid.
+      blurb.textContent = got ? featBlurb(id) : w.settings.featsLocked;
+      row.append(name, blurb);
+      return row;
+    }),
+  );
+}
 void emit('want-state');
 
 /**
@@ -266,6 +307,7 @@ function paintAll(): void {
   paintRebirth();
   paintArena();
   paintProse();
+  paintFeats();
   render();
 }
 
