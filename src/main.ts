@@ -485,10 +485,11 @@ let concealed = false;
 /**
  * How long the pet takes to creep back.
  *
- * Longer than the flourish it replaces, and that is the point — a thing sneaking back in takes its
- * time, and most of the extra is spent holding still halfway up.
+ * Longer than the flourish it replaced, and that is the point. Most of it is spent working at the
+ * gap rather than travelling: three gather-and-push cycles need about 350 ms each to read as
+ * separate efforts rather than as a vibration.
  */
-const RevealMs = 1180;
+const RevealMs = 1500;
 /** `performance.now()` when the return began, or 0 when there is nothing to play. */
 let revealAt = 0;
 /** Which edge this return is coming from. Fixed when it starts — see `ui/reveal.ts`. */

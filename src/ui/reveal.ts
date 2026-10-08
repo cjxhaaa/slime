@@ -19,20 +19,30 @@
  * so the edge is the top of the taskbar — the pet genuinely climbs out from behind it, and the
  * whole trip is about 115 px.
  *
- * An octopus leaving a crack does four things, in this order, and none of them is a pause:
+ * ## And it does it in pushes
+ *
+ * A soft body does not pour through a hole at a constant rate; it works at it. It gathers —
+ * bunching up behind the gap — and then extends, driving a little more of itself through. Gather,
+ * push, gather, push. Peristalsis, and the reason an octopus looks like it is *trying*.
+ *
+ * So the order is:
  *
  * 1. **Spreads.** Pressed against the underside, flattened and wide, because the way out is not
  *    open yet and the mass has to go sideways.
- * 2. **Narrows and reaches.** It funnels: thin across the gap, stretched along it. This is the
- *    slow part — barely any progress for most of the duration, which is what makes it look like
- *    effort rather than like an animation easing in.
- * 3. **Pops.** Once the widest part is through there is nothing left to resist, and the rest
- *    arrives all at once.
- * 4. **Settles.** One soft rebound — squat and wide for an instant — and then it is simply there.
+ * 2. **A head gets through.** A small nub, and then it stops — that is all that is coming for now.
+ * 3. **Three pushes.** Bunch, extend, gain a little. Bunch, extend, gain a little. Each one makes
+ *    visible but insufficient progress, which is what reads as effort.
+ * 4. **Through.** Once the widest part is past there is nothing left to resist and the rest
+ *    arrives at once.
+ * 5. **Settles.** One soft rebound — squat and wide for an instant — and then it is simply there.
  *
- * The hesitation that the second version got from stopping, this one gets from **going slowly
- * while deforming**. That is the whole difference: a thing that stops looks nervous, a thing that
- * strains looks stuck, and stuck is what squeezing through a gap actually is.
+ * ## Why this pulse is not the judder that was removed
+ *
+ * The version before this swept the body **sideways** while it was otherwise still, and a lateral
+ * sine on a motionless body is a shake however it was meant. This pulses **along the direction it
+ * is travelling**, which is the axis the work is being done on, and every pulse advances it. One
+ * is a tremor; the other is a muscle. The checks pin that distinction: lateral movement is
+ * asserted to be exactly zero, and every extension is asserted to gain ground.
  */
 import { smooth } from '../slime/ease.js';
 
@@ -69,11 +79,20 @@ interface Key {
 }
 
 const SQUEEZE: readonly Key[] = [
+  // Flattened under the edge, going nowhere.
   { at: 0.0, out: 0.0, along: 0.7, across: 1.3 },
-  { at: 0.3, out: 0.1, along: 0.78, across: 1.22 },
-  { at: 0.64, out: 0.44, along: 1.22, across: 0.8 },
-  { at: 0.84, out: 1.0, along: 1.06, across: 0.95 },
-  { at: 0.93, out: 1.0, along: 0.92, across: 1.09 },
+  { at: 0.12, out: 0.02, along: 0.76, across: 1.24 },
+  // A head gets through, and that is all for the moment.
+  { at: 0.22, out: 0.15, along: 1.08, across: 0.93 },
+  // Gather. Push. Gains a little. Three times.
+  { at: 0.32, out: 0.16, along: 0.88, across: 1.12 },
+  { at: 0.44, out: 0.27, along: 1.2, across: 0.84 },
+  { at: 0.54, out: 0.28, along: 0.9, across: 1.1 },
+  { at: 0.66, out: 0.43, along: 1.26, across: 0.79 },
+  { at: 0.75, out: 0.45, along: 0.94, across: 1.06 },
+  // The widest part is past; the rest arrives at once.
+  { at: 0.89, out: 1.0, along: 1.12, across: 0.91 },
+  { at: 0.95, out: 1.0, along: 0.93, across: 1.08 },
   { at: 1.0, out: 1.0, along: 1.0, across: 1.0 },
 ];
 

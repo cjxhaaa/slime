@@ -1830,16 +1830,51 @@ for (let i = 0; i <= 1000; i++) {
 }
 checkTrue('it funnels — narrow across the gap, stretched along it', reached);
 
-// **The effort.** Barely any progress for most of the duration, then the rest at once. Asserted as
-// a ratio of speeds rather than as positions, because it is the *change* of pace that reads as
-// something coming unstuck.
-const whileStuck = emerged(0.34) - emerged(0.0);
-const whenFree = emerged(0.84) - emerged(0.64);
-checkTrue(`it is stuck at first (${whileStuck.toFixed(2)} out by a third of the way)`, whileStuck < 0.2);
-checkTrue(`then comes free all at once (${whenFree.toFixed(2)} in the next fifth)`, whenFree > 2.5 * whileStuck);
+// **A head first.** Something is through early, and then it stops — that nub sitting there while
+// the body works is what the rhythm is built on.
+const head = emerged(0.24);
+checkTrue(`a head gets out early (${head.toFixed(2)})`, head > 0.1 && head < 0.25);
+checkTrue('and then it stalls', emerged(0.34) - head < 0.05);
 
-// And it never slides back: a body that emerges, retreats and emerges again is stuttering, which
-// is the judder this version exists to remove.
+// **The pushes.** Sample the scale along the direction of travel and count how many times it peaks
+// past 1. Each peak is an extension — the body driving a little more of itself through — and the
+// count is pinned rather than merely required to be "several", so that a later edit that smooths
+// the table into one long stretch fails here instead of quietly removing the rhythm.
+const along: number[] = [];
+for (let i = 0; i <= 2000; i++) along.push(squeezeAt(i / 2000).along);
+const peaks: number[] = [];
+const troughs: number[] = [];
+for (let i = 1; i < along.length - 1; i++) {
+  if (along[i] > along[i - 1] && along[i] >= along[i + 1] && along[i] > 1) peaks.push(i / 2000);
+  if (along[i] < along[i - 1] && along[i] <= along[i + 1] && along[i] < 1) troughs.push(i / 2000);
+}
+check(`it pushes four times (at ${peaks.map((p) => p.toFixed(2)).join(', ')})`, peaks.length, 4);
+// Three gathers between the four pushes, and then one more at the end — which is not a gather but
+// the squat of landing. Counted together because they are the same measurement; named apart here
+// so the four is not read as four efforts.
+check(`gathering before each, then the landing squat (at ${troughs.map((t) => t.toFixed(2)).join(', ')})`, troughs.length, 4);
+
+// **Every push gains ground.** This is the line between a muscle and a tremor: a body that
+// deforms without advancing is vibrating. From each gather to the extension that follows it, the
+// amount that is through must go up.
+let wasted = 0;
+for (const trough of troughs) {
+  const next = peaks.find((peak) => peak > trough);
+  if (next === undefined) continue;
+  if (emerged(next) - emerged(trough) < 0.05) wasted++;
+}
+check('and none of them is wasted effort', wasted, 0);
+
+// **The last one is the one that works.** Everything before it is insufficient on purpose.
+const lastPush = emerged(0.89) - emerged(0.75);
+const biggestEarlier = Math.max(emerged(0.44) - emerged(0.32), emerged(0.66) - emerged(0.54));
+checkTrue(
+  `the final push is the one that frees it (${lastPush.toFixed(2)} against ${biggestEarlier.toFixed(2)})`,
+  lastPush > 2 * biggestEarlier,
+);
+checkTrue('and most of it is still stuck right up to then', emerged(0.75) < 0.5);
+
+// And it never slides back: a body that emerges, retreats and emerges again is stuttering.
 let slipped = false;
 let furthest = 0;
 for (let i = 0; i <= 1000; i++) {
@@ -1850,30 +1885,12 @@ for (let i = 0; i <= 1000; i++) {
 checkTrue('and never slides back', !slipped);
 check('and gets all the way out', furthest, 1);
 
-// **No sideways shake.** The previous version swept laterally to suggest looking around and it
-// read as a shake. Coming up from the floor, nothing moves sideways at all.
+// **No sideways shake.** An earlier version swept laterally to suggest looking around and it read
+// as a shake. Coming up from the floor, nothing moves sideways at all — every bit of the pulse is
+// along the axis the work is being done on.
 let sideways = 0;
 for (let i = 0; i <= 1000; i++) sideways = Math.max(sideways, Math.abs(crawl(i / 1000, plan, standing).dx));
 check('nothing moves sideways on the way up', sideways, 0);
-
-// **One rebound, not a wobble.** The scale across the gap crosses 1 exactly twice — wide while
-// stuck, narrow while funnelling, wide again on the rebound — and then stops. More crossings than
-// that is a jiggle, which looks broken rather than soft.
-//
-// Counted with a dead band, because settling *exactly* on 1 is the goal and a bare `> 1` test
-// would score that final landing as one more crossing — the check would then be demanding a curve
-// that never quite arrives.
-const Band = 0.02;
-let crossings = 0;
-let wide: boolean | null = null;
-for (let i = 0; i <= 2000; i++) {
-  const across = squeezeAt(i / 2000).across;
-  if (Math.abs(across - 1) <= Band) continue;
-  const now = across > 1;
-  if (wide !== null && now !== wide) crossings++;
-  wide = now;
-}
-check('it rebounds once and then stops', crossings, 2);
 
 // **The edge is decided once.** A wandering pet that drifts past the midpoint between two edges
 // must not change which one it is emerging from halfway through emerging from it.
