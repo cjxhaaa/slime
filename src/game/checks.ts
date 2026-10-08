@@ -1788,6 +1788,8 @@ checkTrue('and the budget really was walked', LOCALES.length * 9 * 14 > 600);
 const stage = { width: 1200, height: 800 };
 const standing = { x: 700, y: 800 - 12 - 46, radius: 46 };
 const plan = planCrawl(standing, stage);
+// Mirrors `RevealMs` in main.ts; the wait below is asserted in seconds, so it needs the duration.
+const RevealSeconds = 3;
 
 // **It comes from the floor**, because that is the edge it is nearest — the whole reading ("it
 // climbs out from behind the taskbar") rests on this being true by default rather than chosen.
@@ -1836,6 +1838,21 @@ const head = emerged(0.24);
 checkTrue(`a head gets out early (${head.toFixed(2)})`, head > 0.1 && head < 0.25);
 checkTrue('and then it stalls', emerged(0.34) - head < 0.05);
 
+// **The wait.** A full second with the head out and nothing happening. This is the beat the whole
+// sequence hangs off, and it is the first thing a later "this feels slow" edit would take out — so
+// its length is asserted in fractions of the duration, against the duration itself.
+let stillSteps = 0;
+for (let i = 0; i < 2000; i++) {
+  const a = emerged(i / 2000);
+  const b = emerged((i + 1) / 2000);
+  if (Math.abs(b - a) < 2e-4 && a > 0.1 && a < 0.3) stillSteps++;
+}
+const waitSeconds = (stillSteps / 2000) * RevealSeconds;
+checkTrue(
+  `it waits with its head out (${waitSeconds.toFixed(2)}s of ${RevealSeconds}s)`,
+  waitSeconds > 0.8,
+);
+
 // **The pushes.** Sample the scale along the direction of travel and count how many times it peaks
 // past 1. Each peak is an extension — the body driving a little more of itself through — and the
 // count is pinned rather than merely required to be "several", so that a later edit that smooths
@@ -1848,7 +1865,10 @@ for (let i = 1; i < along.length - 1; i++) {
   if (along[i] > along[i - 1] && along[i] >= along[i + 1] && along[i] > 1) peaks.push(i / 2000);
   if (along[i] < along[i - 1] && along[i] <= along[i + 1] && along[i] < 1) troughs.push(i / 2000);
 }
-check(`it pushes four times (at ${peaks.map((p) => p.toFixed(2)).join(', ')})`, peaks.length, 4);
+// Four extensions: the head coming out, the two shoves that are not enough, and the one that is.
+// Pinned as a count rather than "several" so that a later edit which smooths the table into one
+// long stretch fails here instead of quietly removing the rhythm.
+check(`it extends four times (at ${peaks.map((p) => p.toFixed(2)).join(', ')})`, peaks.length, 4);
 // Three gathers between the four pushes, and then one more at the end — which is not a gather but
 // the squat of landing. Counted together because they are the same measurement; named apart here
 // so the four is not read as four efforts.
@@ -1866,24 +1886,57 @@ for (const trough of troughs) {
 check('and none of them is wasted effort', wasted, 0);
 
 // **The last one is the one that works.** Everything before it is insufficient on purpose.
-const lastPush = emerged(0.89) - emerged(0.75);
-const biggestEarlier = Math.max(emerged(0.44) - emerged(0.32), emerged(0.66) - emerged(0.54));
+//
+// Measured between the keyframes those efforts actually span — gather to push, for each of the
+// three. An earlier version of this check kept the sample points of a previous table and so
+// compared two intervals that no longer contained the pushes; it passed, and it was measuring
+// nothing. The numbers in the label are there to be read for that reason.
+const shoveOne = emerged(0.73) - emerged(0.66);
+const shoveTwo = emerged(0.85) - emerged(0.78);
+const shoveFree = emerged(0.95) - emerged(0.9);
+checkTrue(`the two shoves gain ground (${shoveOne.toFixed(2)}, ${shoveTwo.toFixed(2)})`, shoveOne > 0.1 && shoveTwo > 0.1);
 checkTrue(
-  `the final push is the one that frees it (${lastPush.toFixed(2)} against ${biggestEarlier.toFixed(2)})`,
-  lastPush > 2 * biggestEarlier,
+  `and the last one frees it (${shoveFree.toFixed(2)} against ${Math.max(shoveOne, shoveTwo).toFixed(2)})`,
+  shoveFree > 2 * Math.max(shoveOne, shoveTwo),
 );
-checkTrue('and most of it is still stuck right up to then', emerged(0.75) < 0.5);
+checkTrue('with over half still stuck right up to then', emerged(0.9) < 0.6);
 
-// And it never slides back: a body that emerges, retreats and emerges again is stuttering.
-let slipped = false;
-let furthest = 0;
-for (let i = 0; i <= 1000; i++) {
-  const value = emerged(i / 1000);
-  if (value < furthest - 1e-12) slipped = true;
-  furthest = Math.max(furthest, value);
+// **The hop.** What finally gets it through is a shove, not a slide, so it goes *past* where it
+// belongs and drops back. The old assertions here demanded a curve that stopped exactly at 1 and
+// correctly failed the moment the shove was added — so what is asserted now is the shape the shove
+// actually has: up without ever sliding back, past home, then down onto it and no further.
+let peak = 0;
+let peakAt = 0;
+for (let i = 0; i <= 2000; i++) {
+  const value = emerged(i / 2000);
+  if (value > peak) {
+    peak = value;
+    peakAt = i / 2000;
+  }
 }
-checkTrue('and never slides back', !slipped);
-check('and gets all the way out', furthest, 1);
+checkTrue(`it overshoots home on the way out (${peak.toFixed(2)})`, peak > 1.05 && peak < 1.25);
+checkTrue(`and only right at the end (t=${peakAt.toFixed(2)})`, peakAt > 0.88);
+
+let slipped = false;
+let highWater = 0;
+for (let i = 0; i <= 2000; i++) {
+  const t = i / 2000;
+  if (t > peakAt) break;
+  const value = emerged(t);
+  if (value < highWater - 1e-12) slipped = true;
+  highWater = Math.max(highWater, value);
+}
+checkTrue('never sliding back on the way', !slipped);
+
+// And the drop back is a landing, not a bounce: after the peak it falls to home and stops there.
+let dippedUnder = false;
+for (let i = 0; i <= 2000; i++) {
+  const t = i / 2000;
+  if (t <= peakAt) continue;
+  if (emerged(t) < 1 - 1e-9) dippedUnder = true;
+}
+checkTrue('and it lands on home rather than bouncing through it', !dippedUnder);
+check('finishing exactly there', emerged(1), 1);
 
 // **No sideways shake.** An earlier version swept laterally to suggest looking around and it read
 // as a shake. Coming up from the floor, nothing moves sideways at all — every bit of the pulse is
@@ -1901,7 +1954,9 @@ let closest = Infinity;
 for (let i = 0; i <= 400; i++) {
   const walking = { x: 700 - i, y: standing.y, radius: 46 };
   const dy = crawl(i / 400, plan, walking).dy;
-  if (dy > closest + 1e-9) wentBackwards = true;
+  // Only while it is still below home. Past that it is airborne from the shove, and coming back
+  // down to land is an increase in `dy` that is the landing rather than a retreat.
+  if (dy > 0 && dy > closest + 1e-9) wentBackwards = true;
   closest = Math.min(closest, dy);
 }
 checkTrue('and never retreats behind the edge while walking out of it', !wentBackwards);

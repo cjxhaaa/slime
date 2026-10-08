@@ -19,6 +19,15 @@
  * so the edge is the top of the taskbar — the pet genuinely climbs out from behind it, and the
  * whole trip is about 115 px.
  *
+ * ## There is a charm, and that is the reason it comes out
+ *
+ * A charm is flicked out of the gap first, and once the pet is through it goes and eats it. That
+ * is not decoration on top of the animation — it is the thing that makes the animation make sense.
+ * Every version before it was a creature appearing *because the window came back*, which is a
+ * reason the pet does not have. This one is a creature coming out **to get something**, and the
+ * fetching is not even new behaviour: a landed charm is already worth an errand, so the walk and
+ * the meal are the ordinary rules taking over the moment the squeeze lets go.
+ *
  * ## And it does it in pushes
  *
  * A soft body does not pour through a hole at a constant rate; it works at it. It gathers —
@@ -79,20 +88,26 @@ interface Key {
 }
 
 const SQUEEZE: readonly Key[] = [
-  // Flattened under the edge, going nowhere.
+  // Flattened under the edge, going nowhere. The charm is in the air through all of this.
   { at: 0.0, out: 0.0, along: 0.7, across: 1.3 },
-  { at: 0.12, out: 0.02, along: 0.76, across: 1.24 },
-  // A head gets through, and that is all for the moment.
-  { at: 0.22, out: 0.15, along: 1.08, across: 0.93 },
-  // Gather. Push. Gains a little. Three times.
-  { at: 0.32, out: 0.16, along: 0.88, across: 1.12 },
-  { at: 0.44, out: 0.27, along: 1.2, across: 0.84 },
-  { at: 0.54, out: 0.28, along: 0.9, across: 1.1 },
-  { at: 0.66, out: 0.43, along: 1.26, across: 0.79 },
-  { at: 0.75, out: 0.45, along: 0.94, across: 1.06 },
-  // The widest part is past; the rest arrives at once.
-  { at: 0.89, out: 1.0, along: 1.12, across: 0.91 },
-  { at: 0.95, out: 1.0, along: 0.93, across: 1.08 },
+  { at: 0.14, out: 0.02, along: 0.76, across: 1.24 },
+  // A head gets through — and that is all that is coming for now.
+  { at: 0.26, out: 0.15, along: 1.08, across: 0.93 },
+  // **The wait.** A full second of a nub sitting in the gap, deciding. The transform barely moves;
+  // the body underneath is still breathing, which is what keeps a held pose from reading as a
+  // frozen frame.
+  { at: 0.6, out: 0.15, along: 1.05, across: 0.95 },
+  // Gather, push. Twice, and neither is enough.
+  { at: 0.66, out: 0.16, along: 0.88, across: 1.12 },
+  { at: 0.73, out: 0.32, along: 1.22, across: 0.83 },
+  { at: 0.78, out: 0.33, along: 0.9, across: 1.1 },
+  { at: 0.85, out: 0.5, along: 1.26, across: 0.79 },
+  // One last crouch, and then the whole thing comes out at once — past where it belongs, because
+  // what gets it through is a shove rather than a slide.
+  { at: 0.9, out: 0.52, along: 0.92, across: 1.08 },
+  { at: 0.95, out: 1.1, along: 1.14, across: 0.9 },
+  // Lands, squashes, done.
+  { at: 0.98, out: 1.0, along: 0.9, across: 1.11 },
   { at: 1.0, out: 1.0, along: 1.0, across: 1.0 },
 ];
 

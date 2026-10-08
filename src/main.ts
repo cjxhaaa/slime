@@ -485,11 +485,21 @@ let concealed = false;
 /**
  * How long the pet takes to creep back.
  *
- * Longer than the flourish it replaced, and that is the point. Most of it is spent working at the
- * gap rather than travelling: three gather-and-push cycles need about 350 ms each to read as
- * separate efforts rather than as a vibration.
+ * Long, because it is a sequence rather than a transition: the charm flies, a head comes out, it
+ * waits a full second, it shoves twice, and then it is through. Most of that is the wait, which is
+ * the beat the rest hangs off — shorten it and the two shoves run together into a shiver.
  */
-const RevealMs = 1500;
+const RevealMs = 3000;
+
+/**
+ * The charm flicked out of the gap ahead of the pet.
+ *
+ * A Han character, where a real one is a key you actually pressed — so it is **visibly not one of
+ * yours**. That matters: the charms on the desktop are the pet eating your typing, and a fake
+ * keystroke appearing among them would make the real ones less legible, not more charming. This
+ * one is the pet's own.
+ */
+const RevealCharm = '符';
 /** `performance.now()` when the return began, or 0 when there is nothing to play. */
 let revealAt = 0;
 /** Which edge this return is coming from. Fixed when it starts — see `ui/reveal.ts`. */
@@ -1144,6 +1154,7 @@ function frame(now: number): void {
   const engaged =
     grabbed ||
     pullPending ||
+    revealAt !== 0 ||
     slime.devourPhase !== null ||
     showingPaw ||
     paw.hasRipples() ||
@@ -1315,7 +1326,10 @@ function frame(now: number): void {
   // handler calls the errand off and this ran one frame later and turned it straight back on.
   const errand = resolveErrand({
     held: grabbed || pullPending,
-    charmX: target ? target.x : null,
+    // Nothing is worth fetching while it is still stuck in the gap. Without this the pet starts
+    // walking to the charm it has just flicked out *while being squeezed out of the floor*, and
+    // the two motions fight: the transform lifts it clear while `x` slides away underneath.
+    charmX: target && revealAt === 0 ? target.x : null,
     x: slime.x,
     home: restX,
     onErrand,
@@ -2017,6 +2031,11 @@ async function main(): Promise<void> {
     lastTick = now;
     accumulator = 0;
     revealAt = now;
+    // Flicked out ahead of itself, from the gap it is about to climb through. `spawn` already
+    // throws upward and outward and lands it a couple of hundred pixels away, which is exactly far
+    // enough that fetching it is a walk rather than a reach — and the fetching is ordinary
+    // behaviour, so nothing here has to arrange it.
+    glyphs.spawn(RevealCharm, slime.x, window.innerHeight - 12 - slime.blob.restRadius);
     // Decided here, once, rather than per frame: a wandering pet that crosses the midpoint would
     // otherwise change which edge it is emerging from halfway through emerging from it.
     revealPlan = planCrawl(
