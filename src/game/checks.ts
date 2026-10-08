@@ -15,7 +15,7 @@ import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js
 import { Glyphs } from './Glyphs.js';
 import { BreakthroughSpread, Motes, StageSpread } from './Motes.js';
 import { clear, mix } from '../slime/colour.js';
-import { backOut, smooth, wispFade } from '../slime/ease.js';
+import { smooth, wispFade } from '../slime/ease.js';
 import { resolveErrand } from './errand.js';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes } from './combat.js';
 import { Daily } from './daily.js';
@@ -94,6 +94,7 @@ import {
 } from './realms.js';
 import { DICTIONARIES, LOCALES, fill, isLocale, locale, localeFor, setLocale } from '../i18n/index.js';
 import { fit, wrap } from '../ui/text.js';
+import { creep, risen } from '../ui/reveal.js';
 import { TRIADS as TRIAD_TABLE } from './schools.js';
 import { REALMS as REALM_NAMES } from './realms.js';
 
@@ -1767,43 +1768,68 @@ check(`every string fits the box it is drawn in${overBudget.length ? ': ' + over
 checkTrue('and the budget really was walked', LOCALES.length * 9 * 14 > 600);
 
 // -------------------------------------------------------------------------------------------------
-// The overshoot the pet comes back on.
+// How the pet comes back.
 //
-// Pure arithmetic, and the reason it is asserted rather than looked at: the two constants in a
-// back-out curve are not independent — the cubic term has to be the overshoot plus one, or the
-// value at zero stops being zero. The first version of this used 2.2 and 3.2, which gives
-// `backOut(0) = 1.0`: the pet would have appeared at **full size**, overshot downwards and settled,
-// which is not a thing anyone would describe as a bug so much as "the animation looks wrong".
+// The shape is the content here: 敛息 is a feature about not interrupting anybody, so a return that
+// reads as an entrance undoes it. What makes it read as *sneaking* is the hold halfway up — not the
+// curve, the pause in the middle of it — and a pause is the one thing an easing function is most
+// likely to lose when somebody later "cleans up" the piecewise branches into a single smooth call.
+// So the hold is asserted, not just the endpoints.
 
-checkTrue('a return starts from nothing', backOut(0) === 0);
-checkTrue('and lands exactly on 1', backOut(1) === 1);
-checkTrue('and is clamped either side', backOut(-5) === 0 && backOut(5) === 1);
+// It ends exactly neutral. A posture that lands at 0.98 leaves the body permanently slightly
+// squashed, which is invisible in motion and wrong in every screenshot afterwards.
+const back = creep(1);
+checkTrue(
+  'a return ends with the body exactly as it was',
+  back.lift === 0 && back.glance === 0 && back.squashX === 1 && back.squashY === 1,
+);
 
-// It must actually go past 1, or it is not the curve it claims to be — and not by much, or the
-// pet arrives looking inflated.
-let peak = 0;
-for (let i = 0; i <= 100; i++) peak = Math.max(peak, backOut(i / 100));
-checkTrue(`it overshoots (peak ${peak.toFixed(3)})`, peak > 1.02);
-checkTrue('but not wildly', peak < 1.2);
+// It starts sunk, and wider than it is tall — pressed into the desktop, which is the posture of a
+// thing that has been keeping its head down.
+const down = creep(0);
+checkTrue('and starts sunk', down.lift > 0.5);
+checkTrue('and pressed flat', down.squashX > 1 && down.squashY < 1);
 
-// **Exactly one turn.** Rising past 1 and then settling back onto it is the shape; rising, falling
-// and rising again is a wobble, and a wobble on a body arriving reads as the window glitching. So
-// what is asserted is the number of direction changes, which is 1 for this curve and more than 1
-// for anything that oscillates — rather than plain monotonicity, which this curve deliberately
-// does not have and which the first version of this check wrongly demanded.
-let turns = 0;
-let easeRising = true;
-let lastEase = backOut(0);
-for (let i = 1; i <= 200; i++) {
-  const eased = backOut(i / 200);
-  const up = eased >= lastEase;
-  if (up !== easeRising) {
-    turns++;
-    easeRising = up;
-  }
-  lastEase = eased;
+// **The beat before anything moves.**
+checkTrue('nothing moves for the first moment', risen(0.05) === 0 && risen(0) === 0);
+
+// **The hold.** Somewhere in the middle there is a stretch where it does not rise at all, and it is
+// a real stretch rather than a single flat sample.
+let held = 0;
+for (let i = 0; i < 1000; i++) {
+  const a = risen(i / 1000);
+  const b = risen((i + 1) / 1000);
+  if (Math.abs(b - a) < 1e-12 && a > 0.1 && a < 0.95) held++;
 }
-check('a return turns exactly once', turns, 1);
+checkTrue(`it holds still partway up (${held} of 1000 steps)`, held > 150);
+
+// And it never goes backwards: a creature that rises, dips and rises again is stumbling, not
+// peeking. This is the one place the old curve differed — it overshot and came back down.
+let slipped = false;
+let highest = 0;
+for (let i = 0; i <= 1000; i++) {
+  const value = risen(i / 1000);
+  if (value < highest - 1e-12) slipped = true;
+  highest = Math.max(highest, value);
+}
+checkTrue('and never slips back down', !slipped);
+check('and gets all the way up', highest, 1);
+
+// **The glance.** One sweep, both ways, starting and ending at nothing — and only while it holds.
+let left = 0;
+let right = 0;
+let movingWhileRising = false;
+for (let i = 0; i <= 1000; i++) {
+  const t = i / 1000;
+  const g = creep(t).glance;
+  if (g < left) left = g;
+  if (g > right) right = g;
+  // Before the hold begins it should still be dead centre.
+  if (t < 0.4 && Math.abs(g) > 1e-12) movingWhileRising = true;
+}
+checkTrue('it glances both ways', left < -0.05 && right > 0.05);
+checkTrue('and only once it has stopped climbing', !movingWhileRising);
+checkTrue('and is centred again by the end', creep(0.999).glance === 0 || creep(1).glance === 0);
 
 // -------------------------------------------------------------------------------------------------
 // What actually reaches the screen.

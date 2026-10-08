@@ -31,24 +31,3 @@ export function smooth(t: number): number {
 export function wispFade(rise: number): number {
   return Math.min(1, rise / 0.18) * Math.min(1, (1 - rise) / 0.25);
 }
-
-/**
- * Eases to 1 by overshooting it first — the classic "back out".
- *
- * `backOut(0)` is exactly 0 and `backOut(1)` is exactly 1; in between it rises past 1 by about a
- * tenth and settles. The endpoints being exact is the part worth asserting rather than eyeballing:
- * a curve that lands at 0.98 leaves whatever it scales permanently slightly wrong, which is
- * invisible in motion and obvious in a screenshot nobody takes.
- *
- * The constants are the usual ones. `c1` is the overshoot and `c3 = c1 + 1` is what forces the
- * value at 0 back down to exactly 0 — they are not independently tunable, and changing one without
- * the other is how this curve normally gets broken.
- */
-const Overshoot = 1.70158;
-
-export function backOut(t: number): number {
-  if (t <= 0) return 0;
-  if (t >= 1) return 1;
-  const u = t - 1;
-  return 1 + u * u * ((Overshoot + 1) * u + Overshoot);
-}

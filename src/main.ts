@@ -20,7 +20,7 @@ import { Arsenal, type Holding } from './game/Arsenal';
 import { activeCombos } from './game/schools';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
-import { backOut } from './slime/ease';
+import { creep } from './ui/reveal';
 import {
   combo as comboWords,
   fill,
@@ -482,10 +482,13 @@ let fullRepaint = true;
  */
 let concealed = false;
 
-/** How long the pet takes to condense back. */
-const RevealMs = 820;
-/** How many motes it gathers itself out of. */
-const RevealMotes = 34;
+/**
+ * How long the pet takes to creep back.
+ *
+ * Longer than the flourish it replaces, and that is the point — a thing sneaking back in takes its
+ * time, and most of the extra is spent holding still halfway up.
+ */
+const RevealMs = 1180;
 /** `performance.now()` when the return began, or 0 when there is nothing to play. */
 let revealAt = 0;
 
@@ -505,17 +508,7 @@ function revealed(now: number): number {
   return t <= 0 ? 0 : t;
 }
 
-/**
- * The body's scale during the return: 0.42 of full size, overshooting slightly, settling at 1.
- *
- * The overshoot is the whole point — arriving a touch too big and settling reads as *arriving*,
- * where a plain curve reads as a window being resized.
- */
-const RevealFrom = 0.42;
 
-function revealScale(t: number): number {
-  return RevealFrom + (1 - RevealFrom) * backOut(t);
-}
 let pointerDown = false;
 let showingPaw = false;
 
@@ -1455,10 +1448,15 @@ function frame(now: number): void {
     context.clip(clip);
 
     if (back < 1) {
-      const scale = revealScale(back);
-      context.translate(slime.drawX, slime.drawY);
-      context.scale(scale, scale);
-      context.translate(-slime.drawX, -slime.drawY);
+      // Sunk, squashed and glancing about — see `ui/reveal.ts` for why it is a posture rather than
+      // a flourish. Anchored at the bottom of the body rather than its middle, so pressing flat
+      // keeps it sitting on the desktop instead of sinking through it.
+      const posture = creep(back);
+      const radius = slime.blob.restRadius;
+      const foot = slime.drawY + radius;
+      context.translate(slime.drawX + posture.glance * radius, foot + posture.lift * radius);
+      context.scale(posture.squashX, posture.squashY);
+      context.translate(-slime.drawX, -foot);
     }
 
     if (inTrial) {
@@ -2018,10 +2016,8 @@ async function main(): Promise<void> {
     accumulator = 0;
     revealAt = now;
     fullRepaint = true;
-    // It gathers itself out of the ambient qi: the same motes it absorbs from a swallowed window,
-    // spawned wide and converging, which is the one effect in this app that already reads as
-    // something becoming solid.
-    motes.spawn(RevealMotes, slime.x, slime.y, slime.blob.restRadius * 6, 1);
+    // Nothing is spawned. The motes that used to gather here were the whole reason this read as an
+    // entrance; a pet checking whether it is safe to come out does not arrive in a shower of light.
   });
 
   await listen<boolean>('lie-low-changed', (event) => {
