@@ -94,7 +94,14 @@ import {
 } from './realms.js';
 import { DICTIONARIES, LOCALES, fill, isLocale, locale, localeFor, setLocale } from '../i18n/index.js';
 import { fit, wrap } from '../ui/text.js';
-import { crawl, crawlDistance, emerged, nearestEdge, planCrawl } from '../ui/reveal.js';
+import {
+  crawl,
+  crawlDistance,
+  emerged,
+  nearestEdge,
+  planCrawl,
+  squeezeAt,
+} from '../ui/reveal.js';
 import { TRIADS as TRIAD_TABLE } from './schools.js';
 import { REALMS as REALM_NAMES } from './realms.js';
 
@@ -1770,11 +1777,11 @@ checkTrue('and the budget really was walked', LOCALES.length * 9 * 14 > 600);
 // -------------------------------------------------------------------------------------------------
 // How the pet comes back.
 //
-// The shape is the content here: 敛息 is a feature about not interrupting anybody, so a return that
-// reads as an entrance undoes it. What makes it read as *sneaking* is the hold partway out — not the
-// curve, the pause in the middle of it — and a pause is the one thing an easing function is most
-// likely to lose when somebody later "cleans up" the piecewise branches into a single smooth call.
-// So the hold is asserted, not just the endpoints.
+// 敛息 is a feature about not interrupting anybody, so a return that reads as an entrance undoes
+// it. Two versions were wrong before this one and both failures were in the *shape*, not the code:
+// a mote shower that read as an arrival, then a rise-stop-sweep that read as a judder. What is
+// asserted here is therefore the shape itself — a soft body forced through a gap — because that is
+// the thing a later tidy-up is most likely to smooth away without noticing.
 
 // A pet with gravity stands GROUND_MARGIN + radius above the bottom, which is where these numbers
 // come from: a 46-radius body on an 800-tall stage rests at y = 742 with its feet 12 px up.
@@ -1782,51 +1789,57 @@ const stage = { width: 1200, height: 800 };
 const standing = { x: 700, y: 800 - 12 - 46, radius: 46 };
 const plan = planCrawl(standing, stage);
 
-// **It comes from the floor**, because that is the edge it is actually nearest — the whole reading
-// ("it climbs out from behind the taskbar") rests on this being true by default rather than chosen.
+// **It comes from the floor**, because that is the edge it is nearest — the whole reading ("it
+// climbs out from behind the taskbar") rests on this being true by default rather than chosen.
 check('a grounded pet comes back from the bottom edge', nearestEdge(standing, stage) === 'bottom' ? 1 : 0, 1);
 checkTrue(
   'and only travels far enough to have been hidden',
   crawlDistance('bottom', standing, stage) > 2 * standing.radius &&
     crawlDistance('bottom', standing, stage) < 3.3 * standing.radius,
 );
-// Jammed into the left corner it comes in sideways instead.
 const cornered = { x: 20, y: 800 - 12 - 46, radius: 46 };
 check('a cornered pet comes from the side it is against', nearestEdge(cornered, stage) === 'left' ? 1 : 0, 1);
-// And with no edge near — the middle of the screen, which only a 历练 produces — it is capped
-// rather than crossing the desktop in plain sight.
 const adrift = { x: 600, y: 400, radius: 46 };
 checkTrue('an adrift pet does not cross the desktop', crawlDistance(nearestEdge(adrift, stage), adrift, stage) <= 3.2 * 46 + 1e-9);
 
 // It ends exactly where it belongs, with nothing offset and nothing squashed. A posture that lands
-// at 0.98 leaves the body permanently slightly squashed.
+// at 0.98 leaves the body permanently slightly deformed.
 const home = crawl(1, plan, standing);
 checkTrue(
   'a return ends with the body exactly as it was',
   home.dx === 0 && home.dy === 0 && home.scaleX === 1 && home.scaleY === 1,
 );
+const nearlyHome = squeezeAt(0.999);
+checkTrue(
+  'and is already almost there a moment before',
+  Math.abs(nearlyHome.along - 1) < 0.02 && Math.abs(nearlyHome.across - 1) < 0.02,
+);
 
-// It starts behind the edge, pressed flat against it.
+// It starts behind the edge, spread flat against the underside of it.
 const hidden = crawl(0, plan, standing);
 checkTrue('and starts below the floor', hidden.dy > 2 * standing.radius);
-checkTrue('and squeezed the way it is travelling', hidden.scaleY < 1 && hidden.scaleX > 1);
+checkTrue('spread wide and flat under the edge', hidden.scaleY < 0.8 && hidden.scaleX > 1.2);
 checkTrue('pivoting on the side facing the edge', hidden.anchorY === standing.y + standing.radius);
 
-// **The beat before anything moves.**
-checkTrue('nothing moves for the first moment', emerged(0.05) === 0 && emerged(0) === 0);
-
-// **The hold.** Somewhere in the middle there is a stretch where it does not emerge at all, and it
-// is a real stretch rather than a single flat sample.
-let held = 0;
-for (let i = 0; i < 1000; i++) {
-  const a = emerged(i / 1000);
-  const b = emerged((i + 1) / 1000);
-  if (Math.abs(b - a) < 1e-12 && a > 0.1 && a < 0.95) held++;
+// **The funnel.** Partway through it must cross over: narrow across the gap and stretched along
+// it. Without this crossover the body merely slides up, which is the version this replaced.
+let reached = false;
+for (let i = 0; i <= 1000; i++) {
+  const k = squeezeAt(i / 1000);
+  if (k.along > 1.12 && k.across < 0.9) reached = true;
 }
-checkTrue(`it holds still partway out (${held} of 1000 steps)`, held > 150);
+checkTrue('it funnels — narrow across the gap, stretched along it', reached);
 
-// And it never slides back: a creature that emerges, retreats and emerges again is stumbling, not
-// peeking. This is where the first curve differed — it overshot and came back down.
+// **The effort.** Barely any progress for most of the duration, then the rest at once. Asserted as
+// a ratio of speeds rather than as positions, because it is the *change* of pace that reads as
+// something coming unstuck.
+const whileStuck = emerged(0.34) - emerged(0.0);
+const whenFree = emerged(0.84) - emerged(0.64);
+checkTrue(`it is stuck at first (${whileStuck.toFixed(2)} out by a third of the way)`, whileStuck < 0.2);
+checkTrue(`then comes free all at once (${whenFree.toFixed(2)} in the next fifth)`, whenFree > 2.5 * whileStuck);
+
+// And it never slides back: a body that emerges, retreats and emerges again is stuttering, which
+// is the judder this version exists to remove.
 let slipped = false;
 let furthest = 0;
 for (let i = 0; i <= 1000; i++) {
@@ -1837,34 +1850,38 @@ for (let i = 0; i <= 1000; i++) {
 checkTrue('and never slides back', !slipped);
 check('and gets all the way out', furthest, 1);
 
-// **The glance.** One sweep, both ways, and only while it is holding still — a glance during the
-// climb would read as a stumble. Across the direction of travel, so a pet coming up from the floor
-// looks left and right.
-let left = 0;
-let right = 0;
-let swayedWhileClimbing = false;
-for (let i = 0; i <= 1000; i++) {
-  const t = i / 1000;
-  const sway = crawl(t, plan, standing).dx;
-  if (sway < left) left = sway;
-  if (sway > right) right = sway;
-  if (t < 0.45 && Math.abs(sway) > 1e-12) swayedWhileClimbing = true;
+// **No sideways shake.** The previous version swept laterally to suggest looking around and it
+// read as a shake. Coming up from the floor, nothing moves sideways at all.
+let sideways = 0;
+for (let i = 0; i <= 1000; i++) sideways = Math.max(sideways, Math.abs(crawl(i / 1000, plan, standing).dx));
+check('nothing moves sideways on the way up', sideways, 0);
+
+// **One rebound, not a wobble.** The scale across the gap crosses 1 exactly twice — wide while
+// stuck, narrow while funnelling, wide again on the rebound — and then stops. More crossings than
+// that is a jiggle, which looks broken rather than soft.
+//
+// Counted with a dead band, because settling *exactly* on 1 is the goal and a bare `> 1` test
+// would score that final landing as one more crossing — the check would then be demanding a curve
+// that never quite arrives.
+const Band = 0.02;
+let crossings = 0;
+let wide: boolean | null = null;
+for (let i = 0; i <= 2000; i++) {
+  const across = squeezeAt(i / 2000).across;
+  if (Math.abs(across - 1) <= Band) continue;
+  const now = across > 1;
+  if (wide !== null && now !== wide) crossings++;
+  wide = now;
 }
-checkTrue('it glances both ways', left < -1 && right > 1);
-checkTrue('and only once it has stopped climbing', !swayedWhileClimbing);
-checkTrue('and is centred again by the end', crawl(1, plan, standing).dx === 0);
+check('it rebounds once and then stops', crossings, 2);
 
 // **The edge is decided once.** A wandering pet that drifts past the midpoint between two edges
-// must not change which one it is emerging from halfway through emerging from it. The plan is
-// fixed at the start, so the same plan against a body that has since moved still comes from the
-// same side — and the offsets stay monotone, which is how a frame strip caught the version that
-// recomputed per frame: its numbers ran backwards through the animation.
+// must not change which one it is emerging from halfway through emerging from it.
 const wandered = { x: 40, y: standing.y, radius: 46 };
 check('a pet that wanders keeps the edge it started from', crawl(0.3, plan, wandered).edge === 'bottom' ? 1 : 0, 1);
 let wentBackwards = false;
 let closest = Infinity;
 for (let i = 0; i <= 400; i++) {
-  // Same plan throughout, body drifting left across the midpoint as it would while walking.
   const walking = { x: 700 - i, y: standing.y, radius: 46 };
   const dy = crawl(i / 400, plan, walking).dy;
   if (dy > closest + 1e-9) wentBackwards = true;
