@@ -85,6 +85,7 @@ import {
 import { Attacks } from './Attacks.js';
 import type { Battlefield } from './Attacks.js';
 import { PillarShove, QuakeTell } from './Attacks.js';
+import { Depth } from './depth.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
 import {
@@ -2196,6 +2197,71 @@ checkTrue(
     const bad = run.targets().filter((m) => !Number.isFinite(m.x) || !Number.isFinite(m.y));
     check('a shove dead on top of something does not make a NaN', bad.length, 0);
   }
+}
+
+// -------------------------------------------------------------------------------------------------
+// 深浅 — what covers what, in a plane seen from above.
+//
+// The mode drew in fixed layers, which is right exactly half the time: a 邪气 below the pet on
+// screen is nearer the viewer and should cover it. Three things about the queue are worth pinning,
+// because all three are invisible until something is drawn in the wrong order and nobody can say
+// why it looks wrong.
+
+{
+  const depth = new Depth();
+  const painted: number[] = [];
+  const note = (_context: CanvasRenderingContext2D, index: number) => painted.push(index);
+  const canvas = null as unknown as CanvasRenderingContext2D;
+
+  // 1. Furthest first. Lower on screen is nearer, so it is painted last and covers the rest.
+  depth.add(300, note, 0);
+  depth.add(100, note, 1);
+  depth.add(200, note, 2);
+  depth.paint(canvas);
+  check('painted back to front: three queued', painted.length, 3);
+  checkTrue(`and in order of depth: ${painted.join(', ')}`, painted.join(',') === '1,2,0');
+
+  // 2. **A reset leaves nothing behind.** The arrays are reused across frames rather than rebuilt,
+  //    which is the whole reason this is affordable at 大乘 — and the obvious way to get that
+  //    wrong is to drop the count and keep painting last frame's leftovers.
+  painted.length = 0;
+  depth.reset();
+  check('a reset empties it', depth.size, 0);
+  depth.add(50, note, 7);
+  check('and one thing queued is one thing', depth.size, 1);
+  depth.paint(canvas);
+  checkTrue(`only the new one is painted: ${painted.join(', ')}`, painted.join(',') === '7');
+
+  // 3. An empty queue paints nothing and does not throw. It is called every frame of every run,
+  //    including the ones before anything has arrived.
+  painted.length = 0;
+  depth.reset();
+  depth.paint(canvas);
+  check('an empty queue paints nothing', painted.length, 0);
+}
+
+{
+  // And the same thing through the real 邪气 list: whatever `Trial` queues has to come out
+  // ordered by where each one actually is.
+  const run = new Trial();
+  run.start(4);
+  const body = { x: 600, y: 400, radius: 46 };
+  for (let i = 0; i < 120 * 8; i++) run.update(1 / 120, body, 1200, 800, undefined);
+  const live = run.targets();
+  checkTrue(`a field to sort: ${live.length} of them`, live.length > 3);
+
+  const depth = new Depth();
+  const seen: number[] = [];
+  const note = (_context: CanvasRenderingContext2D, index: number) => seen.push(index);
+  // `collect` holds its own painter, so this drives the queue directly with the same positions.
+  for (let i = 0; i < live.length; i++) depth.add(live[i].y, note, i);
+  depth.paint(null as unknown as CanvasRenderingContext2D);
+  let outOfOrder = 0;
+  for (let i = 1; i < seen.length; i++) {
+    if (live[seen[i]].y < live[seen[i - 1]].y) outOfOrder++;
+  }
+  check('nothing is painted in front of something nearer than it', outOfOrder, 0);
+  check('and every one of them was painted', seen.length, live.length);
 }
 
 // -------------------------------------------------------------------------------------------------

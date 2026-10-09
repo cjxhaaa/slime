@@ -34,6 +34,7 @@
  * particular guard has had to be rebuilt.
  */
 import { clear } from '../slime/colour.js';
+import type { Depth, Painter } from './depth.js';
 import {
   BY_KIND,
   DartRushSeconds,
@@ -703,144 +704,170 @@ export class Trial {
       context.globalAlpha = 1;
     }
 
-    for (const m of this.menaces) {
-      const breed = BY_KIND[m.kind];
-      const size = breed.size * (0.4 + 0.6 * m.arrival);
-      context.save();
-      context.translate(m.x, m.y);
+    context.restore();
+  }
 
-      // 钉煎 tells you before it pulses, so standing in it is a choice rather than an ambush.
-      if (m.kind === 'root' && m.age >= RootTravelSeconds) {
-        const due = m.timer;
-        if (due <= RootTellSeconds) {
-          const swell = 1 - due / RootTellSeconds;
-          context.globalAlpha = 0.5 * swell;
-          context.strokeStyle = 'rgba(228, 88, 88, 0.9)';
-          context.lineWidth = 2 + swell * 2;
-          context.beginPath();
-          context.arc(0, 0, RootPulseReach * (0.55 + 0.45 * swell), 0, Math.PI * 2);
-          context.stroke();
-        }
-        context.globalAlpha = 0.16;
-        context.strokeStyle = 'rgba(210, 120, 120, 0.7)';
-        context.lineWidth = 1;
+  /**
+   * One 邪气, at its own position.
+   *
+   * Split out of `draw` so the mode can put it in depth order against everything else
+   * standing on the same ground. See `standing`.
+   */
+  drawMenace(context: CanvasRenderingContext2D, m: Menace): void {
+    const breed = BY_KIND[m.kind];
+    const size = breed.size * (0.4 + 0.6 * m.arrival);
+    context.save();
+    context.translate(m.x, m.y);
+
+    // 钉煎 tells you before it pulses, so standing in it is a choice rather than an ambush.
+    if (m.kind === 'root' && m.age >= RootTravelSeconds) {
+      const due = m.timer;
+      if (due <= RootTellSeconds) {
+        const swell = 1 - due / RootTellSeconds;
+        context.globalAlpha = 0.5 * swell;
+        context.strokeStyle = 'rgba(228, 88, 88, 0.9)';
+        context.lineWidth = 2 + swell * 2;
         context.beginPath();
-        context.arc(0, 0, RootPulseReach, 0, Math.PI * 2);
+        context.arc(0, 0, RootPulseReach * (0.55 + 0.45 * swell), 0, Math.PI * 2);
         context.stroke();
       }
-
-      const halo = context.createRadialGradient(0, 0, 0, 0, 0, size * 2.6);
-      halo.addColorStop(0, 'rgba(24, 14, 34, 0.5)');
-      halo.addColorStop(1, clear('#180e22'));
-      context.globalAlpha = 0.85 * m.arrival;
-      context.fillStyle = halo;
+      context.globalAlpha = 0.16;
+      context.strokeStyle = 'rgba(210, 120, 120, 0.7)';
+      context.lineWidth = 1;
       context.beginPath();
-      context.arc(0, 0, size * 2.6, 0, Math.PI * 2);
+      context.arc(0, 0, RootPulseReach, 0, Math.PI * 2);
+      context.stroke();
+    }
+
+    const halo = context.createRadialGradient(0, 0, 0, 0, 0, size * 2.6);
+    halo.addColorStop(0, 'rgba(24, 14, 34, 0.5)');
+    halo.addColorStop(1, clear('#180e22'));
+    context.globalAlpha = 0.85 * m.arrival;
+    context.fillStyle = halo;
+    context.beginPath();
+    context.arc(0, 0, size * 2.6, 0, Math.PI * 2);
+    context.fill();
+
+    const look = Math.atan2(m.vy, m.vx);
+    context.globalAlpha = m.arrival;
+    context.fillStyle = m.kind === 'heavy' ? '#140c1e' : '#1b1226';
+
+    if (m.kind === 'root') {
+      // All angles, and it does not point anywhere, because it is not going anywhere.
+      context.beginPath();
+      for (let i = 0; i <= 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const reach = size * (i % 2 === 0 ? 1.15 : 0.6);
+        const px = Math.cos(angle + m.phase * 0.2) * reach;
+        const py = Math.sin(angle + m.phase * 0.2) * reach;
+        if (i === 0) context.moveTo(px, py);
+        else context.lineTo(px, py);
+      }
+      context.closePath();
       context.fill();
-
-      const look = Math.atan2(m.vy, m.vx);
-      context.globalAlpha = m.arrival;
-      context.fillStyle = m.kind === 'heavy' ? '#140c1e' : '#1b1226';
-
-      if (m.kind === 'root') {
-        // All angles, and it does not point anywhere, because it is not going anywhere.
+    } else {
+      // A ragged ring rather than a circle: a smooth blob reads as a bubble, and this is supposed
+      // to read as something with an intent. 奔煎 is stretched along its heading, which is the
+      // one silhouette cue that survives at ten pixels.
+      context.save();
+      context.rotate(look);
+      // 奔煎 is drawn long, with a wake behind it, because at ten pixels across a silhouette is
+      // the only cue that survives — and it is the breed you most need to recognise early.
+      if (m.kind === 'dart') {
+        context.globalAlpha = 0.34 * m.arrival;
         context.beginPath();
-        for (let i = 0; i <= 12; i++) {
-          const angle = (i / 12) * Math.PI * 2;
-          const reach = size * (i % 2 === 0 ? 1.15 : 0.6);
-          const px = Math.cos(angle + m.phase * 0.2) * reach;
-          const py = Math.sin(angle + m.phase * 0.2) * reach;
-          if (i === 0) context.moveTo(px, py);
-          else context.lineTo(px, py);
-        }
+        context.moveTo(-size * 1.6, -size * 0.42);
+        context.lineTo(-size * 4.4, 0);
+        context.lineTo(-size * 1.6, size * 0.42);
         context.closePath();
         context.fill();
-      } else {
-        // A ragged ring rather than a circle: a smooth blob reads as a bubble, and this is supposed
-        // to read as something with an intent. 奔煎 is stretched along its heading, which is the
-        // one silhouette cue that survives at ten pixels.
-        context.save();
-        context.rotate(look);
-        // 奔煎 is drawn long, with a wake behind it, because at ten pixels across a silhouette is
-        // the only cue that survives — and it is the breed you most need to recognise early.
-        if (m.kind === 'dart') {
-          context.globalAlpha = 0.34 * m.arrival;
-          context.beginPath();
-          context.moveTo(-size * 1.6, -size * 0.42);
-          context.lineTo(-size * 4.4, 0);
-          context.lineTo(-size * 1.6, size * 0.42);
-          context.closePath();
-          context.fill();
-          context.globalAlpha = m.arrival;
-        }
-        // Mass, not spikes. 重煎 gets two shallow lobes so it reads as something heavy; 钉煎 is
-        // the angular one, and the first version gave them both five deep ones, which made the two
-        // of them the same silhouette at a glance.
-        const stretch = m.kind === 'dart' ? 2.1 : 1;
-        const lobes = m.kind === 'heavy' ? 2 : 3;
-        const ripple = m.kind === 'heavy' ? 0.1 : 0.3;
-        context.beginPath();
-        for (let i = 0; i <= 15; i++) {
-          const angle = (i / 15) * Math.PI * 2;
-          const reach = size * (0.9 + ripple * Math.sin(angle * lobes + m.phase));
-          const px = Math.cos(angle) * reach * stretch;
-          const py = Math.sin(angle) * reach;
-          if (i === 0) context.moveTo(px, py);
-          else context.lineTo(px, py);
-        }
-        context.closePath();
-        context.fill();
-        context.restore();
+        context.globalAlpha = m.arrival;
       }
-
-      // 裂魄 carries the seam it is going to come apart along. The tell is the whole reason the
-      // breed is fair: clearing a press all at once is a mistake you can see coming.
-      if (m.kind === 'split') {
-        context.globalAlpha = 0.75 * m.arrival;
-        context.strokeStyle = 'rgba(226, 120, 120, 0.85)';
-        context.lineWidth = 2;
-        context.beginPath();
-        context.moveTo(Math.cos(m.phase * 0.3) * size, Math.sin(m.phase * 0.3) * size);
-        context.lineTo(-Math.cos(m.phase * 0.3) * size, -Math.sin(m.phase * 0.3) * size);
-        context.stroke();
+      // Mass, not spikes. 重煎 gets two shallow lobes so it reads as something heavy; 钉煎 is
+      // the angular one, and the first version gave them both five deep ones, which made the two
+      // of them the same silhouette at a glance.
+      const stretch = m.kind === 'dart' ? 2.1 : 1;
+      const lobes = m.kind === 'heavy' ? 2 : 3;
+      const ripple = m.kind === 'heavy' ? 0.1 : 0.3;
+      context.beginPath();
+      for (let i = 0; i <= 15; i++) {
+        const angle = (i / 15) * Math.PI * 2;
+        const reach = size * (0.9 + ripple * Math.sin(angle * lobes + m.phase));
+        const px = Math.cos(angle) * reach * stretch;
+        const py = Math.sin(angle) * reach;
+        if (i === 0) context.moveTo(px, py);
+        else context.lineTo(px, py);
       }
-
-      // 缠魂 wears the ring it is circling on, so a screen edge filling up with them is legible
-      // as a thing that is happening rather than as clutter.
-      if (m.kind === 'weave' && m.age < WeaveSeconds) {
-        context.globalAlpha = 0.85 * m.arrival;
-        context.strokeStyle = 'rgba(232, 140, 166, 0.95)';
-        context.lineWidth = 2.6;
-        context.beginPath();
-        context.arc(0, 0, size * 1.75, look + 0.5, look + 2.7);
-        context.stroke();
-      }
-
-      // Eyes: an enemy the player is meant to read as aimed at them needs a front. 重煎 has four,
-      // which is the cheapest way to say "this one is more than the others".
-      context.globalAlpha = 0.9 * m.arrival;
-      context.fillStyle = 'rgba(232, 96, 96, 0.95)';
-      if (m.kind === 'root') {
-        context.beginPath();
-        context.arc(0, 0, size * 0.3, 0, Math.PI * 2);
-        context.fill();
-      } else {
-        const sides = m.kind === 'heavy' ? [-0.62, -0.2, 0.2, 0.62] : [-0.42, 0.42];
-        for (const side of sides) {
-          context.beginPath();
-          context.arc(
-            Math.cos(look + side) * size * 0.4,
-            Math.sin(look + side) * size * 0.4,
-            size * (m.kind === 'heavy' ? 0.11 : 0.15),
-            0,
-            Math.PI * 2,
-          );
-          context.fill();
-        }
-      }
+      context.closePath();
+      context.fill();
       context.restore();
     }
+
+    // 裂魄 carries the seam it is going to come apart along. The tell is the whole reason the
+    // breed is fair: clearing a press all at once is a mistake you can see coming.
+    if (m.kind === 'split') {
+      context.globalAlpha = 0.75 * m.arrival;
+      context.strokeStyle = 'rgba(226, 120, 120, 0.85)';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(Math.cos(m.phase * 0.3) * size, Math.sin(m.phase * 0.3) * size);
+      context.lineTo(-Math.cos(m.phase * 0.3) * size, -Math.sin(m.phase * 0.3) * size);
+      context.stroke();
+    }
+
+    // 缠魂 wears the ring it is circling on, so a screen edge filling up with them is legible
+    // as a thing that is happening rather than as clutter.
+    if (m.kind === 'weave' && m.age < WeaveSeconds) {
+      context.globalAlpha = 0.85 * m.arrival;
+      context.strokeStyle = 'rgba(232, 140, 166, 0.95)';
+      context.lineWidth = 2.6;
+      context.beginPath();
+      context.arc(0, 0, size * 1.75, look + 0.5, look + 2.7);
+      context.stroke();
+    }
+
+    // Eyes: an enemy the player is meant to read as aimed at them needs a front. 重煎 has four,
+    // which is the cheapest way to say "this one is more than the others".
+    context.globalAlpha = 0.9 * m.arrival;
+    context.fillStyle = 'rgba(232, 96, 96, 0.95)';
+    if (m.kind === 'root') {
+      context.beginPath();
+      context.arc(0, 0, size * 0.3, 0, Math.PI * 2);
+      context.fill();
+    } else {
+      const sides = m.kind === 'heavy' ? [-0.62, -0.2, 0.2, 0.62] : [-0.42, 0.42];
+      for (const side of sides) {
+        context.beginPath();
+        context.arc(
+          Math.cos(look + side) * size * 0.4,
+          Math.sin(look + side) * size * 0.4,
+          size * (m.kind === 'heavy' ? 0.11 : 0.15),
+          0,
+          Math.PI * 2,
+        );
+        context.fill();
+      }
+    }
     context.restore();
+  }
+
+  /**
+   * Held once rather than made per frame. See `depth.ts` for why that matters at 大乘.
+   */
+  private readonly paintMenace: Painter = (context, index) =>
+    this.drawMenace(context, this.menaces[index]);
+
+  /**
+   * Queues every 邪气 for depth sorting.
+   *
+   * `y` is the position itself rather than a foot offset: in a plane seen from above, where a
+   * thing *is* and where it touches the ground are the same point, which is the whole reason this
+   * ordering is cheap.
+   */
+  collect(depth: Depth): void {
+    for (let i = 0; i < this.menaces.length; i++) {
+      depth.add(this.menaces[i].y, this.paintMenace, i);
+    }
   }
 }
 

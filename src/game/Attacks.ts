@@ -23,6 +23,7 @@
  * a side effect of this one.
  */
 import { clear, mix } from '../slime/colour.js';
+import type { Depth, Painter } from './depth.js';
 import {
   type Combo,
   Crown,
@@ -1447,11 +1448,35 @@ export class Attacks {
 
     context.globalCompositeOperation = 'lighter';
     if (this.has('冰')) this.drawField(context);
-    for (const e of this.live) this.drawOne(context, e);
+    // 山崩's stones are not drawn here. They are solid things standing on the ground, so the mode
+    // paints them in depth order with the 邪气 and the pet — see `collectStones` and `depth.ts`.
+    for (const e of this.live) if (e.kind !== 'pillar') this.drawOne(context, e);
     this.drawSurges(context);
     this.drawSparks(context);
 
     context.restore();
+  }
+
+  private readonly paintStone: Painter = (context, index) => {
+    const stone = this.live[index];
+    // The queue is filled and drained inside one frame, so an index cannot go stale — but it
+    // costs one comparison to be sure, and a wrong index here would paint a lightning bolt as a
+    // boulder.
+    if (stone && stone.kind === 'pillar') this.drawOne(context, stone);
+  };
+
+  /**
+   * Queues 山崩's stones for depth sorting against everything else on the ground.
+   *
+   * Only the stones. Everything else this module draws is light rather than an object: a talisman
+   * in flight is above the ground, not on it, and additive light that something else can cover
+   * stops reading as light.
+   */
+  collectStones(depth: Depth): void {
+    for (let i = 0; i < this.live.length; i++) {
+      const e = this.live[i];
+      if (e.kind === 'pillar' && e.age >= 0) depth.add(e.y, this.paintStone, i);
+    }
   }
 
   /**
@@ -1936,7 +1961,13 @@ export class Attacks {
       context.fill();
       context.restore();
 
+      // Explicitly additive. A stone is painted from the depth pass now, not from inside the
+      // module's own `lighter` block, so it can no longer assume the composite it inherits — and
+      // a glow drawn source-over is a beige disc sitting on the ground.
+      context.save();
+      context.globalCompositeOperation = 'lighter';
       this.bloom(context, e.x, e.y - tall * 0.5, e.reach * 0.7 * stand, hue, 0.1);
+      context.restore();
 
       context.save();
       context.globalCompositeOperation = 'source-over';

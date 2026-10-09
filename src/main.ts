@@ -34,6 +34,7 @@ import {
 } from './i18n';
 import { Draft } from './ui/Draft';
 import { Pause } from './ui/Pause';
+import { Depth, type Painter } from './game/depth';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -658,6 +659,16 @@ let inTrial = false;
  * and does not need one.
  */
 const pause = new Pause();
+/**
+ * Who is in front of whom during a 历练.
+ *
+ * Held across frames rather than built in the loop: at 大乘 there are six hundred things to
+ * order and rebuilding the queue every frame is six hundred allocations a frame. See
+ * `game/depth.ts`.
+ */
+const depth = new Depth();
+/** The pet's own entry in that queue. One function, made once. */
+const paintSlime: Painter = (context) => slime.draw(context);
 /** What to say once a run is over, and until when. */
 let trialSaid: string | null = null;
 let trialUntil = 0;
@@ -1603,10 +1614,16 @@ function frame(now: number): void {
       context.translate(-posture.anchorX, -posture.anchorY);
     }
 
+    // 历练 is a plane seen from above, so what covers what is decided by `y` rather than by the
+    // order these happen to be called in. See `game/depth.ts`.
+    //
+    // The ground marks go down first — the ring a 钉煎 is about to pulse, 山崩's dashed warning,
+    // the mark under the cursor — then everything solid in depth order, then the light.
+    const sorted = inTrial && arena === null;
     if (inTrial) {
       if (arena !== null) arena.dummies.draw(context);
       else trial.draw(context);
-      attacks.draw(context);
+      if (!sorted) attacks.draw(context);
     }
     // Under the 邪气 and under the body: it is a mark on the ground, and anything that draws
     // over it is a thing in the world. Over the attacks would make it look like a target being
@@ -1614,7 +1631,19 @@ function frame(now: number): void {
     if (ghostAt) slime.drawGhost(context, ghostAt.x, ghostAt.y);
     motes.draw(context, slime.bodyColour);
     glyphs.draw(context, slime.bodyColour);
-    slime.draw(context);
+    if (sorted) {
+      depth.reset();
+      trial.collect(depth);
+      attacks.collectStones(depth);
+      // The pet goes in at its own feet. `drawY` is the lifted, drawn position — mid-hop that is
+      // well above the ground it is being sorted against, and a slime at the top of a bound would
+      // slide behind things it is in front of.
+      depth.add(slime.y, paintSlime, 0);
+      depth.paint(context);
+      attacks.draw(context);
+    } else {
+      slime.draw(context);
+    }
     volley.draw(context, slime.bodyColour);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     menu.draw(context);
