@@ -136,8 +136,8 @@ const StoneSpeed = 620;
 export const QuakeTell = 0.5;
 /** Seconds between one band of pillars and the next, outward. */
 const RingStep = 0.075;
-/** How long a single pillar is up. */
-const PillarLife = 0.42;
+/** How long a single pillar is up, from first breaking the ground to gone back into it. */
+const PillarLife = 0.58;
 /**
  * How hard a pillar throws what it catches, in pixels a second.
  *
@@ -149,6 +149,49 @@ const PillarLife = 0.42;
 export const PillarShove = 700;
 /** A pillar reaches a little past where it kills, so the edge of a blast throws without killing. */
 const ShoveSpread = 1.5;
+
+/**
+ * How far over the view is tilted: the ratio of a circle's drawn height to its width.
+ *
+ * The desktop is a plane seen from almost straight down, but not quite — which is the only reason
+ * a column can be drawn at all. At 1 nothing has a side to show; this is the single number that
+ * says how much side there is, and everything round that 山崩 draws is squashed by it.
+ */
+const Tilt = 0.42;
+
+/**
+ * A column's width and height, as multiples of its own ground radius.
+ *
+ * Tuned against the body, which is 40 to 46 pixels across: the outermost band comes out about a
+ * body wide and a little taller than one, and the crater at the middle about half that. The first
+ * pass had them at 2.5× height and they stopped being pillars — twelve of them closed into a
+ * solid wall with the fight behind it, which is a screen you cannot play through.
+ */
+const HalfWidth = 0.38;
+const Height = 1.35;
+
+/**
+ * How far a pillar has come up, 0 to 1, over its life.
+ *
+ * Up hard, stand, and then **back down into the ground** rather than fading out where it is. A
+ * column that dissolves in mid-air is a sprite being removed; one that sinks is the ground
+ * closing, and the sinking is half of what makes the whole move read as earth rather than as an
+ * effect played on top of it.
+ */
+export function heaved(t: number): number {
+  if (t <= 0) return 0;
+  if (t >= 1) return 0;
+  const Up = 0.3;
+  const Down = 0.6;
+  if (t < Up) {
+    // A touch past full and then settling back, which is the shove at the bottom of it.
+    const u = t / Up;
+    return Math.min(1.12, 1.12 * (1 - (1 - u) * (1 - u)));
+  }
+  if (t < Down) return 1;
+  const d = (t - Down) / (1 - Down);
+  return 1 - d * d;
+}
 /** How wide one pillar's own kill radius is. Small: the ring's coverage comes from the count. */
 const PillarReach = 34;
 /** How far the stone can be thrown. Past this there is no eruption at all rather than a short one. */
@@ -547,6 +590,11 @@ export class Attacks {
       const radius = band === 0 ? 0 : (reach * band) / (bands - 1);
       const count = band === 0 ? 1 : 3 + band * 3;
       const spin = Math.random() * Math.PI * 2;
+      // **Small inside, big outside.** The crater is a heave; the rim is a wall going up. One size
+      // for all of them read as a pattern stamped on the ground rather than as something that
+      // started in one place and got worse on its way out.
+      const grade = bands === 1 ? 1 : band / (bands - 1);
+      const size = PillarReach * (0.42 + 1.05 * grade);
       for (let i = 0; i < count; i++) {
         const angle = spin + (i / count) * Math.PI * 2;
         const pillar = this.push(
@@ -558,10 +606,12 @@ export class Attacks {
           0,
           angle,
           PillarLife,
-          PillarReach,
+          size,
           bite,
         );
-        pillar.age = -band * RingStep;
+        // Its band's turn, plus a little of its own, so a ring comes up as a run of separate
+        // shoves rather than as one lid lifting off.
+        pillar.age = -(band * RingStep + (i / count) * RingStep * 0.7);
       }
     }
     // 冻土: the opened ground stays cold. `fields()` reads these back, so the slow is the same
@@ -1467,19 +1517,18 @@ export class Attacks {
       context.fillRect(-13, -8, 26, 16);
       context.restore();
     } else if (e.kind === 'pillar') {
-      const rise = Math.min(1, e.age / (e.life * 0.22));
-      const fade = Math.max(0, 1 - e.age / e.life);
-      const tall = (24 + e.reach * 0.9) * rise * (0.55 + 0.45 * fade);
-      const wide = e.reach * 0.34 * (0.7 + 0.3 * rise);
+      const stand = heaved(e.life > 0 ? e.age / e.life : 1);
+      if (stand <= 0.001) return;
+      const half = e.reach * HalfWidth;
+      const tall = e.reach * Height * stand;
+      const lean = Math.cos(e.angle) * half * 0.22;
       context.save();
       context.translate(e.x, e.y);
-      context.rotate(e.angle);
       context.beginPath();
-      context.moveTo(-wide * 0.5 - 2, wide * 0.72 + 2);
-      context.lineTo(-wide * 0.2 - 2, -wide * 0.62 - 2);
-      context.lineTo(tall * 0.72, -wide * 0.3 - 2);
-      context.lineTo(tall + 2, wide * 0.1);
-      context.lineTo(tall * 0.5, wide * 0.5 + 2);
+      context.moveTo(-half - 2, 2);
+      context.lineTo(-half * 0.86 + lean - 2, -tall - half * Tilt - 2);
+      context.lineTo(half * 0.86 + lean + 2, -tall - half * Tilt - 2);
+      context.lineTo(half + 2, 2);
       context.closePath();
       context.fill();
       context.restore();
@@ -1836,41 +1885,77 @@ export class Attacks {
     }
 
     if (e.kind === 'pillar') {
-      // Up fast, down slow. The spike is drawn from its own base outward along `angle`, so a ring
-      // of them leans away from the middle and the eruption has a direction.
-      const rise = Math.min(1, e.age / (e.life * 0.22));
-      const tall = (24 + e.reach * 0.9) * rise * (0.55 + 0.45 * fade);
-      const wide = e.reach * 0.34 * (0.7 + 0.3 * rise);
-      // The hole it came out of, drawn first and in the dark. Without it the shard floats and the
-      // ring reads as petals opening rather than as ground breaking — which is what the first
-      // version looked like.
-      context.globalAlpha = 0.5 * fade;
-      context.fillStyle = '#140d04';
+      // A column shoved up out of the ground, drawn for a tilted overhead view: it grows **up the
+      // screen** from where it broke, and `angle` only decides which way its broken top leans.
+      //
+      // It used to be a tapered spike lying flat and pointing outward along `angle`. That reads as
+      // petals opening — nothing about it said the ground went up, because nothing about it was
+      // vertical.
+      const t = e.life > 0 ? e.age / e.life : 1;
+      const stand = heaved(t);
+      if (stand <= 0.001) return;
+      const half = e.reach * HalfWidth;
+      const tall = e.reach * Height * stand;
+      const squat = half * Tilt;
+
+      // The ground it came through, thrown open around the foot. Drawn first and dark, so the
+      // column has something to be standing in.
+      context.globalAlpha = 0.55 * Math.min(1, stand * 2.2);
+      context.fillStyle = '#17100a';
       context.beginPath();
-      context.ellipse(e.x, e.y, wide * 1.25, wide * 0.6, e.angle, 0, Math.PI * 2);
+      context.ellipse(e.x, e.y, half * 1.5, squat * 1.5, 0, 0, Math.PI * 2);
       context.fill();
-      // Dimmer than the rest of the school. Stone catching light is not stone glowing, and at 0.4
-      // the ring came out the colour of a firework.
-      this.bloom(context, e.x, e.y, e.reach * 0.55 * rise, hue, 0.2 * fade);
+
+      this.bloom(context, e.x, e.y - tall * 0.5, e.reach * 0.8 * stand, hue, 0.16);
+
       context.save();
       context.translate(e.x, e.y);
-      context.rotate(e.angle);
-      context.globalAlpha = 0.55 + 0.45 * fade;
-      context.fillStyle = hue.body;
-      // Flat at the base, broken at the tip, and not symmetric about its own axis: four unequal
-      // corners read as a slab that was pushed up, where a tapered lens reads as a leaf.
+      context.globalAlpha = 1;
+
+      // The shaft. Lit down one side and shaded down the other, which is the whole of what makes
+      // a flat quadrilateral read as something with a round side to it.
+      const lean = Math.cos(e.angle) * half * 0.22;
+      const topHalf = half * 0.86;
+      const face = context.createLinearGradient(-half, 0, half, 0);
+      face.addColorStop(0, hue.core);
+      face.addColorStop(0.45, hue.body);
+      face.addColorStop(1, hue.edge);
+      context.fillStyle = face;
       context.beginPath();
-      context.moveTo(-wide * 0.5, wide * 0.72);
-      context.lineTo(-wide * 0.2, -wide * 0.62);
-      context.lineTo(tall * 0.72, -wide * 0.3);
-      context.lineTo(tall, wide * 0.1);
-      context.lineTo(tall * 0.5, wide * 0.5);
+      context.moveTo(-half, 0);
+      context.lineTo(-topHalf + lean, -tall);
+      context.lineTo(topHalf + lean, -tall);
+      context.lineTo(half, 0);
       context.closePath();
       context.fill();
-      context.strokeStyle = hue.core;
-      context.lineWidth = 1.3;
-      context.stroke();
+
+      // Two facets down the length. Stone splits, and without these the shaft is a painted plank.
+      context.globalAlpha = 0.35;
+      context.strokeStyle = hue.edge;
+      context.lineWidth = 1;
+      for (const at of [-0.3, 0.26]) {
+        context.beginPath();
+        context.moveTo(half * at, -squat * 0.4);
+        context.lineTo(topHalf * at + lean, -tall + squat * 0.3);
+        context.stroke();
+      }
+
+      // The top: broken rather than flat, and the one face a tilted overhead view actually sees.
       context.globalAlpha = 1;
+      context.fillStyle = hue.core;
+      context.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const around = (i / 6) * Math.PI * 2 + e.angle;
+        // Unequal corners, fixed per pillar by its own angle, so no two tops are the same and
+        // none of them wobbles frame to frame.
+        const chip = 0.78 + 0.3 * Math.abs(Math.sin(around * 3 + e.angle));
+        const px = Math.cos(around) * topHalf * chip + lean;
+        const py = -tall + Math.sin(around) * topHalf * Tilt * chip;
+        if (i === 0) context.moveTo(px, py);
+        else context.lineTo(px, py);
+      }
+      context.closePath();
+      context.fill();
       context.restore();
       return;
     }
