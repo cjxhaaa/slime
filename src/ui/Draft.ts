@@ -334,6 +334,20 @@ function wrapped(
 function face(card: Card, holding: Held[]): Face {
   const w = words();
 
+  if (card.kind === 'shield') {
+    return {
+      title: w.draft.shieldTitle,
+      // Its own colour, not a school's. 金钟 is not one, and wearing 土's ochre would say it was
+      // still 山岳's — which is exactly the thing it was taken out of.
+      tint: '#cfe3f2',
+      blurb: w.draft.shieldBlurb,
+      pairing: null,
+      kind: w.draft.shield,
+      step: '',
+      jackpot: false,
+    };
+  }
+
   if (card.kind === 'mend') {
     return {
       title: w.draft.mendTitle,

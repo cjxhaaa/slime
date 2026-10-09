@@ -746,6 +746,9 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
   const { mend } = arsenal.take(card);
   if (mend > 0) trial.mend(mend);
   attacks.carry(arsenal.held, arsenal.combos());
+  // 金钟 is not a school, so it does not ride along in `carry`. Pushed separately, from the one
+  // place that knows a card was taken.
+  attacks.guard(arsenal.shields);
   // The rarest card in the mode used to be taken in silence. Say it, and show it.
   if (arsenal.held.length >= Slots) achieve('fullSet');
   if (arsenal.combos().length > before.length) achieve('pair');

@@ -50,10 +50,25 @@ export type Card =
   | { kind: 'take'; school: School }
   | { kind: 'raise'; school: School }
   | { kind: 'evolve'; school: School }
-  | { kind: 'mend' };
+  | { kind: 'mend' }
+  | { kind: 'shield' };
 
 /** What `mend` gives back, in points of 护体. */
 export const MendAmount = 3;
+
+/**
+ * 金钟 — how many layers of shell you can draft, and how long a broken one takes to re-form.
+ *
+ * This used to be 山岳's passive, and it was the only thing in the mode that ate a hit. 山岳 became
+ * an eruption, which left the body with **no defence but moving** — a real change to how a run
+ * plays, and not one anybody asked for. So it comes back on its own card rather than as some
+ * school's second job: you can choose to be harder to kill, and it costs you the exchange you
+ * would have spent getting stronger.
+ *
+ * Three is the cap because a fourth layer stops being insurance and starts being a licence to
+ * stand in the crowd — which is the one thing this mode is built to punish.
+ */
+export const MaxShields = 3;
 
 /**
  * The level a school has to reach before its jackpot can appear.
@@ -75,6 +90,7 @@ export class Arsenal {
   private opening = 0;
 
   start(): void {
+    this.shieldsTaken = 0;
     this.slots = [];
     this.exchanges = 0;
     this.credit = 0;
@@ -163,6 +179,16 @@ export class Arsenal {
       }
     }
 
+    // 金钟 sits in the same pool as everything else, so taking it is a real trade rather than a
+    // free extra — a layer of shell instead of a level. It drops out once it is maxed, which is
+    // what stops a late offer being three of them.
+    //
+    // **Never in the opening four.** Those are owed before the first 邪气 arrives and they are what
+    // makes an unattended run worth nothing; a shell among them is a run that starts with three
+    // schools instead of four, and the checks caught exactly that. It is a mid-run trade, which is
+    // also when you know whether you need it.
+    if (this.opening <= 0 && this.shieldsTaken < MaxShields) pool.push({ kind: 'shield' });
+
     const cards = pick(pool, CardsPerOffer, random);
 
     // The jackpot replaces a card rather than being a fourth one, so the offer is always a choice
@@ -201,6 +227,13 @@ export class Arsenal {
    * `mend` is somebody else's business — 护体 belongs to the run, not to the build — so it comes
    * back as a value rather than being reached for from in here.
    */
+  /** How many layers of 金钟 have been drafted. */
+  get shields(): number {
+    return this.shieldsTaken;
+  }
+
+  private shieldsTaken = 0;
+
   take(card: Card): { mend: number } {
     if (this.opening > 0) this.opening -= 1;
     else {
@@ -227,6 +260,10 @@ export class Arsenal {
         // compete with its own raises for the rest of the run.
         h.level = MaxLevel;
       }
+      return { mend: 0 };
+    }
+    if (card.kind === 'shield') {
+      this.shieldsTaken = Math.min(MaxShields, this.shieldsTaken + 1);
       return { mend: 0 };
     }
     return { mend: MendAmount };

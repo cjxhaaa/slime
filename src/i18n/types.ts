@@ -131,6 +131,10 @@ export interface Dictionary {
     /** The title on the mend card. `mend` is the word for the *kind* of card, which is not the same. */
     mendTitle: string;
     mendBlurb: string;
+    /** 金钟: the word for the kind of card, its title, and what it does. */
+    shield: string;
+    shieldTitle: string;
+    shieldBlurb: string;
     /** `{from}` and `{to}` are stage numerals. */
     levelStep: string;
     /** `{school}` and `{combo}` are substituted. */

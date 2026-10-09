@@ -86,6 +86,7 @@ import { Attacks } from './Attacks.js';
 import type { Battlefield } from './Attacks.js';
 import { PillarShove, QuakeTell } from './Attacks.js';
 import { Depth } from './depth.js';
+import { MaxShields } from './Arsenal.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
 import {
@@ -1287,6 +1288,10 @@ function fight(
     if (spend && kit.due) {
       kit.take(kit.offer(random)[0]);
       arts.carry(kit.held, kit.combos());
+      // 金钟 is not a school, so it does not ride along in `carry`. Without this the harness would
+      // draft a shell and then fight without it, and the run it reports would be a run nobody can
+      // have played.
+      arts.guard(kit.shields);
     }
     seconds += dt;
   }
@@ -2197,6 +2202,85 @@ checkTrue(
     const bad = run.targets().filter((m) => !Number.isFinite(m.x) || !Number.isFinite(m.y));
     check('a shove dead on top of something does not make a NaN', bad.length, 0);
   }
+}
+
+// -------------------------------------------------------------------------------------------------
+// 金钟罩 — the shell, back as a card of its own.
+//
+// It was 山岳's passive and the only thing in the mode that ate a hit. 山岳 became an eruption,
+// which left the body with no defence but moving; this puts it back where you can choose it.
+
+{
+  const kit = new Arsenal();
+  kit.start();
+
+  // 1. **Never in the opening four.** Those are owed before the first 邪气 and they are what makes
+  //    an unattended run worth nothing. A shell among them is a run that starts a school short,
+  //    and that is exactly what the build guards caught when it was not gated.
+  let openingShields = 0;
+  while (kit.openingLeft > 0) {
+    const offered = kit.offer(fightRandom);
+    openingShields += offered.filter((c) => c.kind === 'shield').length;
+    kit.take(offered[0]);
+  }
+  check('金钟 is never in the opening draft', openingShields, 0);
+  check('so the opening still fills every slot', kit.held.length, Slots);
+
+  // 2. And it is offered afterwards, where it is a trade against a level.
+  let laterShields = 0;
+  for (let i = 0; i < 300; i++) {
+    laterShields += kit.offer(fightRandom).filter((c) => c.kind === 'shield').length;
+  }
+  checkTrue(`and is on offer after that: seen ${laterShields} times in 300 offers`, laterShields > 0);
+
+  // 3. Layers stack to a cap. A fourth is a licence to stand in the crowd, which is the one thing
+  //    this mode is built to punish.
+  for (let i = 0; i < MaxShields + 4; i++) kit.take({ kind: 'shield' });
+  check('layers stop at the cap', kit.shields, MaxShields);
+  let capped = 0;
+  for (let i = 0; i < 200; i++) {
+    capped += kit.offer(fightRandom).filter((c) => c.kind === 'shield').length;
+  }
+  check('and it leaves the pool once it is maxed', capped, 0);
+}
+
+{
+  // The shell itself: it eats one hit per layer, the last one throws, and it comes back.
+  let shoved = 0;
+  const field: Battlefield = {
+    targets: () => [],
+    closest: () => null,
+    cull: () => 0,
+    shove: () => {
+      shoved++;
+    },
+  };
+  const kit = new Attacks();
+  const body = { x: 400, y: 300, radius: 46 };
+  kit.update(1 / 120, body, field);
+  checkTrue('nothing absorbs anything without the card', !kit.absorb());
+
+  kit.guard(2);
+  check('two layers drafted is two layers standing', kit.shell, 2);
+  checkTrue('the first hit is eaten', kit.absorb());
+  check('and costs a layer', kit.shell, 1);
+  checkTrue('the second is eaten too', kit.absorb());
+  check('which is the last of them', kit.shell, 0);
+  check('and the last one throws what is near', shoved, 1);
+  checkTrue('a third hit gets through', !kit.absorb());
+
+  // It comes back, and slowly. A shell that re-forms quickly is a place to stand.
+  for (let i = 0; i < 120 * 8; i++) kit.update(1 / 120, body, field);
+  check('eight seconds later it is still down', kit.shell, 0);
+  for (let i = 0; i < 120 * 2; i++) kit.update(1 / 120, body, field);
+  check('and by ten it is whole', kit.shell, 2);
+
+  // A layer taken mid-run is a layer you have now, not one you have in nine seconds.
+  kit.absorb();
+  kit.absorb();
+  check('broken again', kit.shell, 0);
+  kit.guard(3);
+  checkTrue(`drafting another while it is down gives it to you at once: ${kit.shell}`, kit.shell > 0);
 }
 
 // -------------------------------------------------------------------------------------------------

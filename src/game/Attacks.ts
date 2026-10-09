@@ -222,6 +222,21 @@ export function heaved(t: number): number {
 const PillarReach = 34;
 /** How far the stone can be thrown. Past this there is no eruption at all rather than a short one. */
 const QuakeRange = 520;
+
+/**
+ * 金钟罩: seconds a broken shell takes to come back, and how hard it throws when it goes.
+ *
+ * Nine seconds is deliberately long. A shell that re-forms quickly is a licence to stand in the
+ * crowd, and this mode is built on not being able to do that — what it buys is the mistake you
+ * get to survive, not a place to stand.
+ *
+ * The break throws but does **not** kill. Damage is what the nine schools are for; this card's
+ * whole offer is staying alive, and giving it a kill as well would make it the first pick every
+ * time rather than a trade.
+ */
+const ShellBack = 9;
+const ShellShove = 620;
+const ShellReach = 150;
 /**
  * How fast a 剑气 crescent travels, how long it lives, and how wide the cut is.
  *
@@ -361,6 +376,10 @@ export class Attacks {
   private forms = new Set<string>();
 
   reset(): void {
+    this.shellLeft = 0;
+    this.shellLayers = 0;
+    this.shellBack = 0;
+    this.shellBurst = 0;
     this.arena = null;
     this.live = [];
     this.sparks = [];
@@ -674,6 +693,55 @@ export class Attacks {
     }
   }
 
+  /** 金钟罩: layers still unbroken, and the clock on the ones that are. */
+  private shellLeft = 0;
+  private shellLayers = 0;
+  private shellBack = 0;
+  /** Counts down from 1 after a break, for the ring that goes out with it. */
+  private shellBurst = 0;
+
+  /**
+   * How many layers of 金钟 are drafted.
+   *
+   * Pushed in rather than read from `Arsenal`, because this module already takes its holdings that
+   * way and a second path to the same source is a second thing that can disagree with the first.
+   */
+  guard(layers: number): void {
+    if (layers === this.shellLayers) return;
+    // A layer taken mid-run is a layer you have now, not one you have in nine seconds.
+    const gained = Math.max(0, layers - this.shellLayers);
+    this.shellLayers = layers;
+    this.shellLeft = Math.min(layers, this.shellLeft + gained);
+    if (this.shellLeft > 0) this.shellBack = 0;
+  }
+
+  /** Layers currently standing, for anything that wants to draw them. */
+  get shell(): number {
+    return this.shellLeft;
+  }
+
+  /**
+   * 金钟罩, asked before the body takes a hit.
+   *
+   * A question rather than an effect, because the shell has to act *between* the contact and the
+   * damage and everything else in here acts on its own timer. Returns true when a layer ate it.
+   */
+  absorb(): boolean {
+    if (this.shellLeft <= 0) return false;
+    this.shellLeft -= 1;
+    if (this.shellLeft > 0) return true;
+
+    // The last one. It goes out as a shove rather than as a kill — see `ShellBack`.
+    this.shellBack = ShellBack;
+    this.shellBurst = 1;
+    this.arena?.shove(this.bodyX, this.bodyY, ShellReach, ShellShove);
+    // The ring is drawn from `shellBurst` rather than pushed as an effect: an effect would need a
+    // kind, a draw branch and a slot in the live list for half a second, to say one thing that one
+    // counter already says.
+    this.spark(this.bodyX, this.bodyY, 16, '冰', 320);
+    return true;
+  }
+
   private arena: Battlefield | null = null;
   private bodyX = 0;
   private bodyY = 0;
@@ -693,6 +761,12 @@ export class Attacks {
     // them *inside* a 大乘 slime, which reads as the pet being hit rather than as it casting.
     if (body.radius) this.bodyR = body.radius;
     this.clock += dt;
+
+    this.shellBurst = Math.max(0, this.shellBurst - dt * 2);
+    if (this.shellLeft <= 0 && this.shellLayers > 0) {
+      this.shellBack -= dt;
+      if (this.shellBack <= 0) this.shellLeft = this.shellLayers;
+    }
 
     for (const h of this.held) {
       const period = h.evolved ? this.evolvedCadence(h.school) : cadence(h.school, h.level);
@@ -1394,6 +1468,8 @@ export class Attacks {
       this.live.length === 0 &&
       this.sparks.length === 0 &&
       this.surges.length === 0 &&
+      this.shellLeft === 0 &&
+      this.shellBurst === 0 &&
       // 冰魄 is a standing field and is drawn whether or not anything is live. 土 was in this list
       // for the same reason when it was a shell worn on the body; it draws nothing at rest now, so
       // holding it no longer costs a repaint of the whole blast radius every frame of a run.
@@ -1422,6 +1498,8 @@ export class Attacks {
     }
     for (const surge of this.surges) take(surge.x, surge.y, surge.from + 190);
     if (this.has('冰')) take(this.bodyX, this.bodyY, span('冰', this.levelOf('冰')) + 16);
+    if (this.shellLeft > 0) take(this.bodyX, this.bodyY, this.bodyR + 32);
+    if (this.shellBurst > 0) take(this.bodyX, this.bodyY, ShellReach + 8);
     if (left === Infinity) return null;
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
@@ -1448,6 +1526,7 @@ export class Attacks {
 
     context.globalCompositeOperation = 'lighter';
     if (this.has('冰')) this.drawField(context);
+    if (this.shellLeft > 0 || this.shellBurst > 0) this.drawShell(context);
     // 山崩's stones are not drawn here. They are solid things standing on the ground, so the mode
     // paints them in depth order with the 邪气 and the pet — see `collectStones` and `depth.ts`.
     for (const e of this.live) if (e.kind !== 'pillar') this.drawOne(context, e);
@@ -1476,6 +1555,51 @@ export class Attacks {
     for (let i = 0; i < this.live.length; i++) {
       const e = this.live[i];
       if (e.kind === 'pillar' && e.age >= 0) depth.add(e.y, this.paintStone, i);
+    }
+  }
+
+  /**
+   * 金钟罩: one plate per layer, turning slowly around the body.
+   *
+   * Counting the plates is how you know how many hits are left, which is the only number this card
+   * has — and it is a number you read by looking at the pet rather than at a corner of the screen.
+   * Pale rather than coloured: it belongs to no school, and nine of those already own a hue each.
+   */
+  private drawShell(context: CanvasRenderingContext2D): void {
+    const reach = this.bodyR + 26;
+    context.save();
+    context.translate(this.bodyX, this.bodyY);
+    context.rotate(this.clock * 0.55);
+
+    for (let i = 0; i < this.shellLeft; i++) {
+      const at = (i / Math.max(1, this.shellLeft)) * Math.PI * 2;
+      const span = Math.PI / Math.max(2.2, this.shellLeft * 1.15);
+      context.globalAlpha = 0.5;
+      context.strokeStyle = '#cfe3f2';
+      context.lineWidth = 3.5;
+      context.beginPath();
+      context.arc(0, 0, reach, at - span, at + span);
+      context.stroke();
+      // A hotter inner line, so a plate is a plate and not a pencil arc.
+      context.globalAlpha = 0.8;
+      context.strokeStyle = '#ffffff';
+      context.lineWidth = 1.2;
+      context.beginPath();
+      context.arc(0, 0, reach - 2.5, at - span * 0.82, at + span * 0.82);
+      context.stroke();
+    }
+    context.restore();
+
+    // And the moment the last one goes: a ring thrown outward, the same shape the shove has.
+    if (this.shellBurst > 0) {
+      const out = ShellReach * (1.15 - this.shellBurst);
+      context.globalAlpha = this.shellBurst * 0.55;
+      context.strokeStyle = '#dff0ff';
+      context.lineWidth = 1.5 + this.shellBurst * 4;
+      context.beginPath();
+      context.arc(this.bodyX, this.bodyY, Math.max(1, out), 0, Math.PI * 2);
+      context.stroke();
+      context.globalAlpha = 1;
     }
   }
 

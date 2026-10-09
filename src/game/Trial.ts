@@ -440,7 +440,10 @@ export class Trial {
     body: { x: number; y: number; radius: number },
     width: number,
     height: number,
-    guard?: { fields(): { x: number; y: number; radius: number; factor: number }[] },
+    guard?: {
+      absorb(): boolean;
+      fields(): { x: number; y: number; radius: number; factor: number }[];
+    },
   ): void {
     if (this.outcome !== 'running') return;
     this.elapsed += dt;
@@ -533,7 +536,7 @@ export class Trial {
           m.vy = 0;
           if (m.timer <= 0) {
             m.timer = RootPulseSeconds;
-            if (away <= RootPulseReach + body.radius && this.grace <= 0) {
+            if (away <= RootPulseReach + body.radius && this.grace <= 0 && !guard?.absorb()) {
               this.hurt += ContactDamage;
               this.grace = GraceSeconds;
             }
@@ -562,7 +565,7 @@ export class Trial {
 
       if (away <= body.radius + breed.size) {
         // 山岳 first. A shell that only works after the wound is not a shell.
-        if (this.grace <= 0) {
+        if (this.grace <= 0 && !guard?.absorb()) {
           this.hurt += ContactDamage;
           this.grace = GraceSeconds;
         }
