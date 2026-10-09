@@ -167,8 +167,24 @@ const Tilt = 0.42;
  * pass had them at 2.5× height and they stopped being pillars — twelve of them closed into a
  * solid wall with the fight behind it, which is a screen you cannot play through.
  */
-const HalfWidth = 0.38;
-const Height = 1.35;
+const HalfWidth = 0.46;
+const Height = 1.05;
+// Roughly as wide as it is tall. At 0.38 wide and 1.35 tall the slabs converged into a point and
+// the stone came out a stalagmite — which is a cave, not a mountainside. 山石 is blocky.
+
+/** How many vertical facets a stone is built from. Four is a crag; more is gravel. */
+const Facets = 5;
+
+/**
+ * A stone's own grain: the same number every frame, a different one for every stone.
+ *
+ * Hashed from the pillar's angle rather than drawn from `Math.random`, because a shape re-rolled
+ * each frame is not a shape — the first faceted version did exactly that and the rock boiled.
+ */
+function grain(seed: number, n: number): number {
+  const v = Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+}
 
 /**
  * How far a pillar has come up, 0 to 1, over its life.
@@ -1516,22 +1532,8 @@ export class Attacks {
       );
       context.fillRect(-13, -8, 26, 16);
       context.restore();
-    } else if (e.kind === 'pillar') {
-      const stand = heaved(e.life > 0 ? e.age / e.life : 1);
-      if (stand <= 0.001) return;
-      const half = e.reach * HalfWidth;
-      const tall = e.reach * Height * stand;
-      const lean = Math.cos(e.angle) * half * 0.22;
-      context.save();
-      context.translate(e.x, e.y);
-      context.beginPath();
-      context.moveTo(-half - 2, 2);
-      context.lineTo(-half * 0.86 + lean - 2, -tall - half * Tilt - 2);
-      context.lineTo(half * 0.86 + lean + 2, -tall - half * Tilt - 2);
-      context.lineTo(half + 2, 2);
-      context.closePath();
-      context.fill();
-      context.restore();
+      // 山崩's stones are drawn solid and have edges of their own, so they are not in this pass.
+      // It exists to put a dark silhouette under *additive* effects, which have none.
     } else if (e.kind === 'orbit') {
       context.save();
       context.translate(e.x, e.y);
@@ -1892,97 +1894,93 @@ export class Attacks {
     }
 
     if (e.kind === 'pillar') {
-      // A column shoved up out of the ground, drawn for a tilted overhead view: it grows **up the
-      // screen** from where it broke, and `angle` only decides which way its broken top leans.
+      // A stone shoved up out of the ground, drawn for a tilted overhead view.
       //
-      // It used to be a tapered spike lying flat and pointing outward along `angle`. That reads as
-      // petals opening — nothing about it said the ground went up, because nothing about it was
-      // vertical.
+      // Built from `Facets` vertical slabs side by side, each with its **own height**, so the top
+      // is a ragged ridge rather than a lid. That is the whole difference between this and a post:
+      // the shape before it was two straight sides and a flat cap, which is the definition of a
+      // sawn stake, and no amount of colour was going to argue otherwise.
+      //
+      // `angle` is not a heading here — it is the stone's identity, and every irregularity below
+      // is hashed from it so a given stone looks the same for every frame it is standing.
       const t = e.life > 0 ? e.age / e.life : 1;
       const stand = heaved(t);
       if (stand <= 0.001) return;
-      const half = e.reach * HalfWidth;
-      const tall = e.reach * Height * stand;
+      const seed = e.angle;
+      // Some squat, some tall. One set of proportions for all of them is the other half of why a
+      // ring of these read as something stamped rather than something broken.
+      const half = e.reach * HalfWidth * (0.82 + grain(seed, 0) * 0.42);
+      const tall = e.reach * Height * stand * (0.78 + grain(seed, 1) * 0.5);
       const squat = half * Tilt;
+      // Pushed up crooked. Nothing comes out of broken ground plumb.
+      const lean = (grain(seed, 2) - 0.5) * half * 1.1;
+      const taper = 0.74 + grain(seed, 3) * 0.2;
 
-      // The ground it came through, thrown open around the foot.
-      //
-      // Drawn **solid**, which it was not before: this block runs inside the module's additive
-      // pass, and a near-black fill added to what is underneath is the same as not drawing it. The
-      // hole had been invisible since it was written, which is most of why the columns looked like
-      // they were standing on the wallpaper rather than in it.
       context.save();
       context.globalCompositeOperation = 'source-over';
+      // The ground it came through, thrown open around the foot. Solid: this block otherwise runs
+      // inside the module's additive pass, where a near-black fill is the same as not drawing.
       context.globalAlpha = 0.6 * Math.min(1, stand * 2.2);
       context.fillStyle = '#140e06';
       context.beginPath();
-      context.ellipse(e.x, e.y, half * 1.55, squat * 1.55, 0, 0, Math.PI * 2);
+      context.ellipse(e.x, e.y, half * 1.6, squat * 1.6, 0, 0, Math.PI * 2);
       context.fill();
       context.restore();
 
-      this.bloom(context, e.x, e.y - tall * 0.5, e.reach * 0.7 * stand, hue, 0.12);
+      this.bloom(context, e.x, e.y - tall * 0.5, e.reach * 0.7 * stand, hue, 0.1);
 
       context.save();
-      // Stone is opaque. Under the additive pass the shaft was light rather than rock, and two
-      // columns overlapping went white where they crossed.
       context.globalCompositeOperation = 'source-over';
       context.translate(e.x, e.y);
       context.globalAlpha = 1;
 
-      // The shaft. Lit down one side and shaded down the other, which is the whole of what makes
-      // a flat quadrilateral read as something with a round side to it.
-      const lean = Math.cos(e.angle) * half * 0.22;
-      const topHalf = half * 0.86;
-      // Lit from the upper left, which is where the pet's own contact shadow says the light is.
-      // Four stops rather than three: the jump from the lit side to the shaded one is what gives a
-      // flat quadrilateral a round side, and three could not fit both the highlight and the turn.
-      const face = context.createLinearGradient(-half, 0, half, 0);
-      face.addColorStop(0, mix(hue.core, hue.body, 0.35));
-      face.addColorStop(0.3, hue.body);
-      face.addColorStop(0.72, mix(hue.body, hue.edge, 0.55));
-      face.addColorStop(1, hue.edge);
-      context.fillStyle = face;
-      context.beginPath();
-      context.moveTo(-half, 0);
-      context.lineTo(-topHalf + lean, -tall);
-      context.lineTo(topHalf + lean, -tall);
-      context.lineTo(half, 0);
-      context.closePath();
-      context.fill();
+      for (let k = 0; k < Facets; k++) {
+        const left = -half + (2 * half * k) / Facets;
+        const right = -half + (2 * half * (k + 1)) / Facets;
+        // Each slab stops at its own height, which is what makes the ridge ragged.
+        const crestL = -tall * (0.68 + grain(seed, k + 4) * 0.32);
+        const crestR = -tall * (0.68 + grain(seed, k + 5) * 0.32);
+        const topL = left * taper + lean;
+        const topR = right * taper + lean;
 
-      // Two facets down the length. Stone splits, and without these the shaft is a painted plank.
-      context.globalAlpha = 0.35;
+        // Lit from the upper left. A flat shade per slab rather than a gradient across the whole
+        // stone: facets are what a rock has instead of a round side, and shading them separately
+        // is the only thing that says so.
+        const face = k / Math.max(1, Facets - 1);
+        context.fillStyle =
+          face < 0.5
+            ? mix(mix(hue.core, hue.body, 0.4), hue.body, face * 2)
+            : mix(hue.body, hue.edge, (face - 0.5) * 1.5);
+        context.beginPath();
+        context.moveTo(left, 0);
+        context.lineTo(topL, crestL);
+        context.lineTo(topR, crestR);
+        context.lineTo(right, 0);
+        context.closePath();
+        context.fill();
+
+        // The sliver of top surface a tilted view sees over each slab. Without it the stone is a
+        // cut-out; with it, it has thickness.
+        context.fillStyle = mix(hue.core, hue.body, 0.18 + face * 0.4);
+        context.beginPath();
+        context.moveTo(topL, crestL);
+        context.lineTo(topL + squat * 0.35, crestL - squat);
+        context.lineTo(topR + squat * 0.35, crestR - squat);
+        context.lineTo(topR, crestR);
+        context.closePath();
+        context.fill();
+      }
+
+      // One crack down the face, so the slabs read as one stone split rather than as four stones.
+      context.globalAlpha = 0.3;
       context.strokeStyle = hue.edge;
       context.lineWidth = 1;
-      for (const at of [-0.3, 0.26]) {
-        context.beginPath();
-        context.moveTo(half * at, -squat * 0.4);
-        context.lineTo(topHalf * at + lean, -tall + squat * 0.3);
-        context.stroke();
-      }
-
-      // The top: broken rather than flat, and the one face a tilted overhead view actually sees.
-      context.globalAlpha = 1;
-      // The one face pointing at the light, so it is the lightest thing on the column — which is
-      // what says "this is the top" without any of it being drawn in perspective.
-      context.fillStyle = mix(hue.core, hue.body, 0.22);
+      const crackAt = (grain(seed, 9) - 0.5) * half;
       context.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const around = (i / 6) * Math.PI * 2 + e.angle;
-        // Unequal corners, fixed per pillar by its own angle, so no two tops are the same and
-        // none of them wobbles frame to frame.
-        // Hard variation, not a wobble. At 0.78-to-1.08 the top came out all but circular and the
-        // column read as a sawn stump; rock breaks along its own faults, so the corners want to be
-        // genuinely unequal. Keyed to the pillar's own angle so a given column's top is the same
-        // shape every frame it is up.
-        const chip = 0.56 + 0.58 * Math.abs(Math.sin(around * 2.3 + e.angle * 5.1));
-        const px = Math.cos(around) * topHalf * chip + lean;
-        const py = -tall + Math.sin(around) * topHalf * Tilt * chip;
-        if (i === 0) context.moveTo(px, py);
-        else context.lineTo(px, py);
-      }
-      context.closePath();
-      context.fill();
+      context.moveTo(crackAt, -squat * 0.3);
+      context.lineTo(crackAt * taper + lean * 0.6, -tall * 0.62);
+      context.stroke();
+      context.globalAlpha = 1;
       context.restore();
       return;
     }
