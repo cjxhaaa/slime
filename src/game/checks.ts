@@ -73,6 +73,7 @@ import {
   RunSeconds,
   SurvivalBonus,
   ThroughShare,
+  FlingTau,
   Trial,
   arrivalRate,
   harvest,
@@ -82,6 +83,8 @@ import {
   vitality,
 } from './Trial.js';
 import { Attacks } from './Attacks.js';
+import type { Battlefield } from './Attacks.js';
+import { PillarShove, QuakeTell } from './Attacks.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
 import {
@@ -2035,6 +2038,165 @@ checkTrue('筑基 earns the first rung', Feats.forRealm(1) === 'realm1');
 checkTrue('大乘 earns the last', Feats.forRealm(7) === 'realm7');
 checkTrue('and 练气 earns none', Feats.forRealm(0) === null);
 checkTrue('nor does anything past the top', Feats.forRealm(Ascended + 1) === null);
+
+// -------------------------------------------------------------------------------------------------
+// 山崩 — the one move that moves 邪气 instead of killing them.
+//
+// It replaced a shell that ate contact, so two things that used to be free are now claims that have
+// to be checked: that the warning is long enough to step out of, and that the throw is worth
+// carrying a school for. Both are arithmetic over a real run, so both are here.
+
+{
+  // A frame-by-frame run with 土 alone, watching one eruption from the stone leaving to the last
+  // pillar. Driven through the real `Attacks`, not a model of it — the timings are spread across
+  // four constants and a negative age, and a model would be checking my arithmetic twice.
+  const pillars: { at: number; radius: number }[] = [];
+  let shoves = 0;
+  let culls = 0;
+  const centre = { x: 600, y: 400 };
+
+  const field: Battlefield = {
+    targets: () => [
+      { x: 820, y: 400 },
+      { x: 860, y: 400 },
+      { x: 840, y: 440 },
+    ],
+    closest: () => null,
+    cull: (_x: number, _y: number, _radius: number, most: number) => {
+      culls += most;
+      return 0;
+    },
+    shove: (x: number, y: number, _radius: number, _speed: number) => {
+      shoves++;
+      pillars.push({ at: clock, radius: Math.hypot(x - 820, y - 400) });
+    },
+  };
+
+  const kit = new Attacks();
+  kit.carry([{ school: '土', level: 1, evolved: false }], []);
+  let clock = 0;
+  const dt = 1 / 120;
+  for (let i = 0; i < 120 * 7; i++) {
+    kit.update(dt, { x: centre.x, y: centre.y, radius: 46 }, field);
+    clock += dt;
+  }
+
+  checkTrue(`the ground opens: ${shoves} pillars over seven seconds`, shoves > 0);
+  // Every pillar throws, and every pillar also tries to kill — but for almost nothing.
+  check('a pillar hits for one', SPECS['土'].bite, 1);
+  checkTrue(
+    `and the whole move is worth less damage than one 剑气 cut: ${SPECS['土'].bite} against ${SPECS['剑'].bite}`,
+    SPECS['土'].bite <= SPECS['剑'].bite,
+  );
+
+  // From the inside out. The first pillar of an eruption is at the middle; later ones are further.
+  const firstWave = pillars.filter((p) => p.at < pillars[0].at + 0.05);
+  const lastWave = pillars.filter((p) => p.at > pillars[pillars.length - 1].at - 0.05);
+  const near = Math.min(...firstWave.map((p) => p.radius));
+  const far = Math.max(...lastWave.map((p) => p.radius));
+  checkTrue(`it opens outward: first band at ${near.toFixed(0)}px, last at ${far.toFixed(0)}px`, far > near);
+}
+
+// The warning. Half a second between the stone landing and the first pillar — against 邪气 closing
+// at 106 px/s at 大乘, that is about fifty pixels of ground, which is what makes the mark a place
+// you can leave and they cannot.
+check('the ground is marked for half a second before it opens', QuakeTell, 0.5);
+checkTrue(
+  `which the fastest 邪气 covers ${(106 * QuakeTell).toFixed(0)}px of — under half the blast`,
+  106 * QuakeTell < SPECS['土'].reach / 2,
+);
+
+{
+  // The throw, through a whole trial.
+  //
+  // **On its own seed.** The first version of this read the shared `Math.random` and failed three
+  // runs in five — not because the throw did not work, but because 邪气 outside the ring walk into
+  // it during the window and four or five of them is small enough for one to decide the answer.
+  // A guard that fails at random teaches everybody to re-run it, which is worse than not having it.
+  //
+  // Measured as how many are inside a circle, not as where one of them went: `targets` hands out
+  // bare points with no identity, so following "whichever is nearest to where that one was last
+  // frame" hops onto a different 邪气 the moment two cross, and duly reported one being thrown
+  // *towards* the body.
+  let shoveSeed = 20261009;
+  const loaded = Math.random;
+  Math.random = () => {
+    shoveSeed = (shoveSeed * 1103515245 + 12345) & 0x7fffffff;
+    return shoveSeed / 0x7fffffff;
+  };
+
+  const run = new Trial();
+  run.start(3);
+  const body = { x: 600, y: 400, radius: 46 };
+  const dt = 1 / 120;
+  const Ring = 150;
+  // **How far away the nearest one is**, which is the number the body actually lives or dies by,
+  // and the only one that survives having no identities to follow. Counting how many are left
+  // inside a ring was the version before this: it is deterministically *unchanged* by one shove,
+  // because the 邪气 nearest the middle have the furthest to travel to leave and one throw does
+  // not carry them that far. That was the measurement being wrong about the move, not the move
+  // being wrong — but a guard that reports a real effect as nothing is worse than no guard.
+  const nearest = () =>
+    run.targets().reduce((best, m) => Math.min(best, Math.hypot(m.x - body.x, m.y - body.y)), Infinity);
+
+  for (let i = 0; i < 120 * 10; i++) run.update(dt, body, 1200, 800, undefined);
+  const before = nearest();
+  checkTrue(`something is on top of the body: nearest at ${before.toFixed(0)}px`, before < Ring);
+
+  run.shove(body.x, body.y, Ring, PillarShove);
+  for (let i = 0; i < Math.round(0.15 * 120); i++) run.update(dt, body, 1200, 800, undefined);
+  const after = nearest();
+  checkTrue(
+    `and the throw buys ground back: nearest ${before.toFixed(0)}px before, ${after.toFixed(0)}px after`,
+    after > before * 1.5,
+  );
+
+  Math.random = loaded;
+}
+
+{
+  // What one throw is worth, as arithmetic rather than as a fight. An impulse decaying on `FlingTau`
+  // carries exactly `speed * tau` before it is spent, which is the number the whole move is tuned
+  // around — and the one that would quietly change if somebody touched the tau for feel.
+  const speed = PillarShove;
+  let carried = 0;
+  let left = speed;
+  const dt = 1 / 2000;
+  for (let t = 0; t < FlingTau * 8; t += dt) {
+    carried += left * dt;
+    left *= Math.exp(-dt / FlingTau);
+  }
+  check(`a throw at ${speed} px/s carries about ${Math.round(carried)}px`, carried, speed * FlingTau, 1);
+  // Three body widths, and two pillars catching the same 邪气 throw it twice that. The ceiling is
+  // what keeps it a reprieve rather than a stun: thrown further than the screen is wide and the
+  // 邪气 would simply be gone for the rest of the run, which is a kill without the kill count.
+  checkTrue(
+    `which is about three body widths — a reprieve, not a stun: ${Math.round(speed * FlingTau)}px`,
+    speed * FlingTau > 140 && speed * FlingTau < 260,
+  );
+  // And it ends. A throw still pushing after a second would read as a knockdown, which is a much
+  // stronger move than this one is paid for.
+  checkTrue(
+    `and it is spent inside a second: ${Math.round((left / speed) * 100)}% of it left`,
+    left < speed * 0.01,
+  );
+}
+
+// A shove at the exact centre of a pillar must not produce a NaN position. One NaN 邪气 takes the
+// whole fight with it, and dividing by a zero distance is the obvious way to make one.
+{
+  const run = new Trial();
+  run.start(1);
+  const body = { x: 300, y: 300, radius: 46 };
+  for (let i = 0; i < 120 * 5; i++) run.update(1 / 120, body, 900, 600, undefined);
+  const live = run.targets();
+  if (live.length > 0) {
+    run.shove(live[0].x, live[0].y, 200, 500);
+    run.update(1 / 120, body, 900, 600, undefined);
+    const bad = run.targets().filter((m) => !Number.isFinite(m.x) || !Number.isFinite(m.y));
+    check('a shove dead on top of something does not make a NaN', bad.length, 0);
+  }
+}
 
 // -------------------------------------------------------------------------------------------------
 // 追形 — the hop that carries the body to where you are pointing.

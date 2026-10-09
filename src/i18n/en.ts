@@ -45,7 +45,7 @@ export const en: Dictionary = {
     火: { name: 'Pill Fire', blurb: 'Burns where it fell' },
     冰: { name: 'Ice Soul', blurb: 'A cold field; whatever enters slows' },
     风: { name: 'Wind Blade', blurb: 'Turns about the body' },
-    土: { name: 'Mountain', blurb: 'Eats a blow, then throws them off' },
+    土: { name: 'Mountain', blurb: 'Throws a stone; the ground opens and hurls them back' },
     毒: { name: 'Miasma', blurb: 'Fouls the ground you cross' },
     影: { name: 'Shadow Guard', blurb: 'One shade, fighting alone' },
   },
@@ -61,9 +61,9 @@ export const en: Dictionary = {
     火冰: { name: 'Icefire', blurb: 'Anything burning inside the cold field bursts' },
     火毒: { name: 'Burning Miasma', blurb: 'The cloud catches, and takes the rest with it' },
     冰风: { name: 'Windsnow', blurb: 'The blades trail frost, and the frost bites' },
-    冰土: { name: 'Frostplate', blurb: 'The shell re-forms itself after it breaks' },
+    冰土: { name: 'Frozen Ground', blurb: 'Where the pillars rose, the ground stays cold' },
     风毒: { name: 'Windborne Miasma', blurb: 'The cloud is blown wider, and drifts' },
-    土影: { name: 'Shadowed Earth', blurb: 'Two shades rise from where the shell broke' },
+    土影: { name: 'Shadowed Earth', blurb: 'Two shadow guards walk out of the broken ground' },
     毒影: { name: 'Venomed Shade', blurb: 'Every blow the shade lands is poisoned' },
   },
 
@@ -74,7 +74,7 @@ export const en: Dictionary = {
     },
     符土影: {
       name: 'Underworld Seal',
-      blurb: 'The breaking shell raises an array, and three shades step out of it',
+      blurb: 'A ring of talismans rises from the broken ground, and three shadow guards step out of it',
     },
     雷火冰: {
       name: 'Three Calamities',
@@ -86,7 +86,10 @@ export const en: Dictionary = {
     },
     风剑毒: { name: 'Miasma Edge', blurb: 'The crescents carry poison and lay it along their path' },
     毒火影: { name: 'Karmic Fire Ghost', blurb: 'The shades burn as they travel, setting the ground alight' },
-    土冰影: { name: 'Nightplate', blurb: 'The shades stop hunting and turn at your side with the shell' },
+    土冰影: {
+      name: 'Dark Watch',
+      blurb: 'The shadow guards stop roaming and circle the body instead',
+    },
   },
 
   evolutions: {
@@ -96,7 +99,7 @@ export const en: Dictionary = {
     火: { name: 'Sky-Burning Furnace', blurb: 'It never goes out, and it follows you' },
     冰: { name: 'Black Ice Prison', blurb: 'Inside the field, nothing walks' },
     风: { name: 'Gale Array', blurb: 'Three rings of blades, turning against each other' },
-    土: { name: 'Immovable Mountain', blurb: 'The shell no longer breaks; it only throws them off' },
+    土: { name: 'Dragon Turning', blurb: 'The stone splits in three; three patches open in turn' },
     毒: { name: 'Ten Thousand Venoms', blurb: 'The cloud hunts' },
     影: { name: 'Threefold Shade', blurb: 'Three of them' },
   },

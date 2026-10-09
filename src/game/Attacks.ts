@@ -10,10 +10,17 @@
  *
  * ## What it does not own
  *
- * It never touches the 邪气 list. It asks a `Battlefield` what is nearby and tells it what died.
- * The trial owns the fight; this owns what the pet is doing about it. The one place that boundary
- * bends is 山岳, which has to be asked *before* damage is applied rather than after — so the shell
- * is a question the trial asks (`absorb`), not an effect that fires.
+ * It never touches the 邪气 list. It asks a `Battlefield` what is nearby, tells it what died, and
+ * — since 山崩 — tells it what to throw. The trial owns the fight; this owns what the pet is doing
+ * about it.
+ *
+ * ## 山岳 used to be the exception
+ *
+ * It was a shell: a question the trial asked *before* applying damage (`absorb`), the only thing
+ * in the game that ate a hit. It is an eruption now, and nothing absorbs anything. The shell is
+ * meant to come back as its own draftable pick rather than as this school's second job; until it
+ * does, **the body has no defence but moving**, which is a real change to how a run plays and not
+ * a side effect of this one.
  */
 import { clear, mix } from '../slime/colour.js';
 import {
@@ -37,6 +44,15 @@ export interface Battlefield {
   cull(x: number, y: number, radius: number, most: number): number;
   /** The nearest 邪气 within `within`, or null. */
   closest(x: number, y: number, within: number): { x: number; y: number } | null;
+  /**
+   * Throws everything within `radius` outward from a point at `speed` pixels a second.
+   *
+   * The first thing in here that moves a 邪气 instead of killing it. It is deliberately not
+   * damage and not a stun: what it buys is **the ground back**. A press that has closed on the
+   * body is the losing position in this mode, and before this there was no answer to it except
+   * killing fast enough — which is why 山崩 trades almost all of its damage for this.
+   */
+  shove(x: number, y: number, radius: number, speed: number): void;
 }
 
 /** A slowing region the trial reads back each frame. 冰魄 is the only thing that makes them. */
@@ -78,6 +94,14 @@ interface Effect {
    * Two meanings in one number is a bug with a delay on it.
    */
   curve?: number;
+  /**
+   * 山崩: where the stone is headed, fixed when it is thrown.
+   *
+   * Carried rather than recomputed from the velocity on landing, because a stone that lands on
+   * whatever happens to be nearest at that moment is a stone that lands somewhere nobody aimed —
+   * and the half-second warning is only honest if the mark does not move after it is drawn.
+   */
+  at?: { x: number; y: number };
 }
 
 /** How long each motion's effect lives, in seconds. */
@@ -88,13 +112,47 @@ const LIFE: Record<string, number> = {
   zone: 3.2,
   field: 0,
   orbit: 0,
-  shell: 0,
+  quake: 0,
   trail: 2.6,
   ward: 0,
 };
 
 /** How fast an aimed talisman flies. */
 const AimedSpeed = 980;
+
+/**
+ * 山崩, in order: the stone leaves, it lands, the ground waits, the ground opens.
+ *
+ * **The wait is the move.** Half a second between the stone landing and the first pillar is long
+ * enough to be read as a warning and short enough that a 邪气 closing at 106 px/s covers barely
+ * fifty pixels of it — so the mark it leaves is a place you can step out of and they cannot, which
+ * is the whole trade for how little damage it does.
+ *
+ * The ring opens from the inside out at `RingStep` a band, so one eruption reads as a single thing
+ * travelling rather than as several going off at once.
+ */
+const StoneSpeed = 620;
+/** Seconds between the stone landing and the first pillar. */
+export const QuakeTell = 0.5;
+/** Seconds between one band of pillars and the next, outward. */
+const RingStep = 0.075;
+/** How long a single pillar is up. */
+const PillarLife = 0.42;
+/**
+ * How hard a pillar throws what it catches, in pixels a second.
+ *
+ * Against `FlingTau` this is 182 pixels of travel — three body widths, and two pillars
+ * catching the same 邪气 throw it twice that. 520 was tried first and came to 135, which the
+ * checks showed did not clear the ground even at the centre of a blast: a nudge, and this
+ * school has traded away almost all of its damage to buy a throw.
+ */
+export const PillarShove = 700;
+/** A pillar reaches a little past where it kills, so the edge of a blast throws without killing. */
+const ShoveSpread = 1.5;
+/** How wide one pillar's own kill radius is. Small: the ring's coverage comes from the count. */
+const PillarReach = 34;
+/** How far the stone can be thrown. Past this there is no eruption at all rather than a short one. */
+const QuakeRange = 520;
 /**
  * How fast a 剑气 crescent travels, how long it lives, and how wide the cut is.
  *
@@ -227,9 +285,6 @@ export class Attacks {
   /** Seconds since this arsenal started, for anything that wants to turn or waver. */
   private clock = 0;
   private timers = new Map<School, number>();
-  /** 山岳: contacts the shell will still eat, and how long until it re-forms. */
-  private shellLeft = 0;
-  private shellBack = 0;
   /** Everything the current build holds, refreshed whenever the arsenal changes. */
   private held: { school: School; level: number; evolved: boolean }[] = [];
   private combos: Combo[] = [];
@@ -244,8 +299,6 @@ export class Attacks {
     this.lastSurge.clear();
     this.clock = 0;
     this.timers.clear();
-    this.shellLeft = 0;
-    this.shellBack = 0;
     this.held = [];
     this.combos = [];
   }
@@ -388,50 +441,140 @@ export class Attacks {
 
   /** The slowing regions, for the trial to apply to its own units. */
   fields(): Field[] {
-    if (!this.has('冰')) return [];
-    const level = this.levelOf('冰');
-    return [
-      {
+    const out: Field[] = [];
+    if (this.has('冰')) {
+      const level = this.levelOf('冰');
+      out.push({
         x: this.bodyX,
         y: this.bodyY,
         radius: span('冰', level),
         // 玄冰狱 stops them outright; otherwise it is a wade rather than a wall.
         factor: this.evolved('冰') ? 0.12 : 0.55,
-      },
-    ];
+      });
+    }
+    // 冻土's patches. They are live effects rather than a second list, so they expire with their
+    // own drawing and nothing has to remember to clean them up.
+    for (const e of this.live) {
+      if (e.school === '土' && e.kind === 'frost') {
+        out.push({ x: e.x, y: e.y, radius: e.reach, factor: 0.62 });
+      }
+    }
+    return out;
   }
 
   /**
-   * 山岳, asked before the body takes a hit.
+   * 山崩: one stone, thrown at whatever is worth throwing it at.
    *
-   * A question rather than an effect because the shell has to act *between* the contact and the
-   * damage, and everything else in here acts after its own timer. Returns true when the shell ate
-   * it — and bursts when the last one goes.
-   *
-   * Takes no argument, because the trial asks this in the middle of its own update and so cannot
-   * be handing anything over at the time. The battlefield it bursts against is the one from the
-   * last `update`, which is the same object every frame — and null on the very first, before
-   * anything has arrived to burst at.
+   * Aimed at the **crowd** rather than at the nearest thing. A ring that opens outward is worth
+   * exactly as much as the number of 邪气 standing in it, and the nearest one is usually the one
+   * already on top of you — which is the one place an eruption centred there would also be
+   * throwing them straight back through you.
    */
-  absorb(): boolean {
+  private throwStone(level: number): void {
     const battlefield = this.arena;
-    if (!battlefield || !this.has('土') || this.shellLeft <= 0) return false;
-    this.shellLeft -= 1;
-    if (this.shellLeft > 0) return true;
-
-    const level = this.levelOf('土');
+    if (!battlefield) return;
     const reach = span('土', level);
-    battlefield.cull(this.bodyX, this.bodyY, reach, SPECS['土'].bite + level);
-    this.push('土', 'burst', this.bodyX, this.bodyY, 0, 0, 0, 0.5, reach, 0);
-    // A shell breaking should throw pieces of itself. Eighteen, outward, fast.
-    this.spark(this.bodyX, this.bodyY, 18, '土', 330);
+    const at = this.bestGround(battlefield, reach);
+    if (!at) return;
+    // 地龙翻身 breaks the stone into three, landing around the same spot and opening in turn, so
+    // the ground keeps moving for a second instead of all at once.
+    const marks = this.evolved('土') ? 3 : 1;
+    for (let i = 0; i < marks; i++) {
+      const spread = i === 0 ? 0 : reach * 0.85;
+      const angle = (i / marks) * Math.PI * 2 + Math.random();
+      const spot = { x: at.x + Math.cos(angle) * spread, y: at.y + Math.sin(angle) * spread };
+      const away = Math.hypot(spot.x - this.bodyX, spot.y - this.bodyY) || 1;
+      const stone = this.push(
+        '土',
+        'stone',
+        this.bodyX,
+        this.bodyY,
+        ((spot.x - this.bodyX) / away) * StoneSpeed,
+        ((spot.y - this.bodyY) / away) * StoneSpeed,
+        Math.random() * Math.PI * 2,
+        away / StoneSpeed + i * 0.22,
+        reach,
+        0,
+      );
+      stone.at = spot;
+    }
+  }
 
-    // 幽壤: two 影卫 come out of the ground where it broke. 幽都印 makes it three, and lays a ring
-    // of talismans for them to step out of.
+  /**
+   * Where the stone goes: the spot inside range with the most 邪气 within one blast of it.
+   *
+   * Scored over the 邪气 themselves as candidate centres rather than over a grid — the best
+   * centre is always on or near one of them, there are at most a few hundred, and a grid fine
+   * enough to beat that would cost more than the fight does.
+   */
+  private bestGround(battlefield: Battlefield, reach: number): { x: number; y: number } | null {
+    const seen = battlefield.targets();
+    let best: { x: number; y: number } | null = null;
+    let most = 0;
+    for (const candidate of seen) {
+      const out = Math.hypot(candidate.x - this.bodyX, candidate.y - this.bodyY);
+      // Not past throwing distance, and not on top of the body: an eruption underfoot throws the
+      // press onto you from the far side rather than away.
+      if (out > QuakeRange || out < reach * 0.5) continue;
+      let count = 0;
+      for (const other of seen) {
+        if (Math.hypot(other.x - candidate.x, other.y - candidate.y) <= reach) count++;
+      }
+      if (count > most) {
+        most = count;
+        best = { x: candidate.x, y: candidate.y };
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The ground opens: bands of pillars from the middle outward.
+   *
+   * Each band is pushed with a **negative age** so it is inert until its turn comes — the same
+   * trick the staggered rings elsewhere use, and the reason this is one thing travelling rather
+   * than several going off together.
+   *
+   * Damage is deliberately almost nothing (`SPECS` gives it a bite of 1). What a pillar is for is
+   * `shove`, and it throws over a wider circle than it kills in, so the rim of an eruption clears
+   * ground without clearing the field.
+   */
+  private erupt(x: number, y: number, reach: number, level: number): void {
+    const bands = 2 + Math.floor(level / 2);
+    const bite = SPECS['土'].bite;
+    for (let band = 0; band < bands; band++) {
+      // The first band is the stone's own crater: one pillar, dead centre.
+      const radius = band === 0 ? 0 : (reach * band) / (bands - 1);
+      const count = band === 0 ? 1 : 3 + band * 3;
+      const spin = Math.random() * Math.PI * 2;
+      for (let i = 0; i < count; i++) {
+        const angle = spin + (i / count) * Math.PI * 2;
+        const pillar = this.push(
+          '土',
+          'pillar',
+          x + Math.cos(angle) * radius,
+          y + Math.sin(angle) * radius,
+          0,
+          0,
+          angle,
+          PillarLife,
+          PillarReach,
+          bite,
+        );
+        pillar.age = -band * RingStep;
+      }
+    }
+    // 冻土: the opened ground stays cold. `fields()` reads these back, so the slow is the same
+    // one 冰魄 makes rather than a second system — and it is laid where the throw lands them.
+    if (this.paired('土', '冰')) {
+      this.push('土', 'frost', x, y, 0, 0, 0, 3.2, reach, 0);
+    }
+
+    // 幽壤 and 幽都印: the 影卫 come up out of the broken ground, where it broke.
     this.surge('土', '冰');
     this.surge('土', '影');
     this.surgeTriad('幽都印', ['符', '土', '影']);
-    this.surgeTriad('玄冥甲', ['土', '冰', '影']);
+    this.surgeTriad('玄冥卫', ['土', '冰', '影']);
     this.surgeTriad('玄霜壁', ['冰', '风', '土']);
     if (this.triad('幽都印')) {
       for (let i = 0; i < 3; i++) this.spawnWard(i + 7);
@@ -440,8 +583,8 @@ export class Attacks {
         this.push(
           '符',
           'ward-glyph',
-          this.bodyX + Math.cos(angle) * 96,
-          this.bodyY + Math.sin(angle) * 96,
+          x + Math.cos(angle) * 96,
+          y + Math.sin(angle) * 96,
           0,
           0,
           angle,
@@ -453,14 +596,6 @@ export class Attacks {
     } else if (this.paired('土', '影')) {
       for (let i = 0; i < 2; i++) this.spawnWard(i + 7);
     }
-    // 不动明山 never actually breaks — it bursts and is immediately whole again.
-    if (this.evolved('土')) this.shellLeft = this.shellCapacity();
-    else this.shellBack = this.paired('土', '冰') ? SPECS['土'].interval * 0.45 : SPECS['土'].interval;
-    return true;
-  }
-
-  private shellCapacity(): number {
-    return 1 + Math.floor(this.levelOf('土') / 2);
   }
 
   private arena: Battlefield | null = null;
@@ -482,13 +617,6 @@ export class Attacks {
     // them *inside* a 大乘 slime, which reads as the pet being hit rather than as it casting.
     if (body.radius) this.bodyR = body.radius;
     this.clock += dt;
-
-    if (this.has('土')) {
-      if (this.shellLeft <= 0) {
-        this.shellBack -= dt;
-        if (this.shellBack <= 0) this.shellLeft = this.shellCapacity();
-      }
-    }
 
     for (const h of this.held) {
       const period = h.evolved ? this.evolvedCadence(h.school) : cadence(h.school, h.level);
@@ -740,7 +868,10 @@ export class Attacks {
       return;
     }
 
-    if (school === '土') return; // the shell is `absorb`, not a timer
+    if (school === '土') {
+      this.throwStone(level);
+      return;
+    }
 
     if (school === '毒') {
       const moved = Math.hypot(this.bodyX - this.lastDropX, this.bodyY - this.lastDropY);
@@ -1092,8 +1223,8 @@ export class Attacks {
           }
         }
       } else if (e.kind === 'ward') {
-        // 玄冥甲: they stop hunting and stand guard, turning with the shell instead.
-        if (this.triad('玄冥甲')) {
+        // 玄冥卫: they stop hunting and turn around the body instead.
+        if (this.triad('玄冥卫')) {
           const spin = this.clock * 1.1 + ((e.index ?? 0) / 3) * Math.PI * 2;
           const ring = 92;
           e.x = this.bodyX + Math.cos(spin) * ring;
@@ -1143,6 +1274,33 @@ export class Attacks {
             1,
           );
         }
+      } else if (e.kind === 'stone') {
+        // In flight it is inert — it does not cut what it passes. A stone thrown at the ground is
+        // not a projectile, and making it one would quietly give 山崩 back the damage the whole
+        // design trades away.
+        if (e.age < e.life) {
+          e.x += e.vx * dt;
+          e.y += e.vy * dt;
+        } else {
+          const at = e.at ?? { x: e.x, y: e.y };
+          this.push('土', 'quake-tell', at.x, at.y, 0, 0, 0, QuakeTell, e.reach, 0);
+          this.spark(at.x, at.y, 6, '土', 140);
+          continue;
+        }
+      } else if (e.kind === 'quake-tell') {
+        // The warning itself does nothing. Its whole job is to be visible for half a second.
+        if (e.age >= e.life) {
+          this.erupt(e.x, e.y, e.reach, this.levelOf('土'));
+          continue;
+        }
+      } else if (e.kind === 'pillar') {
+        // One pillar, one moment: it strikes on the frame it comes up and is scenery after that.
+        if (e.bite > 0) {
+          battlefield.cull(e.x, e.y, e.reach, e.bite);
+          battlefield.shove(e.x, e.y, e.reach * ShoveSpread, PillarShove);
+          this.spark(e.x, e.y, 3, '土', 210, e.angle, 1.3);
+          e.bite = 0;
+        }
       } else if (e.kind === 'ward-glyph') {
         // 阵符: a standing ring. It bites what walks into it and then that post is spent.
         if (e.bite > 0 && battlefield.cull(e.x, e.y, e.reach, 1) > 0) e.bite -= 1;
@@ -1160,8 +1318,10 @@ export class Attacks {
       this.live.length === 0 &&
       this.sparks.length === 0 &&
       this.surges.length === 0 &&
-      !this.has('冰') &&
-      !this.has('土')
+      // 冰魄 is a standing field and is drawn whether or not anything is live. 土 was in this list
+      // for the same reason when it was a shell worn on the body; it draws nothing at rest now, so
+      // holding it no longer costs a repaint of the whole blast radius every frame of a run.
+      !this.has('冰')
     ) {
       return null;
     }
@@ -1186,7 +1346,6 @@ export class Attacks {
     }
     for (const surge of this.surges) take(surge.x, surge.y, surge.from + 190);
     if (this.has('冰')) take(this.bodyX, this.bodyY, span('冰', this.levelOf('冰')) + 16);
-    if (this.has('土') && this.shellLeft > 0) take(this.bodyX, this.bodyY, 96);
     if (left === Infinity) return null;
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
@@ -1210,12 +1369,10 @@ export class Attacks {
 
     // Structure first, while black still means something.
     for (const e of this.live) this.drawBacking(context, e);
-    if (this.has('土') && this.shellLeft > 0) this.drawShellBacking(context);
 
     context.globalCompositeOperation = 'lighter';
     if (this.has('冰')) this.drawField(context);
     for (const e of this.live) this.drawOne(context, e);
-    if (this.has('土') && this.shellLeft > 0) this.drawShell(context);
     this.drawSurges(context);
     this.drawSparks(context);
 
@@ -1309,6 +1466,23 @@ export class Attacks {
       );
       context.fillRect(-13, -8, 26, 16);
       context.restore();
+    } else if (e.kind === 'pillar') {
+      const rise = Math.min(1, e.age / (e.life * 0.22));
+      const fade = Math.max(0, 1 - e.age / e.life);
+      const tall = (24 + e.reach * 0.9) * rise * (0.55 + 0.45 * fade);
+      const wide = e.reach * 0.34 * (0.7 + 0.3 * rise);
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.beginPath();
+      context.moveTo(-wide * 0.5 - 2, wide * 0.72 + 2);
+      context.lineTo(-wide * 0.2 - 2, -wide * 0.62 - 2);
+      context.lineTo(tall * 0.72, -wide * 0.3 - 2);
+      context.lineTo(tall + 2, wide * 0.1);
+      context.lineTo(tall * 0.5, wide * 0.5 + 2);
+      context.closePath();
+      context.fill();
+      context.restore();
     } else if (e.kind === 'orbit') {
       context.save();
       context.translate(e.x, e.y);
@@ -1328,36 +1502,6 @@ export class Attacks {
       context.restore();
     }
     context.globalAlpha = 1;
-  }
-
-  private drawShellBacking(context: CanvasRenderingContext2D): void {
-    context.save();
-    context.translate(this.bodyX, this.bodyY);
-    context.rotate(this.clock * 0.5);
-    context.globalAlpha = 0.42;
-    context.strokeStyle = 'rgba(14, 10, 26, 0.9)';
-    // The dark side has to agree with the lit side about what shape the shell is. It did not, and
-    // 不动明山's unbroken gold band was sitting on top of six segmented shadows.
-    if (this.evolved('土')) {
-      context.lineWidth = 15;
-      context.beginPath();
-      context.arc(0, 0, 66, 0, Math.PI * 2);
-      context.stroke();
-      context.globalAlpha = 1;
-      context.restore();
-      return;
-    }
-    const plates = 6;
-    for (let i = 0; i < plates * Math.min(this.shellLeft, 3); i++) {
-      const ring = 62 + Math.floor(i / plates) * 11;
-      const from = ((i % plates) / plates) * Math.PI * 2 + 0.16;
-      context.lineWidth = 9;
-      context.beginPath();
-      context.arc(0, 0, ring, from, from + (Math.PI * 2) / plates - 0.32);
-      context.stroke();
-    }
-    context.globalAlpha = 1;
-    context.restore();
   }
 
   /**
@@ -1518,126 +1662,6 @@ export class Attacks {
     context.restore();
   }
 
-  /**
-   * 山岳: plates that turn, lit along their length.
-   *
-   * With 玄冰甲 they are frozen over. Of the fourteen pairings this was the only one with **no
-   * picture at all** — it re-formed the shell faster and that was the whole of it, which meant the
-   * one thing you could observe was that you seemed to be getting hit less. A pairing you can only
-   * detect statistically is a pairing nobody knows they have.
-   */
-  private drawShell(context: CanvasRenderingContext2D): void {
-    const hue = this.hueOf('土');
-    const risen = this.evolved('土');
-    const iced = this.paired('土', '冰');
-    context.save();
-    context.translate(this.bodyX, this.bodyY);
-    context.rotate(this.clock * 0.5);
-
-    // 不动明山 does not break, so it is not drawn as pieces. A closed gold band, unbroken all the
-    // way round, is the whole difference between armour that is holding and armour that is going
-    // to run out — and the segmented version could not say it.
-    if (risen) {
-      context.globalAlpha = 0.34;
-      context.strokeStyle = hue.edge;
-      context.lineWidth = 17;
-      context.beginPath();
-      context.arc(0, 0, 66, 0, Math.PI * 2);
-      context.stroke();
-      context.globalAlpha = 0.85;
-      context.strokeStyle = Crown;
-      context.lineWidth = 6;
-      context.beginPath();
-      context.arc(0, 0, 66, 0, Math.PI * 2);
-      context.stroke();
-      context.globalAlpha = 1;
-      context.strokeStyle = hue.core;
-      context.lineWidth = 1.8;
-      for (const at of [60, 72]) {
-        context.beginPath();
-        context.arc(0, 0, at, 0, Math.PI * 2);
-        context.stroke();
-      }
-      // Studs, so the band has weight rather than being a hoop.
-      context.fillStyle = Crown;
-      for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2;
-        context.beginPath();
-        context.arc(Math.cos(angle) * 66, Math.sin(angle) * 66, 4.2, 0, Math.PI * 2);
-        context.fill();
-      }
-      context.restore();
-      this.mark(context, this.bodyX, this.bodyY - 84, 12);
-      return;
-    }
-
-    const plates = 6;
-    for (let i = 0; i < plates * Math.min(this.shellLeft, 3); i++) {
-      const ring = 62 + Math.floor(i / plates) * 11;
-      const from = ((i % plates) / plates) * Math.PI * 2 + 0.16;
-      const to = from + (Math.PI * 2) / plates - 0.32;
-      context.globalAlpha = 0.34;
-      context.strokeStyle = hue.edge;
-      context.lineWidth = 11;
-      context.beginPath();
-      context.arc(0, 0, ring, from, to);
-      context.stroke();
-      context.globalAlpha = 0.72;
-      context.strokeStyle = hue.body;
-      context.lineWidth = 4.5;
-      context.beginPath();
-      context.arc(0, 0, ring, from, to);
-      context.stroke();
-      context.globalAlpha = 1;
-      context.strokeStyle = hue.core;
-      context.lineWidth = 1.4;
-      context.beginPath();
-      context.arc(0, 0, ring + 2.4, from + 0.04, to - 0.04);
-      context.stroke();
-
-      // 玄冰甲: a rime along the outside of every plate, with frost spurs standing off it.
-      if (iced) {
-        const cold = PALETTE['冰'];
-        context.globalAlpha = 0.8;
-        context.strokeStyle = cold.body;
-        context.lineWidth = 2.6;
-        context.beginPath();
-        context.arc(0, 0, ring + 6.5, from + 0.02, to - 0.02);
-        context.stroke();
-        context.globalAlpha = 1;
-        context.fillStyle = cold.core;
-        for (let spur = 0; spur < 3; spur++) {
-          const at = from + ((spur + 0.5) / 3) * (to - from);
-          const out = ring + 6.5;
-          const tall = 5 + 2.5 * Math.sin(this.clock * 2.4 + spur + i);
-          context.save();
-          context.rotate(at);
-          context.beginPath();
-          context.moveTo(out + tall, 0);
-          context.lineTo(out - 1, 2.6);
-          context.lineTo(out - 1, -2.6);
-          context.closePath();
-          context.fill();
-          context.restore();
-        }
-      }
-    }
-
-    // And the moment it re-forms: the ice knits itself back before the plate does, which is the
-    // part the pairing actually changed.
-    if (iced && this.shellBack > 0 && this.shellBack < 0.5) {
-      const knit = 1 - this.shellBack / 0.5;
-      context.globalAlpha = knit * 0.9;
-      context.strokeStyle = PALETTE['冰'].core;
-      context.lineWidth = 2;
-      context.beginPath();
-      context.arc(0, 0, 62 + (1 - knit) * 26, 0, Math.PI * 2 * knit);
-      context.stroke();
-      context.globalAlpha = 1;
-    }
-    context.restore();
-  }
-
   private drawSparks(context: CanvasRenderingContext2D): void {
     for (const s of this.sparks) {
       const fade = Math.max(0, s.life / s.born);
@@ -1740,6 +1764,114 @@ export class Attacks {
       context.arc(e.x, e.y, r * 1.15, 0, Math.PI * 2);
       context.fill();
       context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'stone') {
+      // Arced, so it is thrown rather than slid. There is no gravity in a plane seen from above,
+      // so the height is a drawing offset and the shadow stays on the ground underneath it — the
+      // same trick the pet's own hop uses, and the only thing that says the stone is in the air.
+      const flight = e.life > 0 ? Math.min(1, e.age / e.life) : 1;
+      const up = Math.sin(flight * Math.PI) * 44;
+      const spin = e.angle + e.age * 11;
+      context.globalAlpha = 0.26;
+      context.fillStyle = '#1a1208';
+      context.beginPath();
+      context.ellipse(e.x, e.y, 9 - up * 0.08, 4 - up * 0.04, 0, 0, Math.PI * 2);
+      context.fill();
+      context.globalAlpha = 1;
+      this.bloom(context, e.x, e.y - up, 22, hue, 0.35);
+      context.save();
+      context.translate(e.x, e.y - up);
+      context.rotate(spin);
+      context.fillStyle = hue.body;
+      context.beginPath();
+      // A lump, not a disc: five unequal corners read as rock at any size.
+      context.moveTo(11, 0);
+      context.lineTo(4, 9);
+      context.lineTo(-8, 7);
+      context.lineTo(-10, -4);
+      context.lineTo(1, -10);
+      context.closePath();
+      context.fill();
+      context.strokeStyle = hue.core;
+      context.lineWidth = 1.4;
+      context.stroke();
+      context.restore();
+      return;
+    }
+
+    if (e.kind === 'quake-tell') {
+      // Half a second of ground that is about to open. It tightens rather than swells: something
+      // closing in on a point reads as a countdown, something spreading reads as an effect that
+      // has already happened.
+      const due = e.life > 0 ? Math.min(1, e.age / e.life) : 1;
+      // Exactly the footprint the pillars will fill, held still for the whole half second. It was
+      // drawn starting a quarter wider and tightening onto this, which made the countdown read
+      // better and **lied about where the blast reached** — a warning you can trust the edge of is
+      // the only reason to draw one. The cracks are the countdown instead.
+      const ring = e.reach;
+      context.globalAlpha = 0.25 + due * 0.5;
+      context.strokeStyle = hue.core;
+      context.lineWidth = 1 + due * 2;
+      context.setLineDash([9, 7]);
+      context.lineDashOffset = -e.age * 26;
+      context.beginPath();
+      context.arc(e.x, e.y, ring, 0, Math.PI * 2);
+      context.stroke();
+      context.setLineDash([]);
+      // Cracks reaching out from the middle, lengthening as the moment comes.
+      context.lineWidth = 1 + due * 1.6;
+      for (let i = 0; i < 6; i++) {
+        const angle = e.angle + (i / 6) * Math.PI * 2 + i * 0.21;
+        const out = ring * (0.2 + 0.78 * due);
+        context.beginPath();
+        context.moveTo(e.x + Math.cos(angle) * 6, e.y + Math.sin(angle) * 6);
+        context.lineTo(e.x + Math.cos(angle) * out, e.y + Math.sin(angle) * out);
+        context.stroke();
+      }
+      context.globalAlpha = 1;
+      this.bloom(context, e.x, e.y, e.reach * 0.5 * due, hue, 0.28 * due);
+      return;
+    }
+
+    if (e.kind === 'pillar') {
+      // Up fast, down slow. The spike is drawn from its own base outward along `angle`, so a ring
+      // of them leans away from the middle and the eruption has a direction.
+      const rise = Math.min(1, e.age / (e.life * 0.22));
+      const tall = (24 + e.reach * 0.9) * rise * (0.55 + 0.45 * fade);
+      const wide = e.reach * 0.34 * (0.7 + 0.3 * rise);
+      // The hole it came out of, drawn first and in the dark. Without it the shard floats and the
+      // ring reads as petals opening rather than as ground breaking — which is what the first
+      // version looked like.
+      context.globalAlpha = 0.5 * fade;
+      context.fillStyle = '#140d04';
+      context.beginPath();
+      context.ellipse(e.x, e.y, wide * 1.25, wide * 0.6, e.angle, 0, Math.PI * 2);
+      context.fill();
+      // Dimmer than the rest of the school. Stone catching light is not stone glowing, and at 0.4
+      // the ring came out the colour of a firework.
+      this.bloom(context, e.x, e.y, e.reach * 0.55 * rise, hue, 0.2 * fade);
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.globalAlpha = 0.55 + 0.45 * fade;
+      context.fillStyle = hue.body;
+      // Flat at the base, broken at the tip, and not symmetric about its own axis: four unequal
+      // corners read as a slab that was pushed up, where a tapered lens reads as a leaf.
+      context.beginPath();
+      context.moveTo(-wide * 0.5, wide * 0.72);
+      context.lineTo(-wide * 0.2, -wide * 0.62);
+      context.lineTo(tall * 0.72, -wide * 0.3);
+      context.lineTo(tall, wide * 0.1);
+      context.lineTo(tall * 0.5, wide * 0.5);
+      context.closePath();
+      context.fill();
+      context.strokeStyle = hue.core;
+      context.lineWidth = 1.3;
+      context.stroke();
+      context.globalAlpha = 1;
+      context.restore();
       return;
     }
 

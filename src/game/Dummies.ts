@@ -119,6 +119,15 @@ export class Dummies {
    * yard readable: you can watch a school's coverage as a pattern of gaps rather than having to
    * count anything.
    */
+  /**
+   * Nothing. 木人桩 are posts in the ground — they do not get thrown.
+   *
+   * Which makes the yard the one place 山崩's knockback cannot be judged, and that is worth
+   * knowing rather than faking: a post that flew would say the move does something to a 邪气 that
+   * it does not, because a 邪气 walks back and a post was never going anywhere.
+   */
+  shove(): void {}
+
   cull(x: number, y: number, radius: number, most: number): number {
     if (most <= 0) return 0;
     const inside: { post: Post; away: number }[] = [];

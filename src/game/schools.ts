@@ -19,7 +19,7 @@
  * | 火 | 丹火 | dropped flame that stays where it fell |
  * | 冰 | 冰魄 | a slowing field around the body |
  * | 风 | 风刃 | blades orbiting the body |
- * | 土 | 山岳 | a shell that eats contact, then bursts |
+ * | 土 | 山岳 | a stone, a held breath, then pillars out of the ground that throw |
  * | 毒 | 瘴气 | a trail left wherever you have been |
  * | 影 | 影卫 | a small one that fights on its own |
  *
@@ -93,8 +93,8 @@ export type Motion =
   | 'field'
   /** Circles the body at a fixed radius. */
   | 'orbit'
-  /** Sits on the body and absorbs contact, then bursts. */
-  | 'shell'
+  /** Throws a stone, waits, then opens the ground in rings that hurl what they catch. */
+  | 'quake'
   /** Laid down along the path the body has taken. */
   | 'trail'
   /** Moves and fights by itself. */
@@ -164,9 +164,9 @@ export const PALETTE: Record<School, Palette> = {
  * The same school, evolved.
  *
  * Every one of the nine evolutions changed a *behaviour* and nothing else — two talismans instead
- * of one, eight lightning hops instead of three, a shell that never breaks. All correct, all
- * invisible: an evolved 符箓 was pixel-for-pixel the ordinary one, just more often. The rarest
- * reward in the mode was the one you could not see you had, which is the exact failure §5 of the
+ * of one, eight lightning hops instead of three, three patches of ground instead of one. All
+ * correct, all invisible: an evolved 符箓 was pixel-for-pixel the ordinary one, just more
+ * often. The rarest reward in the mode was the one you could not see you had, which is the exact failure §5 of the
  * plan exists to prevent.
  *
  * So the palette itself ascends. Hotter, whiter in the middle, and pulled a little toward gold —
@@ -276,12 +276,13 @@ export const SPECS: Record<School, SchoolSpec> = {
   土: {
     key: '土',
     name: '山岳',
-    blurb: '受击不损，碎则荡开',
-    motion: 'shell',
+    blurb: '丢出一石，地开柱起，荡开四方',
+    motion: 'quake',
     tint: '#f2c163',
-    interval: 6,
+    interval: 4.5,
     reach: 128,
-    bite: 4,
+    grow: 0.1,
+    bite: 1,
   },
   毒: {
     key: '毒',
@@ -309,9 +310,9 @@ export const SPECS: Record<School, SchoolSpec> = {
  * The fourteen. Each is a real word, and each one *changes a behaviour* rather than adding a number.
  *
  * A combination that reads "+30% damage" is the invisible stat block again, in a costume. These all
- * do something you can point at: a talisman that forks, a sweep that closes into a full circle, a
- * shell that comes back. The rule I held to while writing them: **you must be able to tell it fired
- * without being told.**
+ * do something you can point at: a talisman that forks, a sweep that closes into a full circle,
+ * ground that stays frozen where it opened. The rule I held to while writing them: **you must be
+ * able to tell it fired without being told.**
  */
 export interface Combo {
   pair: [School, School];
@@ -331,9 +332,9 @@ export const COMBOS: Combo[] = [
   { pair: ['火', '冰'], name: '冰火', effect: '寒域中的敌人被点燃时炸开' },
   { pair: ['火', '毒'], name: '焚瘴', effect: '瘴气会被点着，成片烧起来' },
   { pair: ['冰', '风'], name: '风雪', effect: '风刃拖出霜迹，迹上也伤人' },
-  { pair: ['冰', '土'], name: '玄冰甲', effect: '壳碎后自行重结' },
+  { pair: ['冰', '土'], name: '冻土', effect: '石柱起处冻成寒域' },
   { pair: ['风', '毒'], name: '风毒', effect: '瘴气被吹散得更宽，并会飘' },
-  { pair: ['土', '影'], name: '幽壤', effect: '壳碎时从地里起两个影卫' },
+  { pair: ['土', '影'], name: '幽壤', effect: '石柱起处，地里走出两个影卫' },
   { pair: ['毒', '影'], name: '影毒', effect: '影卫的每一击都带瘴' },
 ];
 
@@ -371,12 +372,12 @@ export interface Triad {
 
 export const TRIADS: Triad[] = [
   { of: ['符', '剑', '雷'], name: '三才剑阵', effect: '符先落地成阵，雷引其上，剑气循阵旋出' },
-  { of: ['符', '土', '影'], name: '幽都印', effect: '壳碎时地上升起符阵，阵中走出三个影卫' },
+  { of: ['符', '土', '影'], name: '幽都印', effect: '石柱起处升起符阵，阵中走出三个影卫' },
   { of: ['雷', '火', '冰'], name: '三灾劫', effect: '地火落处同时降雷，并炸开一圈寒霜' },
   { of: ['冰', '风', '土'], name: '玄霜壁', effect: '风刃不再绕身，钉在寒域边缘结成一道旋转冰墙' },
   { of: ['风', '剑', '毒'], name: '瘴风刃', effect: '剑气裹瘴而行，所过之处留下瘴痕' },
   { of: ['毒', '火', '影'], name: '业火鬼', effect: '影卫浑身燃烧，所过之处成片引火' },
-  { of: ['土', '冰', '影'], name: '玄冥甲', effect: '影卫不再游走，护在身侧随甲而转' },
+  { of: ['土', '冰', '影'], name: '玄冥卫', effect: '影卫不再游走，绕身而转' },
 ];
 
 /** The 三合 a build completes. */
@@ -411,7 +412,7 @@ export const EVOLUTIONS: Record<School, Evolution> = {
   火: { of: '火', name: '焚天炉', effect: '火不熄，且随身而走' },
   冰: { of: '冰', name: '玄冰狱', effect: '寒域之内，行者尽止' },
   风: { of: '风', name: '罡风阵', effect: '三重风刃，反向而转' },
-  土: { of: '土', name: '不动明山', effect: '壳不再碎，只是荡开' },
+  土: { of: '土', name: '地龙翻身', effect: '一石裂为三，三处地先后开' },
   毒: { of: '毒', name: '万毒蛊', effect: '瘴气追着敌人走' },
   影: { of: '影', name: '影卫三重', effect: '三个影卫' },
 };

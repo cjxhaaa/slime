@@ -53,6 +53,15 @@ import {
 /** How long a run lasts, in seconds. */
 export const RunSeconds = 90;
 
+/**
+ * How fast 山崩's throw bleeds off, in seconds.
+ *
+ * A 邪气 thrown at 520 px/s travels about 135 pixels before this has taken it — roughly a body and
+ * a half, far enough to be a reprieve and short enough that it is walking back at you inside a
+ * second. Longer read as a stun, which is a different move and a much stronger one.
+ */
+export const FlingTau = 0.26;
+
 /** 筑基 is realm 1, and the trial is gated there. This maps a realm onto 0 (筑基) through 6 (大乘). */
 export function rung(realm: number): number {
   return Math.max(0, Math.min(6, realm - 1));
@@ -177,6 +186,17 @@ export interface Menace {
   timer: number;
   /** Which way 缠魂 is going round, and the heading 奔煎 committed to. */
   bearing: number;
+  /**
+   * 山崩: thrown outward, decaying on its own clock.
+   *
+   * Its own pair of numbers rather than an impulse added to `vx`/`vy`, because the steering below
+   * is a first-order lag toward the goal velocity — it would eat an impulse written there inside
+   * a tenth of a second, and a throw that is corrected away before it is seen is not a throw. This
+   * is added to the **position** and decays on a tau of its own, so a 邪气 is carried out and then
+   * has to walk back in.
+   */
+  flingX: number;
+  flingY: number;
 }
 
 /**
@@ -325,6 +345,32 @@ export class Trial {
    * effect that hits the three oldest things in a radius instead of the three closest looks broken
    * in exactly the situation where it matters — a crowd pressed against the body.
    */
+  /**
+   * Throws everything inside a radius outward. No damage, no cap on how many.
+   *
+   * Uncapped on purpose, unlike `cull`: the point of the move is to clear a press, and a knockback
+   * that only reached the nearest four would leave exactly the crowd that made it worth using.
+   *
+   * It stacks by addition rather than replacing, so two pillars catching the same 邪气 throw it
+   * twice as far — which is what the overlapping rings of one eruption are for.
+   */
+  shove(x: number, y: number, radius: number, speed: number): void {
+    for (const m of this.menaces) {
+      const dx = m.x - x;
+      const dy = m.y - y;
+      const away = Math.hypot(dx, dy);
+      if (away > radius) continue;
+      // Straight up out of the ground at the exact centre: a divide by zero would be a NaN
+      // position, and one NaN 邪气 takes the whole fight with it.
+      const angle = away < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
+      // Hardest at the pillar, tailing off to nothing at the rim, so the edge of a blast nudges
+      // rather than launching — and the shape of the ring is readable from how far things went.
+      const bite = 1 - (away / radius) * 0.65;
+      m.flingX += Math.cos(angle) * speed * bite;
+      m.flingY += Math.sin(angle) * speed * bite;
+    }
+  }
+
   cull(x: number, y: number, radius: number, most: number): number {
     if (most <= 0) return 0;
     const inside: { index: number; away: number }[] = [];
@@ -393,7 +439,7 @@ export class Trial {
     body: { x: number; y: number; radius: number },
     width: number,
     height: number,
-    guard?: { absorb(): boolean; fields(): { x: number; y: number; radius: number; factor: number }[] },
+    guard?: { fields(): { x: number; y: number; radius: number; factor: number }[] },
   ): void {
     if (this.outcome !== 'running') return;
     this.elapsed += dt;
@@ -486,7 +532,7 @@ export class Trial {
           m.vy = 0;
           if (m.timer <= 0) {
             m.timer = RootPulseSeconds;
-            if (away <= RootPulseReach + body.radius && this.grace <= 0 && !guard?.absorb()) {
+            if (away <= RootPulseReach + body.radius && this.grace <= 0) {
               this.hurt += ContactDamage;
               this.grace = GraceSeconds;
             }
@@ -498,12 +544,24 @@ export class Trial {
       // works, because they overshoot instead of turning on the spot.
       m.vx += (goalX * want - m.vx) * Math.min(1, dt * grip);
       m.vy += (goalY * want - m.vy) * Math.min(1, dt * grip);
+
+      // 山崩's throw, on top of whatever it was doing. 钉煎 is not exempt: it plants itself and
+      // cannot be kited, and being able to shift one is most of the reason to carry 土 at all.
+      if (m.flingX !== 0 || m.flingY !== 0) {
+        const keep = Math.exp(-dt / FlingTau);
+        m.x += m.flingX * dt;
+        m.y += m.flingY * dt;
+        m.flingX *= keep;
+        m.flingY *= keep;
+        if (Math.abs(m.flingX) < 2) m.flingX = 0;
+        if (Math.abs(m.flingY) < 2) m.flingY = 0;
+      }
       m.x += m.vx * dt;
       m.y += m.vy * dt;
 
       if (away <= body.radius + breed.size) {
         // 山岳 first. A shell that only works after the wound is not a shell.
-        if (this.grace <= 0 && !guard?.absorb()) {
+        if (this.grace <= 0) {
           this.hurt += ContactDamage;
           this.grace = GraceSeconds;
         }
@@ -807,6 +865,8 @@ function born(
     y,
     vx: 0,
     vy: 0,
+    flingX: 0,
+    flingY: 0,
     phase: Math.random() * Math.PI * 2,
     arrival: extra.arrival ?? 0,
     health: breed.health,
