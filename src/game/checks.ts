@@ -2200,6 +2200,111 @@ checkTrue(
 }
 
 // -------------------------------------------------------------------------------------------------
+// Did it reach the screen?
+//
+// Every check in this file until now asks what a number is. **None of them asks whether anything
+// was drawn**, and that gap cost a release: 山崩's stones were taken out of the additive pass and
+// put into the depth queue, the 演武场 does not use the depth queue, and so in the yard the stones
+// drew nowhere at all. tsc passed, 394 assertions passed, the bundle built. The only way to find
+// it was to look.
+//
+// A canvas that counts marks instead of making them closes that. It is not a picture test — it
+// cannot say a stone looks like a stone — but it can say the difference between *something* and
+// *nothing*, which is the failure that actually happens.
+
+/** A stand-in canvas that records how many fills and strokes it was asked for. */
+function recorder(): { context: CanvasRenderingContext2D; marks: () => number } {
+  let marks = 0;
+  const gradient = { addColorStop: () => {} };
+  // Numeric and string properties that the drawing code reads back as well as writes.
+  const held: Record<string | symbol, unknown> = {
+    globalAlpha: 1,
+    lineWidth: 1,
+    globalCompositeOperation: 'source-over',
+    filter: 'none',
+  };
+  const context = new Proxy(held, {
+    get(obj, key) {
+      if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => gradient;
+      if (key === 'measureText') return () => ({ width: 10 });
+      if (key === 'fill' || key === 'stroke' || key === 'fillRect' || key === 'strokeRect') {
+        return () => {
+          marks++;
+        };
+      }
+      if (key in obj) return obj[key];
+      return () => {};
+    },
+    set(obj, key, value) {
+      obj[key] = value;
+      return true;
+    },
+  }) as unknown as CanvasRenderingContext2D;
+  return { context, marks: () => marks };
+}
+
+{
+  const yard = { x: 600, y: 400, radius: 46 };
+  const mob = [
+    { x: 760, y: 330 },
+    { x: 790, y: 360 },
+    { x: 770, y: 390 },
+  ];
+  const field: Battlefield = {
+    targets: () => mob,
+    closest: () => null,
+    cull: () => 0,
+    shove: () => {},
+  };
+  const kit = new Attacks();
+  kit.carry([{ school: '土', level: 3, evolved: false }], []);
+
+  // Run until the ground has opened and stones are standing.
+  let standing = 0;
+  let clock = 0;
+  for (let i = 0; i < 120 * 3 && standing === 0; i++) {
+    kit.update(1 / 120, yard, field);
+    clock += 1 / 120;
+    const probe = new Depth();
+    kit.collectStones(probe);
+    standing = probe.size;
+  }
+  checkTrue(`stones are standing ${clock.toFixed(2)}s in: ${standing} of them`, standing > 0);
+
+  // 1. The depth pass draws them. This is the assertion the missing yard would have failed.
+  const sorted = recorder();
+  const queue = new Depth();
+  kit.collectStones(queue);
+  queue.paint(sorted.context);
+  checkTrue(`painting the queue puts ink down: ${sorted.marks()} marks`, sorted.marks() > 0);
+
+  // 2. And the additive pass does **not**, because they are solid things standing on the ground
+  //    and something else may have to cover them. Drawn in both places they would be painted
+  //    twice, once in the wrong order.
+  const flat = recorder();
+  const bare = new Attacks();
+  bare.carry([{ school: '土', level: 3, evolved: false }], []);
+  let alone = 0;
+  for (let i = 0; i < 120 * 3; i++) {
+    bare.update(1 / 120, yard, field);
+    const probe = new Depth();
+    bare.collectStones(probe);
+    if (probe.size > 0) {
+      const before = flat.marks();
+      bare.draw(flat.context);
+      alone = flat.marks() - before;
+      break;
+    }
+  }
+  // Not zero: the warning ring, the sparks and the stone in flight are all still in that pass.
+  // What matters is that it is far less than the queue lays down for sixteen stones.
+  checkTrue(
+    `and the additive pass leaves the stones alone: ${alone} marks against ${sorted.marks()}`,
+    alone < sorted.marks() / 2,
+  );
+}
+
+// -------------------------------------------------------------------------------------------------
 // 深浅 — what covers what, in a plane seen from above.
 //
 // The mode drew in fixed layers, which is right exactly half the time: a 邪气 below the pet on

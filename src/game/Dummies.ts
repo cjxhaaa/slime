@@ -50,6 +50,8 @@ export interface Rect {
   height: number;
 }
 
+import type { Depth, Painter } from './depth.js';
+
 export class Dummies {
   private posts: Post[] = [];
   private clock = 0;
@@ -190,70 +192,86 @@ export class Dummies {
     }
     context.setLineDash([]);
 
-    for (const post of this.posts) {
-      const felled = post.down > 0;
-      const tip = felled ? 1 - post.down / DownSeconds : 1;
-      const wobble = Math.sin(this.clock * 26) * post.shake * 0.14;
-
-      // The flash of being struck, drawn before the post so it does not wash the post out. This is
-      // the single most useful thing on the screen in here: it is how you read a school's coverage
-      // — which posts lit up, and therefore how far and how wide it actually reached.
-      if (post.shake > 0) {
-        const glow = context.createRadialGradient(post.x, post.y - 12, 0, post.x, post.y - 12, 34);
-        glow.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
-        glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        context.globalAlpha = post.shake;
-        context.fillStyle = glow;
-        context.beginPath();
-        context.arc(post.x, post.y - 12, 34, 0, Math.PI * 2);
-        context.fill();
-        context.globalAlpha = 1;
-      }
-
-      context.save();
-      context.translate(post.x, post.y);
-      // Falls over and gets back up rather than vanishing: something that disappears reads as a
-      // kill, and nothing in here is supposed to be dying.
-      context.rotate(felled ? post.lean * (1 - tip) * 1.35 + wobble : wobble);
-      // And dims while it is down, so "which ones are currently out" is legible at a glance across
-      // thirty of them.
-      context.globalAlpha = felled ? 0.45 + 0.55 * tip : 1;
-
-      context.save();
-      context.globalAlpha *= 0.25;
-      context.fillStyle = '#000000';
-      context.beginPath();
-      context.ellipse(0, 19, 15, 5, 0, 0, Math.PI * 2);
-      context.fill();
-      context.restore();
-
-      // The stake, with a lit side so it is not a flat bar.
-      context.fillStyle = '#7a5733';
-      context.fillRect(-5.5, -12, 11, 32);
-      context.fillStyle = '#a37b49';
-      context.fillRect(-5.5, -12, 4, 32);
-
-      // The straw head.
-      context.fillStyle = '#c9a463';
-      context.beginPath();
-      context.arc(0, -19, 14, 0, Math.PI * 2);
-      context.fill();
-      context.fillStyle = '#e6c88c';
-      context.beginPath();
-      context.arc(-4, -23, 8, 0, Math.PI * 2);
-      context.fill();
-      // Two bands, so it reads as bound straw rather than as a ball.
-      context.strokeStyle = 'rgba(84, 58, 30, 0.85)';
-      context.lineWidth = 1.8;
-      context.beginPath();
-      context.moveTo(-12, -22);
-      context.lineTo(12, -17);
-      context.moveTo(-12, -16);
-      context.lineTo(12, -21);
-      context.stroke();
-      context.restore();
-    }
     context.restore();
+  }
+
+  /**
+   * One post.
+   *
+   * Split out of `draw` for the same reason the trial split its 邪气: the yard draws 山崩,
+   * and a stone standing in front of a post has to be painted after it.
+   */
+  drawPost(context: CanvasRenderingContext2D, index: number): void {
+    const post = this.posts[index];
+    if (!post) return;
+    const felled = post.down > 0;
+    const tip = felled ? 1 - post.down / DownSeconds : 1;
+    const wobble = Math.sin(this.clock * 26) * post.shake * 0.14;
+
+    // The flash of being struck, drawn before the post so it does not wash the post out. This is
+    // the single most useful thing on the screen in here: it is how you read a school's coverage
+    // — which posts lit up, and therefore how far and how wide it actually reached.
+    if (post.shake > 0) {
+      const glow = context.createRadialGradient(post.x, post.y - 12, 0, post.x, post.y - 12, 34);
+      glow.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+      glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      context.globalAlpha = post.shake;
+      context.fillStyle = glow;
+      context.beginPath();
+      context.arc(post.x, post.y - 12, 34, 0, Math.PI * 2);
+      context.fill();
+      context.globalAlpha = 1;
+    }
+
+    context.save();
+    context.translate(post.x, post.y);
+    // Falls over and gets back up rather than vanishing: something that disappears reads as a
+    // kill, and nothing in here is supposed to be dying.
+    context.rotate(felled ? post.lean * (1 - tip) * 1.35 + wobble : wobble);
+    // And dims while it is down, so "which ones are currently out" is legible at a glance across
+    // thirty of them.
+    context.globalAlpha = felled ? 0.45 + 0.55 * tip : 1;
+
+    context.save();
+    context.globalAlpha *= 0.25;
+    context.fillStyle = '#000000';
+    context.beginPath();
+    context.ellipse(0, 19, 15, 5, 0, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+
+    // The stake, with a lit side so it is not a flat bar.
+    context.fillStyle = '#7a5733';
+    context.fillRect(-5.5, -12, 11, 32);
+    context.fillStyle = '#a37b49';
+    context.fillRect(-5.5, -12, 4, 32);
+
+    // The straw head.
+    context.fillStyle = '#c9a463';
+    context.beginPath();
+    context.arc(0, -19, 14, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = '#e6c88c';
+    context.beginPath();
+    context.arc(-4, -23, 8, 0, Math.PI * 2);
+    context.fill();
+    // Two bands, so it reads as bound straw rather than as a ball.
+    context.strokeStyle = 'rgba(84, 58, 30, 0.85)';
+    context.lineWidth = 1.8;
+    context.beginPath();
+    context.moveTo(-12, -22);
+    context.lineTo(12, -17);
+    context.moveTo(-12, -16);
+    context.lineTo(12, -21);
+    context.stroke();
+    context.restore();
+  }
+
+  private readonly paintPost: Painter = (context, index) => this.drawPost(context, index);
+
+  /** Queues every post for depth sorting, the same way the trial queues 邪气. */
+  collect(depth: Depth): void {
+    for (let i = 0; i < this.posts.length; i++) depth.add(this.posts[i].y, this.paintPost, i);
   }
 
   /** Where the yard is centred, averaged off the posts. */

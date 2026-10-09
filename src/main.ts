@@ -1619,11 +1619,9 @@ function frame(now: number): void {
     //
     // The ground marks go down first — the ring a 钉煎 is about to pulse, 山崩's dashed warning,
     // the mark under the cursor — then everything solid in depth order, then the light.
-    const sorted = inTrial && arena === null;
     if (inTrial) {
       if (arena !== null) arena.dummies.draw(context);
       else trial.draw(context);
-      if (!sorted) attacks.draw(context);
     }
     // Under the 邪气 and under the body: it is a mark on the ground, and anything that draws
     // over it is a thing in the world. Over the attacks would make it look like a target being
@@ -1631,9 +1629,14 @@ function frame(now: number): void {
     if (ghostAt) slime.drawGhost(context, ghostAt.x, ghostAt.y);
     motes.draw(context, slime.bodyColour);
     glyphs.draw(context, slime.bodyColour);
-    if (sorted) {
+    if (inTrial) {
+      // **The yard is in this too.** It was left out at first, on the grounds that posts do not
+      // move — and since the stones had been taken out of the additive pass and only put back in
+      // this one, they then drew in the trial and *nowhere at all* in the 演武场. Every check
+      // passed, because not one of them asks whether something reached the screen.
       depth.reset();
-      trial.collect(depth);
+      if (arena !== null) arena.dummies.collect(depth);
+      else trial.collect(depth);
       attacks.collectStones(depth);
       // The pet goes in at its own feet. `drawY` is the lifted, drawn position — mid-hop that is
       // well above the ground it is being sorted against, and a slime at the top of a bound would
