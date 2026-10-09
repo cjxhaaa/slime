@@ -176,13 +176,13 @@ const Height = 1.05;
 const Facets = 5;
 
 /**
- * How many bands of strata run across a stone's face.
+ * How many extra splits run up a stone's face, on top of the seams between its facets.
  *
- * Three, because a stone is about forty-five pixels across on screen and five bands over that put
- * them ten pixels apart — at which point the face stops reading as rock and starts reading as
- * basketweave. The texture has to survive being small, which is the size it is actually seen at.
+ * Kept low for the reason the horizontal bands before them had to be: a stone is about forty-five
+ * pixels across on screen, and anything finer than this stops reading as rock and starts reading
+ * as hatching. The texture has to survive being small, which is the size it is actually seen at.
  */
-const Strata = 3;
+const Splits = 3;
 
 /**
  * A stone's own grain: the same number every frame, a different one for every stone.
@@ -1952,7 +1952,7 @@ export class Attacks {
           foot,
           head: foot * taper + lean,
           // Each slab stops at its own height, which is what makes the ridge ragged.
-          crest: -tall * (0.79 + grain(seed, k + 4) * 0.21),
+          crest: -tall * (0.74 + grain(seed, k + 4) * 0.26),
         });
       }
 
@@ -1961,8 +1961,10 @@ export class Attacks {
         const b = slabs[k + 1];
         // Lit from the upper left. A flat shade per slab rather than a gradient across the whole
         // stone: facets are what a rock has instead of a round side, and shading them separately
-        // is the only thing that says so.
-        const face = k / Math.max(1, Facets - 1);
+        // is the only thing that says so — **plus a step of its own per facet**, because a smooth
+        // ramp across five of them is exactly how a cylinder is shaded.
+        const ramp = k / Math.max(1, Facets - 1);
+        const face = Math.max(0, Math.min(1, ramp + (grain(seed, 130 + k) - 0.5) * 0.34));
         context.fillStyle =
           face < 0.5
             ? mix(mix(hue.core, hue.body, 0.4), hue.body, face * 2)
@@ -1987,12 +1989,19 @@ export class Attacks {
         context.fill();
       }
 
-      // 山壁. Strata across the face, and a fissure or two down it.
+      // 山壁. Vertical jointing — the stone is a bundle of upright prisms, not a layered one.
       //
       // This is what stops a stone reading as a cylinder. Shading five facets says there are
-      // facets only if something crosses them — on a blank face the eye reads the shading as a
-      // round side lit from one edge, which is exactly what it did. A stratum **bends at every
-      // seam**, and a line that bends is a line lying on flat planes.
+      // facets only if something marks them; on a blank face the eye reads the shading as a round
+      // side lit from one edge, which is exactly what it did.
+      //
+      // It was bands running *across* the face first. Those are bedding — sedimentary, soft, and
+      // at the size this is actually seen at they read as wood grain. What says 山石 is the
+      // up-and-down split: a hard groove at every seam, so each facet is its own column of rock
+      // standing against the next one.
+      //
+      // Everything here follows `taper` and `lean`, so the joints converge the way the stone does
+      // rather than running parallel up a shape that is narrowing.
       //
       // Clipped to the stone's own silhouette, so nothing has to be fitted to the ragged top by
       // hand.
@@ -2004,41 +2013,45 @@ export class Attacks {
       context.closePath();
       context.clip();
 
-      context.lineCap = 'round';
-      for (let b = 0; b < Strata; b++) {
-        // Uneven spacing. Evenly spaced bands are a ruled page, not a rock face.
-        //
-        // Flat across the stone, with only a kink at each seam. Hung off each slab's own
-        // crest instead, every band traced the ragged top — five copies of the same chevron,
-        // which reads as a knitted pattern rather than as rock laid down in layers.
-        const at = 0.2 + (b / Strata) * 0.62 + grain(seed, 20 + b) * 0.1;
-        context.globalAlpha = 0.13 + grain(seed, 40 + b) * 0.14;
-        context.strokeStyle = mix(hue.edge, '#241506', 0.35);
-        context.lineWidth = 0.9 + grain(seed, 50 + b) * 1.4;
+      context.lineCap = 'butt';
+
+      // The seams between the facets, cut hard. A dark groove with a thin lit edge beside it on
+      // the sunward side: one line alone is a scratch, and it is the pair that reads as an arris
+      // with light catching along it.
+      for (let k = 1; k < Facets; k++) {
+        const slab = slabs[k];
+        context.globalAlpha = 0.34;
+        context.strokeStyle = mix(hue.edge, '#180d03', 0.45);
+        context.lineWidth = 1.3;
         context.beginPath();
-        for (let k = 0; k <= Facets; k++) {
-          const slab = slabs[k];
-          const px = slab.foot + (slab.head - slab.foot) * at;
-          // Each seam gets its own step, so a band breaks where the stone does.
-          const py = -tall * at + (grain(seed, 60 + b * 8 + k) - 0.5) * tall * 0.055;
-          if (k === 0) context.moveTo(px, py);
-          else context.lineTo(px, py);
-        }
+        context.moveTo(slab.foot, 0);
+        context.lineTo(slab.head, slab.crest);
+        context.stroke();
+
+        context.globalAlpha = 0.3;
+        context.strokeStyle = mix(hue.core, hue.body, 0.25);
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(slab.foot - 1.8, 0);
+        context.lineTo(slab.head - 1.8, slab.crest);
         context.stroke();
       }
 
-      // One fissure, cutting down across the bedding rather than along it. Two of them crossed
-      // on about half the stones and drew an X, which is a mark, not a crack.
-      context.strokeStyle = mix(hue.edge, '#1b0f04', 0.5);
-      for (let f = 0; f < 1; f++) {
-        const from = (grain(seed, 9 + f * 3) - 0.5) * half * 1.6;
-        const drop = 0.3 + grain(seed, 11 + f * 3) * 0.45;
-        context.globalAlpha = 0.3;
-        context.lineWidth = 1.1;
+      // Splits that do not reach the top: short, angular, kinked once. Rock breaks in facets, and
+      // a kinked line is the cheapest way to say a face changed plane halfway up.
+      for (let g = 0; g < Splits; g++) {
+        const foot = -half + 2 * half * grain(seed, 70 + g);
+        const head = foot * taper + lean;
+        const reaches = 0.42 + grain(seed, 80 + g) * 0.5;
+        const bend = 0.3 + grain(seed, 90 + g) * 0.34;
+        const skew = (grain(seed, 100 + g) - 0.5) * half * 0.3;
+        context.globalAlpha = 0.16 + grain(seed, 110 + g) * 0.16;
+        context.strokeStyle = mix(hue.edge, '#180d03', 0.3);
+        context.lineWidth = 0.9 + grain(seed, 120 + g) * 0.9;
         context.beginPath();
-        context.moveTo(from, -tall * (drop + 0.3));
-        context.lineTo(from + (grain(seed, 13 + f * 3) - 0.5) * half * 0.7, -tall * drop);
-        context.lineTo(from + (grain(seed, 15 + f * 3) - 0.5) * half * 0.9, -tall * drop * 0.3);
+        context.moveTo(foot, 0);
+        context.lineTo(foot + (head - foot) * bend + skew, -tall * bend);
+        context.lineTo(foot + (head - foot) * reaches, -tall * reaches);
         context.stroke();
       }
       context.globalAlpha = 1;
