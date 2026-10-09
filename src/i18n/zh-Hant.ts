@@ -157,6 +157,10 @@ export const zhHant: Dictionary = {
   },
 
   trial: {
+    pauseTitle: '停手',
+    pauseNote: '現在走，這一趟不算數。',
+    pauseResume: '接著打',
+    pauseLeave: '不打了',
     survived: '歷練已成\n除邪 {kills} · 修為大進',
     overwhelmed: '護體盡碎\n除邪 {kills} · 修為略進',
     arena: '演武已畢\n中樁 {kills} · 修為無增',

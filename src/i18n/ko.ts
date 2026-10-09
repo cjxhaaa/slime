@@ -161,6 +161,10 @@ export const ko: Dictionary = {
   },
 
   trial: {
+    pauseTitle: '멈춤',
+    pauseNote: '지금 나가면 이번 판은 셈에 들지 않는다.',
+    pauseResume: '계속',
+    pauseLeave: '나가기',
     survived: '시련을 마쳤다\n퇴마 {kills} · 공력이 크게 늘었다',
     overwhelmed: '호체가 다 깨졌다\n퇴마 {kills} · 공력이 조금 늘었다',
     arena: '연무를 마쳤다\n명중 {kills} · 공력은 늘지 않았다',

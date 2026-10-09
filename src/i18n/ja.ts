@@ -162,6 +162,10 @@ export const ja: Dictionary = {
   },
 
   trial: {
+    pauseTitle: '手を止めた',
+    pauseNote: 'ここで去れば、この一戦は無かったことになる。',
+    pauseResume: '続ける',
+    pauseLeave: 'やめる',
     survived: '歴練成れり\n除魔 {kills} · 修為大いに進む',
     overwhelmed: '護体ことごとく砕けたり\n除魔 {kills} · 修為やや進む',
     arena: '演武終われり\n的中 {kills} · 修為は増えず',

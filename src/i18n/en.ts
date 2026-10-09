@@ -186,6 +186,10 @@ export const en: Dictionary = {
   },
 
   trial: {
+    pauseTitle: 'Stopped',
+    pauseNote: 'Leave now and this run does not count.',
+    pauseResume: 'Keep going',
+    pauseLeave: 'Leave',
     survived: 'Trial complete\n{kills} slain · progress much advanced',
     overwhelmed: 'The guard is wholly shattered\n{kills} slain · progress a little advanced',
     arena: 'Practice over\n{kills} posts struck · progress unchanged',

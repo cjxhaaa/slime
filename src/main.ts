@@ -33,6 +33,7 @@ import {
   words,
 } from './i18n';
 import { Draft } from './ui/Draft';
+import { Pause } from './ui/Pause';
 import { requirement, stageName } from './game/realms';
 import { allowSaving, loadSave, requestSave, type SaveState } from './save';
 import { Bubble } from './ui/Bubble';
@@ -649,6 +650,14 @@ let failUntil = 0;
  * them the wrong thing about what the ladder is for.
  */
 let inTrial = false;
+/**
+ * The pause panel, and the only thing that stops a run without ending it.
+ *
+ * Held here rather than inside `Trial` because pausing is not part of the fight — it is the
+ * caller declining to advance it, the same way the draft does. `Trial` has no idea this exists
+ * and does not need one.
+ */
+const pause = new Pause();
 /** What to say once a run is over, and until when. */
 let trialSaid: string | null = null;
 let trialUntil = 0;
@@ -662,13 +671,19 @@ function trialUnlocked(): boolean {
 }
 
 function enterTrial(width: number, height: number): void {
-  achieve('trialFirst');
   if (inTrial || !trialUnlocked()) return;
+  // After the guard, not before it. A 初入历练 awarded by a call that then declined to start a
+  // run is a record of something that did not happen, which is the one thing 见闻 is for.
+  achieve('trialFirst');
   inTrial = true;
   trialReturn = { x: slime.x, y: slime.y };
   slime.planar = true;
   slime.centreIn(width, height);
   trial.start(cultivation.realm);
+  // Esc is borrowed for the length of the run and handed straight back by `leaveTrial`. It is a
+  // system-wide registration — see `watch_escape` in lib.rs for why it is not the keyboard hook,
+  // and why it is not held permanently.
+  void invoke('watch_escape', { on: true }).catch(() => {});
   arsenal.start();
   attacks.reset();
   killsSeen = 0;
@@ -800,9 +815,12 @@ function leaveTrial(): void {
   arena = null;
   draft.hide();
   attacks.reset();
+  pause.hide();
+  void invoke('watch_escape', { on: false }).catch(() => {});
   // Before `planar` goes: `pursue` is a no-op off the plane, so clearing it afterwards would
   // leave a hop running with gravity switched back on under it.
   slime.pursue(null);
+  slime.showVitality(null);
   slime.planar = false;
   if (trialReturn) slime.teleportTo(trialReturn.x, trialReturn.y);
   trialReturn = null;
@@ -1229,6 +1247,7 @@ function frame(now: number): void {
     volley.busy ||
     inTrial ||
     draft.isOpen ||
+    pause.isOpen ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
     menu.isOpen ||
     (cursor !== null && slime.hitTest(cursor.x, cursor.y));
@@ -1254,7 +1273,7 @@ function frame(now: number): void {
   // Paused with everything else while a draft is up: the cards are the one thing in this mode
   // that stops the clock, and a body still crossing the screen behind them would arrive
   // somewhere nobody chose.
-  const chasing = inTrial && arena === null && !draft.isOpen;
+  const chasing = inTrial && arena === null && !draft.isOpen && !pause.isOpen;
   slime.pursue(chasing ? cursor : null);
   for (let i = 0; i < steps; i++) {
     slime.update(STEP, { width, height, cursor });
@@ -1309,7 +1328,10 @@ function frame(now: number): void {
   // paused run earns nothing, and that is what makes an unattended trial worthless without a
   // single number being tuned for it.
   draft.advance(elapsed);
-  if (inTrial && !draft.isOpen) {
+  pause.advance(elapsed);
+  // Paused runs earn nothing, for the same reason unattended ones do: `through` counts the
+  // seconds `Trial.update` was given, and a panel that is up is seconds it was not given.
+  if (inTrial && !draft.isOpen && !pause.isOpen) {
     const body = { x: slime.x, y: slime.y, radius: slime.blob.restRadius };
     if (arena !== null) {
       // The yard. No arrivals, no contact, no clock — and `Dummies` implements the same
@@ -1319,6 +1341,9 @@ function frame(now: number): void {
     } else {
       trial.update(elapsed, body, width, height, attacks);
       attacks.update(elapsed, body, trial);
+      // 护体, onto the body where the eye already is. Fed every frame rather than on a change,
+      // because the alternative is a second place that has to know when damage lands.
+      slime.showVitality(trial.integrity);
 
       for (let i = killsSeen; i < trial.killCount; i++) arsenal.countKill();
       killsSeen = trial.killCount;
@@ -1448,8 +1473,16 @@ function frame(now: number): void {
     if (cursor !== null) draft.hover(cursor.x, cursor.y);
     fullRepaint = true;
   }
+  // Same treatment, same reason: it washes the whole screen, so nothing under it survives a
+  // dirty-rect repaint.
+  if (pause.isOpen) {
+    pause.layout(width, height);
+    if (cursor !== null) pause.hover(cursor.x, cursor.y);
+    fullRepaint = true;
+  }
 
-  const wantsClicks = grabbed || overBody || overBubble || menu.isOpen || draft.isOpen;
+  const wantsClicks =
+    grabbed || overBody || overBubble || menu.isOpen || draft.isOpen || pause.isOpen;
 
   // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is
@@ -1525,6 +1558,7 @@ function frame(now: number): void {
     volley.busy ||
     inTrial ||
     draft.isOpen ||
+    pause.isOpen ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged);
   // The frame the body stops moving is the frame its resting place becomes final, so that is the
   // moment the position is worth writing down. Cheap enough to sit in the loop — one boolean edge
@@ -1585,6 +1619,7 @@ function frame(now: number): void {
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     menu.draw(context);
     draft.draw(context, width, height);
+    pause.draw(context, width, height);
     paw.draw(context);
 
     context.restore();
@@ -1742,6 +1777,15 @@ function wirePointer(): void {
     if (heldFor < 260 && moved < 6) {
       // Ahead of the menu and the body both: while three cards are up, the run is stopped and
       // there is nothing else on the screen worth clicking.
+      // Ahead of the draft: both cannot be up at once, but if a bug ever put them there the
+      // one that can get you out should be the one that answers.
+      if (pause.isOpen) {
+        const choice = pause.click(event.clientX, event.clientY);
+        if (choice === 'resume') pause.hide();
+        else if (choice === 'leave') leaveTrial();
+        paw.ping(event.clientX, event.clientY);
+        return;
+      }
       if (draft.isOpen) {
         const card = draft.click(event.clientX, event.clientY);
         if (card) takeCard(card);
@@ -2146,6 +2190,18 @@ async function main(): Promise<void> {
     fullRepaint = true;
     // Nothing is spawned. The motes that used to gather here were the whole reason this read as an
     // entrance; a pet checking whether it is safe to come out does not arrive in a shower of light.
+  });
+
+  await listen('escape', () => {
+    // Registered only while a run is up, but an unregister that lost a race would otherwise make
+    // Esc pop a panel over the desktop with no run behind it.
+    if (!inTrial) return;
+    // Not while the cards are up. A draft already stops the clock, and two stacked panels is a
+    // state nobody needs — the way out of a draft is to pick one, which takes a second.
+    if (draft.isOpen) return;
+    if (pause.isOpen) pause.hide();
+    else pause.show();
+    fullRepaint = true;
   });
 
   await listen<boolean>('lie-low-changed', (event) => {

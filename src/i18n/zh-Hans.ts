@@ -149,6 +149,10 @@ export const zhHans: Dictionary = {
   },
 
   trial: {
+    pauseTitle: '停手',
+    pauseNote: '现在走，这一趟不算数。',
+    pauseResume: '接着打',
+    pauseLeave: '不打了',
     survived: '历练已成\n除邪 {kills} · 修为大进',
     overwhelmed: '护体尽碎\n除邪 {kills} · 修为略进',
     arena: '演武已毕\n中桩 {kills} · 修为无增',

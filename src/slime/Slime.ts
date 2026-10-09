@@ -388,6 +388,24 @@ export class Slime {
   private lift = 0;
   private prevLift = 0;
   private renderLift = 0;
+
+  /**
+   * 护体 — how much of the body is left during 历练, 0 to 1, or null outside the mode.
+   *
+   * This was the one quantity the fight was built on that never reached the screen. `integrity`
+   * existed in `Trial` from the beginning, decided when a run ended, and was drawn nowhere: you
+   * took a hit with no feedback of any kind and then, at some point, the run simply stopped. That
+   * is not the plan's "no numbers on screen" — §6 is about a desk pet at rest, and it is not a
+   * licence to run a ninety-second fight blind.
+   *
+   * Still not a number. It is an arc around the body, which answers "how much is left" at a
+   * glance and never answers "how many points", and it exists only while a run is up.
+   */
+  private vigour: number | null = null;
+  /** The arc that drains down to meet `vigour`, so a hit leaves a visible gap behind it. */
+  private vigourTrail = 0;
+  /** Counts down after a hit lands. The body's own flinch, so damage is felt and not just shown. */
+  private struck = 0;
   private grabbed = false;
   private grabOffset = { x: 0, y: 0 };
   private trail = { x: 0, y: 0 };
@@ -926,6 +944,8 @@ export class Slime {
       // tests below sees it.
       this.pursuit !== null ||
       this.hop !== null ||
+      this.struck > 0.01 ||
+      (this.vigour !== null && this.vigourTrail - this.vigour > 0.002) ||
       this.devour !== null ||
       // A morph moves the rest shape while the offsets sit quietly at zero, so `energy()` below
       // reads it as settled. Without this the loop stands down mid-engulf and the body freezes
@@ -1030,6 +1050,9 @@ export class Slime {
       // out with a fixed-size halo on top — which is why this one is in pixels rather than in body
       // radii. A halo that scaled with the body would be a different charm at every realm.
       this.realmBreak ? this.radius * (ArrayReach + 0.2) + HaloReach : 0,
+      // 护体: the arc itself, plus the flinch ring that is thrown 26 further out than it, plus
+      // the widest that ring is ever stroked. Reserved only while there is one to draw.
+      this.vigour !== null ? this.radius * 1.42 + 26 + 6 : 0,
       this.radius *
         (this.ring !== null
           ? RingReach + 0.2
@@ -1479,6 +1502,34 @@ export class Slime {
     return { x: x - reach, y: y - reach, width: reach * 2, height: reach * 2 };
   }
 
+  /**
+   * How much 护体 is left, or null to take the arc away.
+   *
+   * The flinch is raised from a **drop** seen here rather than from a separate call, because the
+   * caller is a frame loop reading a number off the trial and the alternative is a second call
+   * site that has to be kept in step with the first one. A drop is damage; there is no other way
+   * for this to go down.
+   */
+  showVitality(fraction: number | null): void {
+    if (fraction === null) {
+      this.vigour = null;
+      this.vigourTrail = 0;
+      this.struck = 0;
+      return;
+    }
+    const left = Math.max(0, Math.min(1, fraction));
+    if (this.vigour === null) {
+      // Entering the mode. The trail starts full rather than at zero, or the first frame of every
+      // run would draw the whole ring draining in from nothing.
+      this.vigourTrail = left;
+    } else if (left < this.vigour - 1e-6) {
+      this.struck = 1;
+      this.blob.squash(0.26);
+      this.blob.pulse(-120);
+    }
+    this.vigour = left;
+  }
+
   /** A click that was not a drag: the slime reacts and says so. */
   poke(px: number, py: number): void {
     this.lastInteraction = this.clock;
@@ -1703,9 +1754,83 @@ export class Slime {
       }
     }
 
+    if (this.vigour !== null) {
+      // Chases the true value rather than easing to it: the arc itself is already there, and this
+      // is the ghost behind it showing what the last hit cost. Exponential so it catches up
+      // quickly and then lingers, which is the shape that reads as a wound closing.
+      this.vigourTrail += (this.vigour - this.vigourTrail) * Math.min(1, dt * 4.5);
+      if (this.vigourTrail - this.vigour < 0.002) this.vigourTrail = this.vigour;
+    }
+    this.struck = Math.max(0, this.struck - dt * 3.2);
+
     this.updateMood(dt, env, ground);
     this.updateFace(dt, env);
     this.blob.update(dt);
+  }
+
+  /**
+   * The 护体 arc, just outside the body.
+   *
+   * Drawn from the top and clockwise, so what is missing is the gap on the right where it would
+   * have continued — the direction people read a dial in. Two passes: the trail underneath in
+   * the hurt colour, the remainder over it, so the gap between them is exactly what the last hit
+   * took and it closes over about a second.
+   *
+   * It follows the body, lift and all, which is the point of drawing it here rather than as a bar
+   * somewhere. In a fight the eye is on the slime; a gauge in a corner is a gauge nobody looks at
+   * until they have already lost.
+   */
+  private drawVigour(context: CanvasRenderingContext2D): void {
+    if (this.vigour === null) return;
+    const reach = this.radius * 1.42;
+    const start = -Math.PI / 2;
+    const full = Math.PI * 2;
+
+    context.save();
+    context.lineCap = 'round';
+    context.lineWidth = 4;
+
+    // The groove, so an almost-empty ring still reads as a ring with nothing in it rather than as
+    // a stray stroke floating beside the pet.
+    context.globalAlpha = 0.18;
+    context.strokeStyle = '#06130f';
+    context.beginPath();
+    context.arc(this.renderX, this.renderY, reach, 0, full);
+    context.stroke();
+
+    if (this.vigourTrail > this.vigour + 1e-4) {
+      context.globalAlpha = 0.5;
+      context.strokeStyle = '#e8705c';
+      context.beginPath();
+      context.arc(this.renderX, this.renderY, reach, start, start + full * this.vigourTrail);
+      context.stroke();
+    }
+
+    if (this.vigour > 1e-4) {
+      // Green while there is room to spare, through amber, to red at the end. The colour is the
+      // warning; nothing else on the screen has to shout.
+      const hurt = 1 - this.vigour;
+      const colour =
+        this.vigour > 0.55 ? '#5fe3bd' : this.vigour > 0.28 ? '#ffc766' : '#ff7d68';
+      context.globalAlpha = 0.72 + hurt * 0.2 + this.struck * 0.08;
+      context.strokeStyle = colour;
+      context.beginPath();
+      context.arc(this.renderX, this.renderY, reach, start, start + full * this.vigour);
+      context.stroke();
+    }
+
+    // The flinch: a ring thrown outward at the moment of the hit. Brief, and the only thing in
+    // this mode that moves because something happened *to* the pet rather than because of it.
+    if (this.struck > 0.01) {
+      context.globalAlpha = this.struck * 0.5;
+      context.lineWidth = 2 + this.struck * 3;
+      context.strokeStyle = '#ff9d8a';
+      context.beginPath();
+      context.arc(this.renderX, this.renderY, reach + (1 - this.struck) * 26, 0, full);
+      context.stroke();
+    }
+
+    context.restore();
   }
 
   private onImpact(angle: number, strength: number): void {
@@ -2274,6 +2399,8 @@ export class Slime {
       context.fill();
       context.restore();
     }
+
+    this.drawVigour(context);
 
     // `this.points` was traced by `beginFrame`. Retracing it here would let the two describe
     // different shapes, which is the whole reason the dirty rect could be wrong.

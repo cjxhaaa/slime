@@ -25,6 +25,38 @@ fn quit_shortcut() -> Shortcut {
     )
 }
 
+/// Esc, while a 历练 is running, and at no other time.
+///
+/// The overlay never takes focus, so it never receives a keydown of its own and a DOM handler is
+/// not an option. The other way in is the keyboard hook `gather` already owns — and that one is
+/// wrong here twice over: 静修 switches it off entirely, which would make the only way to pause a
+/// fight disappear along with it, and §6.7 of the plan says a key read there is used to pick a
+/// glyph and then dropped, which is a promise about that stream rather than about this app.
+///
+/// So it is a registration, which is independent of both. A registered shortcut **is** swallowed
+/// system-wide, which is why this one is held only for the ninety seconds of a run and handed
+/// straight back: taking Esc away from everything the user owns, permanently, to serve a mode
+/// they are not in, is not a trade this app gets to make.
+fn escape_shortcut() -> Shortcut {
+    Shortcut::new(None, Code::Escape)
+}
+
+/// Takes Esc, or gives it back. Idempotent: the overlay calls it on every entry and exit, and
+/// re-registering something already held is an error worth ignoring rather than reporting.
+#[tauri::command]
+fn watch_escape(app: AppHandle, on: bool) {
+    let shortcuts = app.global_shortcut();
+    if on {
+        // Worth a line when it fails: if something else on the machine owns Esc, the pause panel
+        // silently never opens, and that is indistinguishable from the feature not being built.
+        if let Err(error) = shortcuts.register(escape_shortcut()) {
+            println!("[slime] could not take Esc for this run: {error}");
+        }
+    } else {
+        let _ = shortcuts.unregister(escape_shortcut());
+    }
+}
+
 /// Screen-space cursor position, pushed to the overlay so the slime can look at the pointer even
 /// while the window is click-through and therefore receives no mouse events of its own.
 #[derive(Clone, Serialize)]
@@ -228,8 +260,16 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
-                    if event.state() == ShortcutState::Pressed && shortcut == &quit_shortcut() {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    if shortcut == &quit_shortcut() {
                         app.exit(0);
+                    } else if shortcut == &escape_shortcut() {
+                        // Only ever registered while a run is up, so there is no mode test here.
+                        // If the overlay has gone away the emit fails and nothing happens, which
+                        // is the right amount of ceremony for a key press.
+                        let _ = app.emit("escape", ());
                     }
                 })
                 .build(),
@@ -240,6 +280,7 @@ pub fn run() {
             release_clicks,
             open_settings,
             quit_app,
+            watch_escape,
             gather::take_input,
             gather::set_quiet,
             gather::quiet_state,

@@ -139,6 +139,10 @@ export interface Dictionary {
   };
 
   trial: {
+    pauseTitle: string;
+    pauseNote: string;
+    pauseResume: string;
+    pauseLeave: string;
     /** `{kills}` is substituted in all three. */
     survived: string;
     overwhelmed: string;
