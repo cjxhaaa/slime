@@ -155,7 +155,11 @@ export const PALETTE: Record<School, Palette> = {
   火: { core: '#fff6d0', body: '#ff9a2e', edge: '#df2a18' },
   冰: { core: '#f0fdff', body: '#79e2ff', edge: '#1f7fe0' },
   风: { core: '#f4fff8', body: '#66ffb4', edge: '#0fa172' },
-  土: { core: '#fff4da', body: '#f2c163', edge: '#a35b1e' },
+  // 山岳 is the one school that is a *material* rather than an energy, and it was wearing a
+  // saturated gold — which put three of the nine (符, 火, 土) in the same warm yellow band
+  // and made a stone pillar read as honey. Ochre over a deep earth shadow: nothing else owns
+  // this corner, and it is the one palette here that is a rock rather than a light.
+  土: { core: '#f7ebd4', body: '#c49a63', edge: '#5b3d22' },
   毒: { core: '#f2ffc4', body: '#b6f238', edge: '#3f8a0c' },
   影: { core: '#ffeeff', body: '#d489ff', edge: '#7526d6' },
 };
@@ -278,7 +282,7 @@ export const SPECS: Record<School, SchoolSpec> = {
     name: '山岳',
     blurb: '丢出一石，地开柱起，荡开四方',
     motion: 'quake',
-    tint: '#f2c163',
+    tint: '#c49a63',
     interval: 4.5,
     reach: 128,
     grow: 0.1,

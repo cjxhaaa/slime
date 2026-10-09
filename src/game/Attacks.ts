@@ -1823,14 +1823,21 @@ export class Attacks {
       const flight = e.life > 0 ? Math.min(1, e.age / e.life) : 1;
       const up = Math.sin(flight * Math.PI) * 44;
       const spin = e.angle + e.age * 11;
-      context.globalAlpha = 0.26;
-      context.fillStyle = '#1a1208';
+      // Its shadow, and then the rock itself, both **solid**. Everything else this module draws is
+      // additive light, which is right for fire and lightning and wrong for a lump of earth: added
+      // to the desktop it came out glowing, and the shadow added nothing at all because adding a
+      // dark colour is the same as not drawing it.
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 0.3;
+      context.fillStyle = '#140e06';
       context.beginPath();
       context.ellipse(e.x, e.y, 9 - up * 0.08, 4 - up * 0.04, 0, 0, Math.PI * 2);
       context.fill();
-      context.globalAlpha = 1;
-      this.bloom(context, e.x, e.y - up, 22, hue, 0.35);
+      context.restore();
+      this.bloom(context, e.x, e.y - up, 20, hue, 0.22);
       context.save();
+      context.globalCompositeOperation = 'source-over';
       context.translate(e.x, e.y - up);
       context.rotate(spin);
       context.fillStyle = hue.body;
@@ -1898,17 +1905,27 @@ export class Attacks {
       const tall = e.reach * Height * stand;
       const squat = half * Tilt;
 
-      // The ground it came through, thrown open around the foot. Drawn first and dark, so the
-      // column has something to be standing in.
-      context.globalAlpha = 0.55 * Math.min(1, stand * 2.2);
-      context.fillStyle = '#17100a';
+      // The ground it came through, thrown open around the foot.
+      //
+      // Drawn **solid**, which it was not before: this block runs inside the module's additive
+      // pass, and a near-black fill added to what is underneath is the same as not drawing it. The
+      // hole had been invisible since it was written, which is most of why the columns looked like
+      // they were standing on the wallpaper rather than in it.
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 0.6 * Math.min(1, stand * 2.2);
+      context.fillStyle = '#140e06';
       context.beginPath();
-      context.ellipse(e.x, e.y, half * 1.5, squat * 1.5, 0, 0, Math.PI * 2);
+      context.ellipse(e.x, e.y, half * 1.55, squat * 1.55, 0, 0, Math.PI * 2);
       context.fill();
+      context.restore();
 
-      this.bloom(context, e.x, e.y - tall * 0.5, e.reach * 0.8 * stand, hue, 0.16);
+      this.bloom(context, e.x, e.y - tall * 0.5, e.reach * 0.7 * stand, hue, 0.12);
 
       context.save();
+      // Stone is opaque. Under the additive pass the shaft was light rather than rock, and two
+      // columns overlapping went white where they crossed.
+      context.globalCompositeOperation = 'source-over';
       context.translate(e.x, e.y);
       context.globalAlpha = 1;
 
@@ -1916,9 +1933,13 @@ export class Attacks {
       // a flat quadrilateral read as something with a round side to it.
       const lean = Math.cos(e.angle) * half * 0.22;
       const topHalf = half * 0.86;
+      // Lit from the upper left, which is where the pet's own contact shadow says the light is.
+      // Four stops rather than three: the jump from the lit side to the shaded one is what gives a
+      // flat quadrilateral a round side, and three could not fit both the highlight and the turn.
       const face = context.createLinearGradient(-half, 0, half, 0);
-      face.addColorStop(0, hue.core);
-      face.addColorStop(0.45, hue.body);
+      face.addColorStop(0, mix(hue.core, hue.body, 0.35));
+      face.addColorStop(0.3, hue.body);
+      face.addColorStop(0.72, mix(hue.body, hue.edge, 0.55));
       face.addColorStop(1, hue.edge);
       context.fillStyle = face;
       context.beginPath();
@@ -1942,13 +1963,19 @@ export class Attacks {
 
       // The top: broken rather than flat, and the one face a tilted overhead view actually sees.
       context.globalAlpha = 1;
-      context.fillStyle = hue.core;
+      // The one face pointing at the light, so it is the lightest thing on the column — which is
+      // what says "this is the top" without any of it being drawn in perspective.
+      context.fillStyle = mix(hue.core, hue.body, 0.22);
       context.beginPath();
       for (let i = 0; i < 6; i++) {
         const around = (i / 6) * Math.PI * 2 + e.angle;
         // Unequal corners, fixed per pillar by its own angle, so no two tops are the same and
         // none of them wobbles frame to frame.
-        const chip = 0.78 + 0.3 * Math.abs(Math.sin(around * 3 + e.angle));
+        // Hard variation, not a wobble. At 0.78-to-1.08 the top came out all but circular and the
+        // column read as a sawn stump; rock breaks along its own faults, so the corners want to be
+        // genuinely unequal. Keyed to the pillar's own angle so a given column's top is the same
+        // shape every frame it is up.
+        const chip = 0.56 + 0.58 * Math.abs(Math.sin(around * 2.3 + e.angle * 5.1));
         const px = Math.cos(around) * topHalf * chip + lean;
         const py = -tall + Math.sin(around) * topHalf * Tilt * chip;
         if (i === 0) context.moveTo(px, py);
