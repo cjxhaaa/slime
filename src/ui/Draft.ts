@@ -9,16 +9,18 @@
  *
  * ## What a card has to say
  *
- * The decision this mode is built on is whether a school pairs with what you are already holding,
- * so the pairing is the one thing that gets its own line and its own colour. Everything else —
- * what the school does, what a level buys — is a phrase. There are no numbers on these cards, for
- * the same reason there are no numbers anywhere else in this app: §5 of the plan forbids a panel,
- * and a card that reads "+18% cadence" is a panel with a border.
+ * Every card either hands you something you do not have or deepens something you do, and the card
+ * says which in a phrase rather than a number. There are no numbers on these, for the same reason
+ * there are none anywhere else in this app: §5 of the plan forbids a panel, and a card that reads
+ * "+18% cadence" is a panel with a border.
+ *
+ * The one thing a card has to say that is not about itself is what a **weapon swap** costs — and
+ * the answer is the reassuring half of it: the weapon goes, your three 五行 stay.
  */
 import { clear } from '../slime/colour.js';
-import type { Card } from '../game/Arsenal.js';
-import { SPECS, type School, comboFor } from '../game/schools.js';
-import { combo as comboWords, fill, onLocaleChange, words } from '../i18n/index.js';
+import type { Armed, Card, Walked } from '../game/Arsenal.js';
+import { ARMS, PATHS } from '../game/kit.js';
+import { fill, onLocaleChange, words } from '../i18n/index.js';
 import { fit, wrap } from './text.js';
 
 export interface Rect {
@@ -67,15 +69,15 @@ interface Face {
   jackpot: boolean;
 }
 
-/** Just enough of a holding for a card to describe itself. */
-export interface Held {
-  school: School;
-  level: number;
+/** Just enough of a kit for a card to describe itself against. */
+export interface Kit {
+  weapon: Armed | null;
+  ways: Walked[];
 }
 
 export class Draft {
   private cards: Card[] = [];
-  private holding: Held[] = [];
+  private holding: Kit = { weapon: null, ways: [] };
   private faces: Face[] = [];
   private open = false;
   private hot = -1;
@@ -101,7 +103,7 @@ export class Draft {
    * level a raise is raising from. Passed in rather than read off an `Arsenal`, so this file knows
    * nothing about the run's state — it is a renderer with an opinion about wording.
    */
-  show(cards: Card[], holding: Held[]): void {
+  show(cards: Card[], holding: Kit): void {
     this.cards = cards;
     this.holding = holding;
     this.faces = cards.map((card) => face(card, holding));
@@ -125,7 +127,7 @@ export class Draft {
   hide(): void {
     this.open = false;
     this.cards = [];
-    this.holding = [];
+    this.holding = { weapon: null, ways: [] };
     this.faces = [];
     this.boxes = [];
     this.hot = -1;
@@ -330,15 +332,20 @@ function wrapped(
   for (let i = 0; i < lines.length; i++) context.fillText(lines[i], middle, top + i * step);
 }
 
-/** What a card says. Pulled out of the draw pass so the wording is in one readable place. */
-function face(card: Card, holding: Held[]): Face {
+/**
+ * What a card says. Pulled out of the draw pass so the wording is in one readable place.
+ *
+ * Four kinds now, and every one either hands you something new or deepens something you have. The
+ * old split between "take" and "raise" went with the schools: a duplicate deepens, so a card does
+ * not have to say which of the two it is — it says what you would end up with.
+ */
+function face(card: Card, kit: { weapon: Armed | null; ways: Walked[] }): Face {
   const w = words();
 
   if (card.kind === 'shield') {
     return {
       title: w.draft.shieldTitle,
-      // Its own colour, not a school's. 金钟 is not one, and wearing 土's ochre would say it was
-      // still 山岳's — which is exactly the thing it was taken out of.
+      // Its own colour, not a weapon's or a phase's. 金钟 is neither.
       tint: '#cfe3f2',
       blurb: w.draft.shieldBlurb,
       pairing: null,
@@ -360,61 +367,38 @@ function face(card: Card, holding: Held[]): Face {
     };
   }
 
-  const spec = SPECS[card.school];
-  const said = w.schools[card.school];
+  // The numerals are the realm stages' — 一二三 in Chinese and Japanese, 1 2 3 in English and
+  // Korean — so a depth reads the way that language counts rather than the way the source did.
+  const numeral = (n: number): string => w.stages[n - 1] ?? String(n);
+  const deeper = (at: number): string =>
+    at > 0 ? fill(w.draft.levelStep, { from: numeral(at), to: numeral(at + 1) }) : '';
 
-  if (card.kind === 'evolve') {
-    const evolution = w.evolutions[card.school];
-    return {
-      title: evolution.name,
-      tint: '#ffd98a',
-      blurb: evolution.blurb,
-      pairing: null,
-      kind: w.draft.evolve,
-      step: said.name,
-      jackpot: true,
-    };
-  }
-
-  // Which held school this one pairs with, if any. The first is enough — a card naming three
-  // pairings is a card nobody reads under a paused clock.
-  let pairing: string | null = null;
-  for (const other of holding) {
-    if (other.school === card.school) continue;
-    const pair = comboFor(card.school, other.school);
-    if (pair) {
-      pairing = fill(w.draft.pairsWith, {
-        school: w.schools[other.school].name,
-        combo: comboWords(pair.pair.join('')).name,
-      });
-      break;
-    }
-  }
-
-  if (card.kind === 'raise') {
-    const level = holding.find((h) => h.school === card.school)?.level ?? 1;
-    // The numerals are the realm stages' — 一二三 in Chinese and Japanese, 1 2 3 in English and
-    // Korean — so a level reads the way that language counts rather than the way the source did.
-    const numeral = (n: number): string => w.stages[n - 1] ?? String(n);
+  if (card.kind === 'arm') {
+    const said = w.arms[card.weapon];
+    const holding = kit.weapon;
+    const same = holding?.weapon === card.weapon;
     return {
       title: said.name,
-      tint: spec.tint,
+      tint: ARMS[card.weapon].tint,
       blurb: said.blurb,
-      pairing,
-      kind: w.draft.raise,
-      step:
-        level > 0 ? fill(w.draft.levelStep, { from: numeral(level), to: numeral(level + 1) }) : '',
+      // The one thing a weapon card has to say that nothing else does: taking this puts down the
+      // one in your hand — and your three ways come with you.
+      pairing:
+        holding && !same ? fill(w.draft.swaps, { weapon: w.arms[holding.weapon].name }) : null,
+      kind: w.draft.arm,
+      step: same && holding ? deeper(holding.depth) : '',
       jackpot: false,
     };
   }
 
+  const said = w.ways[card.way];
   return {
     title: said.name,
-    tint: spec.tint,
+    tint: PATHS[card.way].tint,
     blurb: said.blurb,
-    pairing,
-    kind: w.draft.newSchool,
-    step: '',
+    pairing: null,
+    kind: w.draft.way,
+    step: deeper(kit.ways.find((held) => held.way === card.way)?.depth ?? 0),
     jackpot: false,
   };
 }

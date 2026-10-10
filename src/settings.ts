@@ -1,17 +1,22 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
-import { MaxLevel, SCHOOLS, type School, activeCombos, activeTriads } from './game/schools';
+import {
+  MaxDepth,
+  WAYS,
+  WEAPONS,
+  type Way,
+  Ways,
+  type Weapon,
+} from './game/kit';
 import { FEAT_IDS, featBlurb, featName } from './game/feats';
 import {
   ENDONYMS,
   LOCALES,
   type Locale,
-  combo as comboWords,
   fill,
   isLocale,
   locale,
   setLocale,
-  triad as triadWords,
   words,
 } from './i18n';
 
@@ -305,10 +310,20 @@ function paintAll(): void {
   render();
 }
 
-interface Slot {
-  school: School;
-  level: number;
-  evolved: boolean;
+/**
+ * The yard's kit: one weapon and up to three 五行, with a depth each.
+ *
+ * Chosen rather than drafted, which is the whole point of the yard — it is the one place you can
+ * put a build together on purpose and watch it, instead of taking what the cards gave you.
+ */
+interface Pick {
+  weapon: Weapon;
+  depth: number;
+}
+
+interface Walk {
+  way: Way;
+  depth: number;
 }
 
 /**
@@ -327,134 +342,115 @@ function tell(name: string, payload?: unknown): void {
   }
 }
 
-const MaxSlots = 4;
-let loadout: Slot[] = [{ school: '符', level: 1, evolved: false }];
+let arm: Pick = { weapon: '弓', depth: 1 };
+let walked: Walk[] = [];
 
-const chipRow = el<HTMLDivElement>('arena-schools');
-const pickedRow = el<HTMLDivElement>('arena-picked');
+const armRow = el<HTMLDivElement>('arena-schools');
+const wayRow = el<HTMLDivElement>('arena-picked');
 const comboLine = el<HTMLParagraphElement>('arena-combos');
 
 // The realm picker and 护体不损 are gone. Both existed because the yard used to run a real trial;
-// against posts that never move and never hit back, a realm decides nothing a level slider does
+// against posts that never move and never hit back, a realm decides nothing a depth slider does
 // not already decide, and there is no damage to be protected from. **A control that changes
 // nothing is worse than no control** — it invites you to believe it did something.
 
-function held(school: School): boolean {
-  return loadout.some((slot) => slot.school === school);
+function walks(way: Way): boolean {
+  return walked.some((w) => w.way === way);
 }
 
-function toggle(school: School): void {
-  if (held(school)) loadout = loadout.filter((slot) => slot.school !== school);
-  else if (loadout.length < MaxSlots) loadout.push({ school, level: 1, evolved: false });
+function toggle(way: Way): void {
+  if (walks(way)) walked = walked.filter((w) => w.way !== way);
+  else if (walked.length < Ways) walked.push({ way, depth: 1 });
   render();
+}
+
+/** A depth slider with its readout, which both rows want and neither wants twice. */
+function depthRow(label: string, depth: number, onChange: (next: number) => void): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'slot';
+  const name = document.createElement('b');
+  name.textContent = label;
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.min = '1';
+  slider.max = String(MaxDepth);
+  slider.step = '1';
+  slider.value = String(depth);
+  const readout = document.createElement('span');
+  readout.className = 'lv';
+  readout.textContent = String(depth);
+  slider.addEventListener('input', () => {
+    readout.textContent = slider.value;
+    onChange(Number(slider.value));
+    push();
+  });
+  row.append(name, slider, readout);
+  return row;
 }
 
 /**
  * Redrawn wholesale on every change.
  *
- * Nine chips and at most four rows is nothing, and rebuilding is the version that cannot drift out
- * of sync with `loadout` — which is the entire failure mode of a hand-patched list.
+ * Five chips plus ten and at most four rows is nothing, and rebuilding is the version that cannot
+ * drift out of sync with the kit — which is the entire failure mode of a hand-patched list.
  */
 function render(): void {
   const w = words();
-  chipRow.replaceChildren(
-    ...SCHOOLS.map((key) => {
+
+  armRow.replaceChildren(
+    ...WEAPONS.map((key) => {
       const chip = document.createElement('button');
       chip.className = 'chip';
       chip.type = 'button';
-      chip.textContent = w.schools[key].name;
-      chip.setAttribute('aria-pressed', String(held(key)));
-      chip.disabled = !held(key) && loadout.length >= MaxSlots;
+      chip.textContent = w.arms[key].name;
+      chip.setAttribute('aria-pressed', String(arm.weapon === key));
+      chip.addEventListener('click', () => {
+        // One weapon at a time, and swapping keeps the depth — the yard is for comparing
+        // deliveries, and re-dragging the slider after every swap is the thing that stops you.
+        arm = { weapon: key, depth: arm.depth };
+        render();
+      });
+      return chip;
+    }),
+    ...WAYS.map((key) => {
+      const chip = document.createElement('button');
+      chip.className = 'chip';
+      chip.type = 'button';
+      chip.textContent = w.ways[key].name;
+      chip.setAttribute('aria-pressed', String(walks(key)));
+      chip.disabled = !walks(key) && walked.length >= Ways;
       chip.addEventListener('click', () => toggle(key));
       return chip;
     }),
   );
 
-  pickedRow.replaceChildren(
-    ...loadout.map((slot) => {
-      const row = document.createElement('div');
-      row.className = 'slot';
-
-      const name = document.createElement('b');
-      name.textContent = w.schools[slot.school].name;
-
-      const level = document.createElement('input');
-      level.type = 'range';
-      level.min = '1';
-      level.max = String(MaxLevel);
-      level.step = '1';
-      level.value = String(slot.level);
-      level.disabled = slot.evolved;
-
-      const readout = document.createElement('span');
-      readout.className = 'lv';
-      const showLevel = () => {
-        readout.textContent = slot.evolved ? '★' : String(slot.level);
-      };
-      showLevel();
-      level.addEventListener('input', () => {
-        slot.level = Number(level.value);
-        showLevel();
-        push();
-      });
-
-      const evolve = document.createElement('label');
-      evolve.className = 'check inline';
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = slot.evolved;
-      box.addEventListener('change', () => {
-        slot.evolved = box.checked;
-        if (slot.evolved) slot.level = MaxLevel;
-        render();
-        push();
-      });
-      const word = document.createElement('span');
-      word.textContent = w.draft.evolve.replace('★ ', '');
-      evolve.append(box, word);
-
-      row.append(name, level, readout, evolve);
-      return row;
+  wayRow.replaceChildren(
+    depthRow(w.arms[arm.weapon].name, arm.depth, (next) => {
+      arm = { weapon: arm.weapon, depth: next };
     }),
+    ...walked.map((held) =>
+      depthRow(w.ways[held.way].name, held.depth, (next) => {
+        held.depth = next;
+      }),
+    ),
   );
 
-  // Naming the pairings here is most of why this screen is worth having: it is the one place the
-  // graph is visible without reading the source.
-  const schools = loadout.map((slot) => slot.school);
-  const made = activeCombos(schools);
-  const forms = activeTriads(schools);
-  // 三合 first, because a build that has one is defined by it — it costs three of the four slots.
-  const lines: string[] = [];
-  const item = (named: { name: string; blurb: string }): string =>
-    fill(w.settings.listItem, { name: named.name, blurb: named.blurb });
-  for (const form of forms) {
-    lines.push(`${w.settings.triadLabel} · ${item(triadWords(form.of.join('')))}`);
-  }
-  if (made.length) {
-    const said = made.map((c) => item(comboWords(c.pair.join(''))));
-    lines.push(`${w.settings.combosLabel}${w.settings.listColon}${said.join(w.settings.listSep)}`);
-  }
-  comboLine.textContent = lines.length
-    ? lines.join('\n')
-    : loadout.length > 1
-      ? w.settings.noCombo
-      : '';
+  comboLine.textContent = '';
   push();
 }
 
 /**
- * Sends the loadout across while a bout is already running, so a slider is felt immediately.
+ * Sends the kit across while a bout is already running, so a slider is felt immediately.
  *
  * The overlay ignores it when nothing is running, which is why this can be called from every
  * change handler without asking whether it is worth sending.
  */
 function push(): void {
-  tell('arena-loadout', { loadout });
+  tell('arena-loadout', { weapon: arm, ways: walked });
 }
 
 el<HTMLButtonElement>('arena-start').addEventListener('click', () => {
-  if (loadout.length === 0) return;
-  tell('arena-start', { loadout });
+  tell('arena-start', { weapon: arm, ways: walked });
 });
 
 el<HTMLButtonElement>('arena-stop').addEventListener('click', () => tell('arena-stop'));

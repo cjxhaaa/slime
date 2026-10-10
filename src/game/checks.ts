@@ -50,23 +50,12 @@ import {
   odds,
 } from './charms.js';
 import {
-  CardsPerOffer,
   COMBOS,
   EVOLUTIONS,
-  MaxLevel,
   SCHOOLS,
   SPECS,
-  Slots,
-  activeCombos,
-  cadence,
-  comboFor,
-  TRIADS,
-  activeTriads,
-  exchangeCost,
-  killsForExchanges,
-  partners,
+  CardsPerOffer,
 } from './schools.js';
-import { Arsenal, EvolveLevel } from './Arsenal.js';
 import {
   ContactDamage,
   GraceSeconds,
@@ -86,11 +75,20 @@ import { Attacks } from './Attacks.js';
 import type { Battlefield } from './Attacks.js';
 import { PillarShove, QuakeTell } from './Attacks.js';
 import { Depth } from './depth.js';
-import { MaxShields } from './Arsenal.js';
-import { ARMS, PATHS, WAYS, WEAPONS, swing } from './kit.js';
+import { Arsenal, MaxShields, Opening } from './Arsenal.js';
+import {
+  ARMS,
+  MaxDepth,
+  PATHS,
+  WAYS,
+  WEAPONS,
+  type Way,
+  Ways,
+  type Weapon,
+  swing,
+} from './kit.js';
 import { BurnBeat } from './Trial.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
-import type { School } from './schools.js';
 import {
   Ascended,
   STAGE_NUMERALS,
@@ -822,302 +820,132 @@ Math.random = realRandom;
 
 
 // ---------------------------------------------------------------------------------------------
-// 法脉. The nine schools and the fourteen pairings.
-
-// The parity argument, written down as arithmetic because it is the one constraint in this design
-// that no amount of cleverness gets around: every edge adds one to two degrees, so the degrees sum
-// to twice the edge count and can never be odd. Nine schools with three partners each would sum to
-// twenty-seven. The request asked for exactly that, and it does not exist for any choice of pairs.
-check('nine schools', SCHOOLS.length, 9);
-let degrees = 0;
-let threes = 0;
-let fours = 0;
-for (const school of SCHOOLS) {
-  const count = partners(school).length;
-  degrees += count;
-  if (count === 3) threes++;
-  if (count === 4) fours++;
-}
-check('degrees sum to twice the pairings', degrees, COMBOS.length * 2);
-checkTrue('which is even, as it has to be', degrees % 2 === 0);
-check('eight schools pair with three', threes, 8);
-check('and one — 符 — pairs with four', fours, 1);
-check('符 is that one', partners('符').length, 4);
-check('fourteen pairings', COMBOS.length, 14);
-
-// No school pairs with itself, nothing is listed twice in either direction, and every pairing is
-// findable from both ends. A duplicate would silently double a combination's effect.
-let selfPaired = false;
-let duplicated = false;
-let asymmetric = false;
-const seen = new Set<string>();
-for (const combo of COMBOS) {
-  const [a, b] = combo.pair;
-  if (a === b) selfPaired = true;
-  const key = [a, b].slice().sort().join('');
-  if (seen.has(key)) duplicated = true;
-  seen.add(key);
-  if (comboFor(a, b) !== combo || comboFor(b, a) !== combo) asymmetric = true;
-}
-checkTrue('nothing pairs with itself', !selfPaired);
-checkTrue('and nothing is listed twice', !duplicated);
-checkTrue('and every pairing reads the same from either end', !asymmetric);
-check('every pairing is named', COMBOS.filter((c) => c.name.length > 0).length, 14);
-check('every school has a jackpot', Object.keys(EVOLUTIONS).length, 9);
-check('and a spec', Object.keys(SPECS).length, 9);
-
-// No two schools share a motion. A school you cannot identify by how it moves is a stat with a
-// name on it, which is the thing §12 cancelled 法宝 for being.
-const motions = new Set(SCHOOLS.map((s) => SPECS[s].motion));
-check('nine distinct motions', motions.size, 9);
-
-// Every school is reachable from every other, so no build is a dead end you cannot grow out of.
-const reach = new Set<string>(['符']);
-for (let step = 0; step < SCHOOLS.length; step++) {
-  for (const school of Array.from(reach)) {
-    for (const next of partners(school as never)) reach.add(next);
-  }
-}
-check('the graph is one piece', reach.size, 9);
-
-// **The 82%**, which is why offers are not weighted toward partners. It is a consequence of the
-// graph rather than a number written anywhere in it, so retuning the pairings moves it silently.
-// C(5,3)/C(8,3) = 10/56 of three-card offers miss every partner of a single held school.
-const missOdds = (10 / 56) * 1;
-checkTrue('a three-card offer usually contains a partner', 1 - missOdds > 0.8);
-check('82%, to be exact', Math.round((1 - missOdds) * 100), 82);
-
-// A four-slot build really can be a complete 套路: this one is a chain, so it lands three.
-check('four slots, three pairings', activeCombos(['符', '雷', '火', '冰']).length, 3);
-// And two disjoint pairs is the other shape of complete. 符剑 and 焚甦, with nothing else
-// touching across them.
-check('or two clean pairs', activeCombos(['符', '剑', '火', '毒']).length, 2);
-
-// Drafted in bulk, by somebody taking the card that pairs best with what they already hold.
+// 兵器与五行: the draft, now that a kit is one weapon and three ways.
 //
-// This is the requested property, and the one worth pinning: **four slots must always be able to
-// make a complete 套路.** It comes out at 100% over four thousand drafts, not the two thirds I
-// guessed from the 82% — with four picks there are three chances to find a partner and the graph
-// is dense enough that a player paying attention never misses. So the draft is not a question of
-// *whether* you can assemble something, it is a question of which thing; the measurement below
-// says how much of that is luck.
-let seed = 20260922;
-const rng = () => {
-  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-  return seed / 0x7fffffff;
+// This replaced the nine schools and their fourteen pairings. The guards that section carried —
+// the pairing graph, the 82% that justified an unweighted offer, the jackpot gate — were about a
+// shape that no longer exists. What carries over is the part that was never about schools: **the
+// opening has to hand you a build before the first 邪气 arrives**, because that is what makes an
+// unattended run worth nothing.
+
+// Its own generator. `fightRandom` is declared further down the file, and reaching for a shared
+// one would also make this block's outcome depend on how many draws happened above it — the exact
+// trap that one carries a comment about.
+let draftSeed = 20261010;
+const draftRandom = (): number => {
+  draftSeed = (draftSeed * 1103515245 + 12345) & 0x7fffffff;
+  return draftSeed / 0x7fffffff;
 };
-const runs = 4000;
-let twoOrMore = 0;
-let none = 0;
-for (let run = 0; run < runs; run++) {
+
+{
   const kit = new Arsenal();
   kit.start();
-  for (let pick = 0; pick < Slots; pick++) {
-    const cards = kit.offer(rng);
-    let best = cards[0];
-    let bestScore = -1;
-    for (const card of cards) {
-      if (card.kind !== 'take') continue;
-      const score = activeCombos(kit.schools.concat(card.school)).length;
-      if (score > bestScore) {
-        bestScore = score;
-        best = card;
-      }
-    }
-    kit.take(best);
-  }
-  const made = activeCombos(kit.schools).length;
-  if (made >= 2) twoOrMore++;
-  if (made === 0) none++;
-}
-const complete = twoOrMore / runs;
-check('a steered draft always completes two or more', complete, 1);
-check('so it never comes away with nothing', none, 0);
+  check('the opening owes one weapon and three ways', kit.openingLeft, Opening);
+  checkTrue('and nothing is carried before it', kit.weapon === null && kit.ways.length === 0);
 
-// And the same four thousand drafts taken by somebody not looking, which is what the density of
-// the graph amounts to: 14 of the 36 pairs combine, so six pairs out of a random four-set average
-// 6 x 14/36 = 2.33 combinations. Reported rather than bounded tightly — it is a property of the
-// pairings, and the point of printing it is that retuning them moves it.
-let blindTwo = 0;
-let blindNone = 0;
-let blindTotal = 0;
-for (let run = 0; run < runs; run++) {
-  const kit2 = new Arsenal();
-  kit2.start();
-  for (let pick = 0; pick < Slots; pick++) {
-    const cards = kit2.offer(rng);
-    kit2.take(cards[Math.floor(rng() * cards.length) % cards.length]);
-  }
-  const made = activeCombos(kit2.schools).length;
-  blindTotal += made;
-  if (made >= 2) blindTwo++;
-  if (made === 0) blindNone++;
-}
-checkTrue(
-  `an unsteered draft averages ${(blindTotal / runs).toFixed(2)} combinations, two or more ${((blindTwo / runs) * 100).toFixed(0)}% of the time`,
-  blindTotal / runs > 2 && blindTotal / runs < 2.7,
-);
-checkTrue(`and comes away with nothing ${((blindNone / runs) * 100).toFixed(1)}% of the time`, blindNone / runs < 0.06);
-
-// Four cards, four slots, and the fight has not started yet — the whole point of opening this way.
-const kit = new Arsenal();
-kit.start();
-check('four opening drafts', kit.openingLeft, Slots);
-for (let i = 0; i < Slots; i++) {
-  const cards = kit.offer(rng);
-  check(`offer ${i + 1} has three cards`, cards.length, CardsPerOffer);
-  checkTrue(`offer ${i + 1} is all new schools`, cards.every((c) => c.kind === 'take'));
-  kit.take(cards[0]);
-}
-check('four slots filled', kit.held.length, Slots);
-check('none of them spent an exchange', kit.exchangesTaken, 0);
-checkTrue('and nothing is owed any more', !kit.due);
-
-// Once the slots are full, an offer can only deepen what is there. No swapping: a build you can
-// rewrite at will is a build you never had to commit to.
-const afterwards = kit.offer(rng);
-checkTrue('a full build is offered raises, not replacements', afterwards.every((c) => c.kind !== 'take'));
-
-// The meter. Escalating, because one flat figure cannot serve a realm that kills ninety things and
-// one that kills six hundred — it is five exchanges at one end or fifty at the other.
-checkTrue('each exchange costs more than the last', exchangeCost(3) > exchangeCost(2));
-const affordable = (kills: number) => {
-  let n = 0;
-  while (killsForExchanges(n + 1) <= kills) n++;
-  return n;
-};
-// Kill totals measured off whole runs further down: about 550 at 筑基 and 1050 at 大乘.
-const atFoundation = affordable(550);
-const atTheTop = affordable(1050);
-checkTrue(`筑基 affords ${atFoundation}`, atFoundation >= 8 && atFoundation <= 10);
-checkTrue(`大乘 affords ${atTheTop}`, atTheTop >= 10 && atTheTop <= 13);
-checkTrue('a high realm is a longer build, not a different one', atTheTop > atFoundation);
-
-// Levelling shows up as a school being visibly busier, since there is no damage number anywhere in
-// this app to raise instead.
-checkTrue('a level shortens the cadence', cadence('符', 2) < cadence('符', 1));
-checkTrue('and the ceiling holds', cadence('符', MaxLevel + 5) === cadence('符', MaxLevel));
-
-// The jackpot gate: partner held, and levelled. Without the partner term the pairings would be a
-// side quest with their own rewards and this would be a slot machine that ignored them.
-const lone = new Arsenal();
-lone.start();
-lone.take({ kind: 'take', school: '符' });
-lone.take({ kind: 'take', school: '冰' });   // 冰 pairs with 火, 风, 土 — none of which is in here
-lone.take({ kind: 'take', school: '剑' });   // 剑 pairs with 符
-lone.take({ kind: 'take', school: '影' });   // and so does 影
-check('nothing is ripe at level one', lone.evolvable().length, 0);
-for (let i = 1; i < EvolveLevel; i++) lone.take({ kind: 'raise', school: '冰' });
-check('冰 is levelled but has nobody to pair with', lone.evolvable().length, 0);
-for (let i = 1; i < EvolveLevel; i++) lone.take({ kind: 'raise', school: '符' });
-check('符 is levelled and does', lone.evolvable().length, 1);
-checkTrue('and it is 符', lone.evolvable()[0].of === '符');
-lone.take({ kind: 'evolve', school: '符' });
-checkTrue('evolving takes the level with it', lone.levelOf('符') === MaxLevel);
-checkTrue('and it cannot be drawn twice', lone.evolvable().length === 0);
-checkTrue('an evolved school is not offered raises', !lone.offer(rng).some((c) => c.kind === 'raise' && c.school === '符'));
-
-
-
-// 三合. Seven forms of three schools, sitting on top of the fourteen pairings.
-
-check('seven 三合', TRIADS.length, 7);
-check('all of three schools', TRIADS.filter((t) => new Set(t.of).size === 3).length, 7);
-check('every one named', TRIADS.filter((t) => t.name.length > 0 && t.effect.length > 0).length, 7);
-
-// **一主二辅**, and this is the load-bearing constraint: each form is a school plus two of its
-// own partners, so the three already carry two pairings before the 三合 is counted. That is what
-// makes somebody assembling a build the ordinary way — taking cards that pair with what they hold —
-// walk into these without hunting. A form made of three schools that do not pair would be a secret
-// recipe, and a secret recipe in a ninety-second mode is content nobody sees.
-let everyFormIsAnchored = true;
-let fewestPairings = 9;
-for (const triad of TRIADS) {
-  const inside = triad.of.filter((a, i) =>
-    triad.of.some((b, j) => j !== i && comboFor(a, b) !== null),
+  // 1. **The first card of the run is a weapon.** A run that opened on three elements and no
+  //    weapon would be a pet standing in a crowd with nothing to swing.
+  const first = kit.offer(draftRandom);
+  check('the first offer is three cards', first.length, CardsPerOffer);
+  checkTrue(
+    `and every one of them is a weapon: ${first.map((c) => c.kind).join(', ')}`,
+    first.every((c) => c.kind === 'arm'),
   );
-  // At least one of the three has to pair with both others — that is the "主".
-  const anchored = triad.of.some((lead) =>
-    triad.of.every((other) => other === lead || comboFor(lead, other) !== null),
-  );
-  if (!anchored) everyFormIsAnchored = false;
-  let pairings = 0;
-  for (let i = 0; i < 3; i++) {
-    for (let j = i + 1; j < 3; j++) if (comboFor(triad.of[i], triad.of[j])) pairings++;
-  }
-  fewestPairings = Math.min(fewestPairings, pairings);
-  if (inside.length !== 3) everyFormIsAnchored = false;
-}
-checkTrue('every 三合 has a school that pairs with both the others', everyFormIsAnchored);
-checkTrue(`and carries at least two pairings of its own: ${fewestPairings}`, fewestPairings >= 2);
+  kit.take(first[0]);
+  checkTrue('so the run has something to swing', kit.weapon !== null);
 
-// Exactly two of them are triangles — all three pairing with each other — and the graph contains
-// no others, so this is a fact about the pairings rather than a choice about the forms.
-const triangles = TRIADS.filter((t) => {
-  let pairings = 0;
-  for (let i = 0; i < 3; i++) {
-    for (let j = i + 1; j < 3; j++) if (comboFor(t.of[i], t.of[j])) pairings++;
+  // 2. And the rest of the opening fills the ways.
+  while (kit.openingLeft > 0) {
+    const offered = kit.offer(draftRandom);
+    checkTrue(
+      `the rest of the opening is 五行: ${offered.map((c) => c.kind).join(', ')}`,
+      offered.every((c) => c.kind === 'way'),
+    );
+    kit.take(offered[0]);
   }
-  return pairings === 3;
-});
-check('two of the seven are triangles', triangles.length, 2);
-// And the graph really has no third one, which is why there are not more of them.
-let allTriangles = 0;
-for (let i = 0; i < SCHOOLS.length; i++) {
-  for (let j = i + 1; j < SCHOOLS.length; j++) {
-    for (let k = j + 1; k < SCHOOLS.length; k++) {
-      if (
-        comboFor(SCHOOLS[i], SCHOOLS[j]) &&
-        comboFor(SCHOOLS[j], SCHOOLS[k]) &&
-        comboFor(SCHOOLS[i], SCHOOLS[k])
-      ) {
-        allTriangles++;
-      }
+  check('the opening fills every way', kit.ways.length, Ways);
+  check('and no way is drafted twice inside it', new Set(kit.ways.map((w) => w.way)).size, Ways);
+}
+
+{
+  // 3. **A duplicate deepens.** There is no separate raise card, so this is the only way depth is
+  //    bought, and it is the rule the whole pool shape rests on.
+  const kit = new Arsenal();
+  kit.start();
+  kit.take({ kind: 'arm', weapon: '弓' });
+  check('a weapon arrives at the first depth', kit.weapon?.depth ?? 0, 1);
+  kit.take({ kind: 'arm', weapon: '弓' });
+  check('and the same one again deepens it', kit.weapon?.depth ?? 0, 2);
+  checkTrue('without becoming a second weapon', kit.weapon?.weapon === '弓');
+
+  kit.take({ kind: 'way', way: '火爆' });
+  check('a way arrives at the first depth', kit.depthOf('火爆'), 1);
+  kit.take({ kind: 'way', way: '火爆' });
+  check('and again deepens it', kit.depthOf('火爆'), 2);
+  check('still one way, not two', kit.ways.length, 1);
+
+  // 4. **A swap keeps the ways.** This is the reason swapping a weapon is interesting rather than
+  //    a reset: your three 五行 come with you and come out differently.
+  kit.take({ kind: 'arm', weapon: '刀' });
+  checkTrue('a different weapon swaps in', kit.weapon?.weapon === '刀');
+  check('at the first depth, because it is new to you', kit.weapon?.depth ?? 0, 1);
+  check('and the ways are untouched', kit.depthOf('火爆'), 2);
+}
+
+{
+  // 5. Neither a weapon nor a way goes past its ceiling, and a maxed one leaves the pool —
+  //    otherwise a late offer is three cards that would do nothing.
+  const kit = new Arsenal();
+  kit.start();
+  for (let i = 0; i < MaxDepth + 3; i++) kit.take({ kind: 'arm', weapon: '弓' });
+  check('a weapon stops at its ceiling', kit.weapon?.depth ?? 0, MaxDepth);
+  for (let i = 0; i < MaxDepth + 3; i++) kit.take({ kind: 'way', way: '水寒' });
+  check('and so does a way', kit.depthOf('水寒'), MaxDepth);
+
+  let offeredMaxed = 0;
+  for (let i = 0; i < 200; i++) {
+    for (const card of kit.offer(draftRandom)) {
+      if (card.kind === 'arm' && card.weapon === '弓') offeredMaxed++;
+      if (card.kind === 'way' && card.way === '水寒') offeredMaxed++;
     }
   }
+  check('a maxed card leaves the pool', offeredMaxed, 0);
 }
-check('the pairings contain exactly two triangles in total', allTriangles, 2);
 
-// No school is locked out of the layer.
-let leastAppearances = 9;
-for (const school of SCHOOLS) {
-  leastAppearances = Math.min(leastAppearances, TRIADS.filter((t) => t.of.includes(school)).length);
-}
-checkTrue(`every school is in at least two 三合: ${leastAppearances}`, leastAppearances >= 2);
-
-// A four-slot build can hold one, and holding one costs three quarters of the build — which is the
-// whole reason this layer is worth having where a fifteenth pairing would not be.
-check('a 三合 fits in four slots', activeTriads(['符', '剑', '雷', '冰']).length, 1);
-check('and three schools is enough on their own', activeTriads(['符', '剑', '雷']).length, 1);
-check('two of the three is not', activeTriads(['符', '剑']).length, 0);
-
-// How often a steered draft walks into one without trying, which is the number the 一主二辅 rule
-// exists to keep up. Reported rather than pinned tightly: it is a consequence of the pairings.
-let withTriad = 0;
-for (let run = 0; run < runs; run++) {
-  const kit3 = new Arsenal();
-  kit3.start();
-  for (let pick = 0; pick < Slots; pick++) {
-    const cards = kit3.offer(rng);
-    let best = cards[0];
-    let bestScore = -1;
-    for (const card of cards) {
-      if (card.kind !== 'take') continue;
-      const would = kit3.schools.concat(card.school);
-      const score = activeCombos(would).length * 2 + activeTriads(would).length * 5;
-      if (score > bestScore) {
-        bestScore = score;
-        best = card;
-      }
+{
+  // 6. With the ways full, an eleventh is never offered — there is nowhere to put it.
+  const kit = new Arsenal();
+  kit.start();
+  kit.take({ kind: 'arm', weapon: '弓' });
+  kit.take({ kind: 'way', way: '金锐' });
+  kit.take({ kind: 'way', way: '木缠' });
+  kit.take({ kind: 'way', way: '火爆' });
+  check('three ways is full', kit.ways.length, Ways);
+  let strangers = 0;
+  for (let i = 0; i < 300; i++) {
+    for (const card of kit.offer(draftRandom)) {
+      if (card.kind === 'way' && kit.depthOf(card.way) === 0) strangers++;
     }
-    kit3.take(best);
   }
-  if (activeTriads(kit3.schools).length > 0) withTriad++;
+  check('a way you have no room for is never offered', strangers, 0);
 }
-checkTrue(
-  `a draft that goes looking finds one ${((withTriad / runs) * 100).toFixed(0)}% of the time`,
-  withTriad / runs > 0.5,
-);
+
+{
+  // 7. An offer is never empty. A meter that fills with nothing to spend it on reads as broken
+  //    rather than as finished, and at 大乘 "everything maxed" is a state people reach.
+  const kit = new Arsenal();
+  kit.start();
+  kit.take({ kind: 'arm', weapon: '弓' });
+  for (const way of ['金锐', '木缠', '火爆'] as const) {
+    for (let i = 0; i < MaxDepth; i++) kit.take({ kind: 'way', way });
+  }
+  for (let i = 0; i < MaxDepth; i++) kit.take({ kind: 'arm', weapon: '弓' });
+  for (let i = 0; i < MaxShields; i++) kit.take({ kind: 'shield' });
+  const late = kit.offer(draftRandom);
+  check('an offer is always three cards', late.length, CardsPerOffer);
+  checkTrue('even when there is nothing left to deepen', late.length > 0);
+}
+
 
 // ---------------------------------------------------------------------------------------------
 // 邪气: the roster, and whether a run actually gets worse.
@@ -1180,6 +1008,15 @@ checkTrue('and has met everything by 38% of the way in', availableAt(6, 0.38) ==
 checkTrue('where 筑基 is still two breeds short', availableAt(0, 0.38) <= 4);
 
 // Nothing arrives before it is due, however the dice fall.
+//
+// On a seed of its own. It used to borrow one declared up in the draft checks, which went
+// with them — and a shared generator also means adding an assertion anywhere above silently
+// changes what this one rolls.
+let seed = 20260922;
+const rng = (): number => {
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return seed / 0x7fffffff;
+};
 let early = 0;
 for (let i = 0; i < 5000; i++) {
   const breed = rollBreed(0, 0.1, rng);
@@ -1240,7 +1077,7 @@ function fight(
   realm: number,
   nudge: number,
   random: () => number,
-  build?: School[],
+  build?: { weapon: Weapon; ways: Way[] },
   spend = true,
 ): Standing {
   const arena = { width: 1200, height: 800 };
@@ -1251,11 +1088,15 @@ function fight(
   kit.start();
   arts.reset();
 
-  // The opening draft. A named build when one is given — the guard has to test the *strongest*
-  // thing somebody could walk away from, not whatever four cards a seed happened to deal.
-  if (build) for (const school of build) kit.take({ kind: 'take', school });
+  // The opening draft. A named kit when one is given — the guard has to test the *strongest* thing
+  // somebody could walk away from, not whatever cards a seed happened to deal.
+  if (build) {
+    kit.take({ kind: 'arm', weapon: build.weapon });
+    for (const way of build.ways) kit.take({ kind: 'way', way });
+  }
   while (kit.openingLeft > 0) kit.take(kit.offer(random)[0]);
-  arts.carry(kit.held, kit.combos());
+  arts.equip(kit.weapon, kit.ways);
+  arts.guard(kit.shields);
 
   const body = { x: arena.width / 2, y: arena.height / 2, radius: 46 };
   let seconds = 0;
@@ -1289,10 +1130,10 @@ function fight(
     seen = now;
     if (spend && kit.due) {
       kit.take(kit.offer(random)[0]);
-      arts.carry(kit.held, kit.combos());
-      // 金钟 is not a school, so it does not ride along in `carry`. Without this the harness would
-      // draft a shell and then fight without it, and the run it reports would be a run nobody can
-      // have played.
+      // 金钟 and 固土 are both armour and arrive by different routes, so both are pushed here.
+      // Without the second the harness would draft a shell and then fight without it, and the run
+      // it reports would be one nobody can have played.
+      arts.equip(kit.weapon, kit.ways);
       arts.guard(kit.shields);
     }
     seconds += dt;
@@ -1326,7 +1167,9 @@ check('and is worth nothing', harvest(waiting.through, waiting.outcome), 0);
 //    游魂. The roster closed that on its own — 钉煎 cannot be kited and 裂魄 replaces itself — so
 //    neglect now loses at every realm, and earlier the higher you go. Nothing was retuned for it;
 //    six breeds did what two thousand arrivals a minute could not.
-const Strongest: School[] = ['符', '雷', '火', '冰'];
+// The strongest thing measured: a bow that pierces, chains and bursts — every hit
+// reaching three targets and going off on each.
+const Strongest = { weapon: '弓' as Weapon, ways: ['金锐', '水流', '火爆'] as Way[] };
 let neglectedSurvivals = 0;
 const neglectedPay: number[] = [];
 for (let realm = 1; realm <= Ascended - 1; realm++) {
@@ -2541,17 +2384,17 @@ check('ten ways, two to a phase', WAYS.length, 10);
   //    and that is exactly what the build guards caught when it was not gated.
   let openingShields = 0;
   while (kit.openingLeft > 0) {
-    const offered = kit.offer(fightRandom);
+    const offered = kit.offer(draftRandom);
     openingShields += offered.filter((c) => c.kind === 'shield').length;
     kit.take(offered[0]);
   }
   check('金钟 is never in the opening draft', openingShields, 0);
-  check('so the opening still fills every slot', kit.held.length, Slots);
+  check('so the opening still fills every way', kit.ways.length, Ways);
 
   // 2. And it is offered afterwards, where it is a trade against a level.
   let laterShields = 0;
   for (let i = 0; i < 300; i++) {
-    laterShields += kit.offer(fightRandom).filter((c) => c.kind === 'shield').length;
+    laterShields += kit.offer(draftRandom).filter((c) => c.kind === 'shield').length;
   }
   checkTrue(`and is on offer after that: seen ${laterShields} times in 300 offers`, laterShields > 0);
 
@@ -2561,7 +2404,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
   check('layers stop at the cap', kit.shields, MaxShields);
   let capped = 0;
   for (let i = 0; i < 200; i++) {
-    capped += kit.offer(fightRandom).filter((c) => c.kind === 'shield').length;
+    capped += kit.offer(draftRandom).filter((c) => c.kind === 'shield').length;
   }
   check('and it leaves the pool once it is maxed', capped, 0);
 }

@@ -1,3 +1,4 @@
+import type { Way, Weapon } from '../game/kit.js';
 /**
  * 语言 — what a dictionary has to provide, and nothing about how it is chosen.
  *
@@ -120,6 +121,11 @@ export interface Dictionary {
     lockedUntil: string;
   };
 
+  /** 兵器: the five, by their key in `kit.ts`. */
+  arms: Record<Weapon, Named>;
+  /** 五行: the ten ways, by their key. */
+  ways: Record<Way, Named>;
+
   draft: {
     /** The heading over the three cards. */
     choose: string;
@@ -127,6 +133,10 @@ export interface Dictionary {
     newSchool: string;
     raise: string;
     evolve: string;
+    /** What kind of card this is, and what swapping a weapon costs. */
+    arm: string;
+    way: string;
+    swaps: string;
     mend: string;
     /** The title on the mend card. `mend` is the word for the *kind* of card, which is not the same. */
     mendTitle: string;

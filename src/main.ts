@@ -16,20 +16,18 @@ import { Motes, StageSpread } from './game/Motes';
 import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
-import { Arsenal, type Holding } from './game/Arsenal';
-import { Slots, activeCombos } from './game/schools';
+import { type Armed, Arsenal, type Walked } from './game/Arsenal';
+import { Ways } from './game/kit';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
 import { type FeatId, Feats, SlayerKills, featBlurb, featName } from './game/feats';
 import { type Plan, crawl, planCrawl } from './ui/reveal';
 import {
-  combo as comboWords,
   fill,
   isLocale,
   locale,
   localeFor,
   setLocale,
-  triad as triadWords,
   words,
 } from './i18n';
 import { Draft } from './ui/Draft';
@@ -713,7 +711,8 @@ function enterTrial(width: number, height: number): void {
  * Deliberately not gated on 筑基. The gate exists so that somebody meets the mode after they have
  * crossed a realm; it has nothing to say about looking at an effect on purpose.
  */
-function startArena(loadout: Holding[]): void {
+/** The yard, with a kit chosen in Settings rather than drafted. */
+function startArena(kit: { weapon: Armed | null; ways: Walked[] }): void {
   if (inTrial) leaveTrial();
   const { width, height } = canvas;
   inTrial = true;
@@ -724,7 +723,7 @@ function startArena(loadout: Holding[]): void {
   slime.centreIn(width, height);
   dummies.place(slime.x, slime.y);
   attacks.reset();
-  attacks.carry(loadout, activeCombos(loadout.map((slot) => slot.school)));
+  attacks.equip(kit.weapon, kit.ways);
   killsSeen = 0;
   bubble.hide();
   slime.clearAlert();
@@ -735,56 +734,42 @@ function startArena(loadout: Holding[]): void {
 
 /** Puts three cards up, which also stops the clock until one is taken. */
 function offerDraft(): void {
-  draft.show(arsenal.offer(Math.random), arsenal.held);
+  draft.show(arsenal.offer(Math.random), { weapon: arsenal.weapon, ways: arsenal.ways });
   fullRepaint = true;
 }
 
 /** Spends a card and starts the fight again. */
 function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
-  const before = arsenal.combos();
-  const beforeTriads = arsenal.triads();
+  const hadWeapon = arsenal.weapon?.weapon ?? null;
   const { mend } = arsenal.take(card);
   if (mend > 0) trial.mend(mend);
-  attacks.carry(arsenal.held, arsenal.combos());
-  // 金钟 is not a school, so it does not ride along in `carry`. Pushed separately, from the one
-  // place that knows a card was taken.
-  attacks.guard(arsenal.shields);
-  // The rarest card in the mode used to be taken in silence. Say it, and show it.
-  if (arsenal.held.length >= Slots) achieve('fullSet');
-  if (arsenal.combos().length > before.length) achieve('pair');
-  if (arsenal.triads().length > beforeTriads.length) achieve('triad');
-  if (card.kind === 'evolve') {
-    achieve('evolve');
-    attacks.herald(card.school);
-    trialSaid = words().evolutions[card.school].name;
+  equipFromArsenal();
+
+  // What the card actually did, said once. A weapon that **changed** is the only one of these
+  // worth interrupting for — it is the pick that alters how everything else you carry comes out.
+  const now = arsenal.weapon;
+  if (card.kind === 'arm' && now && now.weapon !== hadWeapon) {
+    attacks.herald('符');
+    trialSaid = words().arms[now.weapon].name;
     trialUntil = performance.now() + 3_200;
-  } else {
-    // A card that completes something says so too. Compared against what was held *before* the
-    // card rather than recomputed from names, because one card can complete two.
-    //
-    // A 三合 outranks a pairing, and the order matters: the card that completes a 三合 has almost
-    // always completed a pairing on the way there, so announcing the smaller of the two would bury
-    // the larger one under it.
-    const forms = arsenal.triads().filter((triad) => !beforeTriads.includes(triad));
-    const made = arsenal.combos().filter((combo) => !before.includes(combo));
-    if (forms.length > 0) {
-      const triad = forms[0];
-      attacks.heraldTriad(triad.of);
-      const said = triadWords(triad.of.join(''));
-      trialSaid = `${fill(words().draft.triadWith, { triad: said.name })}\n${said.blurb}`;
-      trialUntil = performance.now() + 4_200;
-    } else if (made.length > 0) {
-      const combo = made[0];
-      attacks.heraldCombo(combo.pair[0], combo.pair[1]);
-      const said = comboWords(combo.pair.join(''));
-      trialSaid = `${said.name}\n${said.blurb}`;
-      trialUntil = performance.now() + 3_600;
-    }
   }
+  if (arsenal.ways.length >= Ways) achieve('fullSet');
+
   draft.hide();
-  // Another one may already be owed: the four opening cards are drafted back to back.
+  // Another one may already be owed: the opening cards are drafted back to back.
   if (arsenal.due) offerDraft();
   fullRepaint = true;
+}
+
+/**
+ * Hands the kit to the fight.
+ *
+ * One place, because 金钟 and 固土 are both armour and both have to arrive before the next hit
+ * is taken — two call sites for that is two chances to push one and forget the other.
+ */
+function equipFromArsenal(): void {
+  attacks.equip(arsenal.weapon, arsenal.ways);
+  attacks.guard(arsenal.shields);
 }
 
 /** Ends the run and pays out what it came to. `harvest` holds the reasoning about how much. */
@@ -2153,19 +2138,19 @@ async function main(): Promise<void> {
     requestSave(currentSave());
   });
 
-  await listen<{ loadout: Holding[] }>('arena-start', (event) => {
-    const { loadout } = event.payload;
-    if (!Array.isArray(loadout) || loadout.length === 0) return;
-    startArena(loadout);
+  await listen<{ weapon: Armed | null; ways: Walked[] }>('arena-start', (event) => {
+    const kit = event.payload;
+    if (!kit || !Array.isArray(kit.ways)) return;
+    startArena(kit);
   });
 
   // Sent on every slider and checkbox, so a change is felt without restarting the bout. Ignored
   // outside one, which is why Settings can fire it freely.
-  await listen<{ loadout: Holding[] }>('arena-loadout', (event) => {
+  await listen<{ weapon: Armed | null; ways: Walked[] }>('arena-loadout', (event) => {
     if (arena === null || !inTrial) return;
-    const { loadout } = event.payload;
-    if (!Array.isArray(loadout) || loadout.length === 0) return;
-    attacks.carry(loadout, activeCombos(loadout.map((slot) => slot.school)));
+    const kit = event.payload;
+    if (!kit || !Array.isArray(kit.ways)) return;
+    attacks.equip(kit.weapon, kit.ways);
   });
 
   await listen('arena-stop', () => {

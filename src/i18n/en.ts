@@ -175,11 +175,35 @@ export const en: Dictionary = {
     lockedUntil: 'Opens at Foundation',
   },
 
+  arms: {
+    刀: { name: 'Sabre', blurb: 'Cuts several arcs of qi along the ground' },
+    剑: { name: 'Sword', blurb: 'A flying sword hunts on its own, and flurries where it lands' },
+    盾: { name: 'Shield', blurb: 'Qi circles the body, and what it passes through is hurt' },
+    弓: { name: 'Bow', blurb: 'One arrow, straight out, and it does not turn' },
+    符: { name: 'Talisman', blurb: 'The charm finds its own mark and will not stop short' },
+  },
+
+  ways: {
+    金锐: { name: 'Keen Metal', blurb: 'Passes through, and does not stop for one' },
+    金鸣: { name: 'Ringing Metal', blurb: 'One strike throws them off in every direction' },
+    木缠: { name: 'Binding Wood', blurb: 'What it strikes takes root, and cannot move for a moment' },
+    木荣: { name: 'Flourishing Wood', blurb: 'Every hit gives a little of the body back' },
+    水寒: { name: 'Cold Water', blurb: 'Where it lands turns cold, and what crosses it slows' },
+    水流: { name: 'Flowing Water', blurb: 'One strike carries on to the next of them' },
+    火燎: { name: 'Spreading Fire', blurb: 'What it strikes catches, and burns for a while' },
+    火爆: { name: 'Bursting Fire', blurb: 'It goes off where it lands, and everything near it is hurt' },
+    土崩: { name: 'Crumbling Earth', blurb: 'The ground splits where it lands and stone heaves up' },
+    土固: { name: 'Firm Earth', blurb: 'Stone armour on the body, and a hit does not land' },
+  },
+
   draft: {
     choose: 'Choose one',
     newSchool: 'New',
     raise: 'Deepen',
     evolve: '★ Evolve',
+    arm: 'Arm',
+    way: 'Phase',
+    swaps: 'Puts down {weapon}; your three stay',
     mend: 'Mend',
     mendTitle: 'Guard',
     mendBlurb: 'Restores three points of guard',

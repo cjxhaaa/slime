@@ -135,11 +135,35 @@ export const zhHans: Dictionary = {
     lockedUntil: '筑基可开',
   },
 
+  arms: {
+    刀: { name: '刀', blurb: '就地斩出数道刀气' },
+    剑: { name: '剑', blurb: '飞剑自去追敌，追上便连斩' },
+    盾: { name: '盾', blurb: '罡气绕身，所过者伤' },
+    弓: { name: '弓', blurb: '一箭穿出，去势不改' },
+    符: { name: '符箓', blurb: '符自寻敌，不中不止' },
+  },
+
+  ways: {
+    金锐: { name: '锐金', blurb: '穿身而过，不为一人停' },
+    金鸣: { name: '鸣金', blurb: '一击荡开四方' },
+    木缠: { name: '缠木', blurb: '中者生根，一瞬动不得' },
+    木荣: { name: '荣木', blurb: '每中一下，护体回一分' },
+    水寒: { name: '寒水', blurb: '落处成寒，过者迟滞' },
+    水流: { name: '流水', blurb: '一击连环，自去寻下一个' },
+    火燎: { name: '燎火', blurb: '中者带火，烧上一阵' },
+    火爆: { name: '爆火', blurb: '落处炸开，近旁俱伤' },
+    土崩: { name: '崩土', blurb: '落处地裂，石柱冲起' },
+    土固: { name: '固土', blurb: '身披石甲，挨打不损' },
+  },
+
   draft: {
     choose: '择一',
     newSchool: '新法',
     raise: '精进',
     evolve: '★ 进化',
+    arm: '兵器',
+    way: '五行',
+    swaps: '换下{weapon}，三式仍在',
     mend: '调息',
     mendTitle: '护体',
     mendBlurb: '恢复三分护体',
