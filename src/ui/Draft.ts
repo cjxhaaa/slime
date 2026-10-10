@@ -23,6 +23,8 @@ import { ARMS, PATHS } from '../game/kit.js';
 import { fill, onLocaleChange, words } from '../i18n/index.js';
 import { fit, wrap } from './text.js';
 
+const clamp = (v: number): number => Math.max(0, Math.min(1, v));
+
 export interface Rect {
   x: number;
   y: number;
@@ -36,6 +38,52 @@ const Gap = 18;
 const Radius = 14;
 /** How far above the middle of the screen the row sits. A little high, so the body is still visible. */
 const Rise = 26;
+
+/**
+ * 开箱 — the chest, in seconds.
+ *
+ * An offer used to appear. Three cards simply were there, on the frame the meter filled, and the
+ * one genuinely good moment this mode has — **you earned a pick** — went by without anything
+ * happening. So it is opened now: the chest lands, the lid goes, and the cards come out of it.
+ *
+ * The whole thing is under a second because it is in the way. A run is ninety seconds and the
+ * clock is stopped while this is up; a celebration you have to sit through twice a minute stops
+ * being a celebration on about the third one.
+ */
+const Landing = 0.16;
+const LidOpen = 0.3;
+const FlyAt = 0.28;
+const FlyFor = 0.42;
+/** Clicks are ignored until the cards have arrived. Mis-clicking a card in flight is not a choice. */
+const Settled = FlyAt + FlyFor + 0.06;
+
+const ChestWidth = 148;
+const ChestHeight = 92;
+
+/** A coin or a scrap of confetti, thrown out of the chest and falling back. */
+interface Fleck {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  spin: number;
+  turn: number;
+  life: number;
+  born: number;
+  /** A coin flips edge-on and a scrap tumbles; which one decides how it is drawn. */
+  coin: boolean;
+  tint: string;
+}
+
+const ConfettiTints = ['#ff7a6b', '#ffd24a', '#8ceaff', '#9ae66a', '#d489ff'];
+/**
+ * Pixels a second squared, against a launch of 700 to 900.
+ *
+ * That pairing puts the apex about 180 pixels over the lid — up past the cards rather than a
+ * shrug at the rim, which is what 1500 against 400 came to. Steeper than real gravity on purpose:
+ * a slow arc reads as floating, and these are supposed to have been *thrown* out.
+ */
+const FleckFall = 1900;
 
 /**
  * The title's sizes, largest first.
@@ -82,8 +130,11 @@ export class Draft {
   private open = false;
   private hot = -1;
   private boxes: Rect[] = [];
-  /** Counts up on open, so the row can arrive rather than appear. */
-  private age = 0;
+  /** Seconds since the chest landed. The whole opening is driven off this. */
+  private clock = 0;
+  private flecks: Fleck[] = [];
+  /** Where the chest sits. Worked out in `layout`, because the cards fly *from* it. */
+  private chest = { x: 0, y: 0 };
 
   constructor() {
     // The cards are laid out once and held; a language change while they are up has to reach them.
@@ -103,14 +154,20 @@ export class Draft {
    * level a raise is raising from. Passed in rather than read off an `Arsenal`, so this file knows
    * nothing about the run's state — it is a renderer with an opinion about wording.
    */
+  /** True once the cards have landed and a click means what it looks like it means. */
+  get ready(): boolean {
+    return this.clock >= Settled;
+  }
+
   show(cards: Card[], holding: Kit): void {
     this.cards = cards;
     this.holding = holding;
     this.faces = cards.map((card) => face(card, holding));
     this.open = true;
     this.hot = -1;
-    this.age = 0;
+    this.clock = 0;
     this.boxes = [];
+    this.flecks = [];
   }
 
   /**
@@ -126,6 +183,7 @@ export class Draft {
 
   hide(): void {
     this.open = false;
+    this.flecks = [];
     this.cards = [];
     this.holding = { weapon: null, ways: [] };
     this.faces = [];
@@ -134,7 +192,54 @@ export class Draft {
   }
 
   advance(dt: number): void {
-    if (this.open) this.age = Math.min(1, this.age + dt * 5.5);
+    if (!this.open) return;
+    const was = this.clock;
+    this.clock += dt;
+    // The spray is seeded the moment the lid goes, not on `show` — seeded earlier it would be
+    // mid-flight before anything had opened.
+    if (was < Landing && this.clock >= Landing) this.spray();
+
+    const falling: Fleck[] = [];
+    for (const fleck of this.flecks) {
+      fleck.life -= dt;
+      if (fleck.life <= 0) continue;
+      fleck.vy += FleckFall * dt;
+      fleck.x += fleck.vx * dt;
+      fleck.y += fleck.vy * dt;
+      fleck.spin += fleck.turn * dt;
+      falling.push(fleck);
+    }
+    this.flecks = falling;
+  }
+
+  /**
+   * What comes out with the cards.
+   *
+   * Thrown up and outward from the chest's mouth, and the coins are thrown harder than the
+   * confetti — a coin is heavy and a scrap of paper is not, and the two arcs separating is most
+   * of what makes this read as a spray rather than as one puff of particles.
+   */
+  private spray(): void {
+    const count = 54;
+    for (let i = 0; i < count; i++) {
+      const coin = i % 3 === 0;
+      // Up and out, never down: it is coming out of a box, so nothing starts by going into it.
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * 2.1;
+      const rush = (coin ? 900 : 700) * (0.55 + Math.random() * 0.6);
+      const life = (coin ? 1.5 : 1.2) * (0.7 + Math.random() * 0.6);
+      this.flecks.push({
+        x: this.chest.x + (Math.random() - 0.5) * ChestWidth * 0.7,
+        y: this.chest.y - ChestHeight * 0.35,
+        vx: Math.cos(angle) * rush,
+        vy: Math.sin(angle) * rush,
+        spin: Math.random() * Math.PI * 2,
+        turn: (Math.random() - 0.5) * 16,
+        life,
+        born: life,
+        coin,
+        tint: coin ? '#ffd24a' : ConfettiTints[i % ConfettiTints.length],
+      });
+    }
   }
 
   layout(width: number, height: number): Rect[] {
@@ -152,6 +257,9 @@ export class Draft {
       width: CardWidth,
       height: CardHeight,
     }));
+    // Under the row rather than behind it: the cards have to be seen coming *out*, and a chest
+    // behind them is a chest they are standing in front of.
+    this.chest = { x: Math.round(width / 2), y: top + CardHeight + 54 };
     return this.boxes;
   }
 
@@ -160,16 +268,24 @@ export class Draft {
     if (!this.open || this.boxes.length === 0) return null;
     const first = this.boxes[0];
     const last = this.boxes[this.boxes.length - 1];
+    // The row, plus the chest under it and whatever is still in the air over it. The draft forces
+    // a full repaint while it is up, so this is only ever a floor — but a wrong floor here is a
+    // smear of coins left on the desktop the frame the panel closes.
+    const top = first.y - 160;
+    const bottom = this.chest.y + 60;
     return {
-      x: first.x - 26,
-      y: first.y - 52,
-      width: last.x + last.width - first.x + 52,
-      height: CardHeight + 96,
+      x: first.x - 220,
+      y: top,
+      width: last.x + last.width - first.x + 440,
+      height: bottom - top,
     };
   }
 
   hover(px: number, py: number): boolean {
     this.hot = -1;
+    // Nothing is hot until the cards have arrived — a card lighting up while it is still in
+    // flight invites the click that `click` is about to refuse.
+    if (!this.ready) return false;
     for (let i = 0; i < this.boxes.length; i++) {
       const box = this.boxes[i];
       if (px >= box.x && px <= box.x + box.width && py >= box.y && py <= box.y + box.height) {
@@ -188,6 +304,10 @@ export class Draft {
    * and the only way out would be a control that does not exist yet.
    */
   click(px: number, py: number): Card | null {
+    // Not until they have landed. The boxes hold the *final* positions from the moment the panel
+    // opens, so without this a click where a card is about to be would take it before it arrived
+    // — and the pick would be one the player never saw.
+    if (!this.ready) return null;
     for (let i = 0; i < this.boxes.length; i++) {
       const box = this.boxes[i];
       if (px >= box.x && px <= box.x + box.width && py >= box.y && py <= box.y + box.height) {
@@ -207,9 +327,24 @@ export class Draft {
     context.fillStyle = 'rgba(10, 16, 28, 0.34)';
     context.fillRect(0, 0, width, height);
 
-    const rise = 1 - (1 - this.age) * (1 - this.age);
+    const t = this.clock;
+    // The heading waits for the cards. Asking somebody to choose before there is anything to
+    // choose between is what makes a celebration feel like a loading screen.
+    const asked = clamp((t - (FlyAt + FlyFor * 0.6)) / 0.22);
     const heading = this.boxes[0].y - 30;
-    context.globalAlpha = rise;
+
+    this.drawChest(context, t);
+    for (const fleck of this.flecks) this.drawFleck(context, fleck);
+
+    for (let i = 0; i < this.boxes.length; i++) {
+      // Each leaves a beat after the one before, so three come out of the box in a run rather
+      // than as one object that happens to be three cards wide.
+      const flown = clamp((t - (FlyAt + i * 0.07)) / FlyFor);
+      if (flown <= 0) continue;
+      this.drawFlying(context, this.boxes[i], this.faces[i], i === this.hot, flown);
+    }
+
+    context.globalAlpha = asked;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.font = HeadFont;
@@ -218,11 +353,128 @@ export class Draft {
     context.shadowBlur = 8;
     context.fillText(words().draft.choose, width / 2, heading);
     context.shadowBlur = 0;
-
-    for (let i = 0; i < this.boxes.length; i++) {
-      this.drawCard(context, this.boxes[i], this.faces[i], i === this.hot, rise);
-    }
     context.globalAlpha = 1;
+    context.restore();
+  }
+
+  /**
+   * A card on its way out of the chest.
+   *
+   * It leaves small and spinning from the chest's mouth and arrives full size and square. The arc
+   * is the part that sells it: a card travelling in a straight line reads as a card *sliding*, and
+   * a thrown thing goes up before it comes down into place.
+   */
+  private drawFlying(
+    context: CanvasRenderingContext2D,
+    box: Rect,
+    face: Face,
+    hot: boolean,
+    flown: number,
+  ): void {
+    if (flown >= 1) {
+      this.drawCard(context, box, face, hot, 1);
+      return;
+    }
+    // Fast out of the box and easing into place, which is how a thrown thing arrives.
+    const ease = 1 - (1 - flown) * (1 - flown) * (1 - flown);
+    const fromY = this.chest.y - ChestHeight * 0.4;
+    const home = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const x = this.chest.x + (home.x - this.chest.x) * ease;
+    // The hop over the straight line, zero at both ends so it starts and lands where it should.
+    const y = fromY + (home.y - fromY) * ease - Math.sin(ease * Math.PI) * 90;
+    const scale = 0.16 + 0.84 * ease;
+
+    context.save();
+    context.translate(x, y);
+    context.rotate((1 - ease) * (1 - ease) * 1.3);
+    context.scale(scale, scale);
+    context.translate(-box.width / 2, -box.height / 2);
+    this.drawCard(context, { x: 0, y: 0, width: box.width, height: box.height }, face, false, 1);
+    context.restore();
+  }
+
+  /**
+   * The chest: it lands, the lid goes over, and light comes out of it.
+   *
+   * It fades once the cards are out. It has done its job by then and the thing being chosen is
+   * above it — a chest that stayed would be a second thing on screen competing for the look.
+   */
+  private drawChest(context: CanvasRenderingContext2D, t: number): void {
+    const fade = 1 - clamp((t - (FlyAt + FlyFor * 0.5)) / 0.5);
+    if (fade <= 0) return;
+    // Overshoots and settles: it is dropped, not placed.
+    const land = 1 - (1 - clamp(t / Landing)) * (1 - clamp(t / Landing));
+    const lid = clamp((t - Landing) / LidOpen);
+    const w = ChestWidth / 2;
+    const h = ChestHeight;
+    const y = this.chest.y - (1 - land) * 150;
+
+    context.save();
+    context.globalAlpha = fade;
+    context.translate(this.chest.x, y);
+
+    // The light out of the open box, brightest just as it goes.
+    if (lid > 0) {
+      const spill = lid * (1 - clamp((t - Landing - LidOpen) / 0.6));
+      const glow = context.createRadialGradient(0, -h * 0.4, 0, 0, -h * 0.4, 160);
+      glow.addColorStop(0, 'rgba(255, 238, 180, ' + (0.8 * spill).toFixed(3) + ')');
+      glow.addColorStop(1, 'rgba(255, 238, 180, 0)');
+      context.fillStyle = glow;
+      context.beginPath();
+      context.arc(0, -h * 0.4, 160, 0, Math.PI * 2);
+      context.fill();
+    }
+
+    // The lid, hinged at the back edge and thrown over.
+    context.save();
+    context.translate(0, -h * 0.42);
+    context.rotate((-Math.PI / 1.5) * (1 - (1 - lid) * (1 - lid)));
+    context.fillStyle = '#6b4a22';
+    context.beginPath();
+    context.roundRect(-w, -17, w * 2, 19, 6);
+    context.fill();
+    context.fillStyle = '#c99a52';
+    context.fillRect(-w * 0.18, -17, w * 0.36, 19);
+    context.restore();
+
+    // The dark of the inside over the lip, then the box.
+    context.fillStyle = '#17110a';
+    context.beginPath();
+    context.ellipse(0, -h * 0.42, w * 0.92, 10, 0, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = '#7a5528';
+    context.beginPath();
+    context.roundRect(-w, -h * 0.42, w * 2, h * 0.9, 7);
+    context.fill();
+    context.fillStyle = '#c99a52';
+    context.fillRect(-w * 0.18, -h * 0.42, w * 0.36, h * 0.9);
+    context.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    context.lineWidth = 2;
+    context.beginPath();
+    context.roundRect(-w, -h * 0.42, w * 2, h * 0.9, 7);
+    context.stroke();
+
+    context.restore();
+  }
+
+  private drawFleck(context: CanvasRenderingContext2D, fleck: Fleck): void {
+    context.save();
+    context.globalAlpha = Math.min(1, fleck.life / Math.max(0.001, fleck.born * 0.4));
+    context.translate(fleck.x, fleck.y);
+    context.fillStyle = fleck.tint;
+    if (fleck.coin) {
+      // Edge-on and back: a spinning coin is a circle whose width goes to nothing and returns,
+      // which costs one cosine and reads better than any number of drawn faces.
+      context.beginPath();
+      context.ellipse(0, 0, 5 * Math.abs(Math.cos(fleck.spin)) + 0.6, 5, 0, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = 'rgba(140, 92, 20, 0.7)';
+      context.lineWidth = 1;
+      context.stroke();
+    } else {
+      context.rotate(fleck.spin);
+      context.fillRect(-3.5, -2, 7, 4);
+    }
     context.restore();
   }
 
