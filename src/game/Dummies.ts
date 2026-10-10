@@ -130,6 +130,20 @@ export class Dummies {
    */
   shove(): void {}
 
+  /**
+   * Nothing, three times over. 木人桩 are posts: they do not get held where they stand because
+   * they were never going anywhere, they do not burn, and nothing in the yard has 护体 to give
+   * back.
+   *
+   * Which makes the yard the one place three of the ten cannot be judged — worth knowing rather
+   * than faking, the same way the knockback already is.
+   */
+  root(): void {}
+
+  burn(): void {}
+
+  mend(): void {}
+
   cull(x: number, y: number, radius: number, most: number): number {
     if (most <= 0) return 0;
     const inside: { post: Post; away: number }[] = [];

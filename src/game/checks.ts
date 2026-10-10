@@ -88,6 +88,7 @@ import { PillarShove, QuakeTell } from './Attacks.js';
 import { Depth } from './depth.js';
 import { MaxShields } from './Arsenal.js';
 import { ARMS, PATHS, WAYS, WEAPONS, swing } from './kit.js';
+import { BurnBeat } from './Trial.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
 import {
@@ -2077,6 +2078,9 @@ checkTrue('nor does anything past the top', Feats.forRealm(Ascended + 1) === nul
       shoves++;
       pillars.push({ at: clock, radius: Math.hypot(x - 820, y - 400) });
     },
+    root: () => {},
+    burn: () => {},
+    mend: () => {},
   };
 
   const kit = new Attacks();
@@ -2261,6 +2265,9 @@ check('ten ways, two to a phase', WAYS.length, 10);
       return 1;
     },
     shove: () => {},
+    root: () => {},
+    burn: () => {},
+    mend: () => {},
   };
   const body = { x: 400, y: 400, radius: 46 };
 
@@ -2328,6 +2335,9 @@ check('ten ways, two to a phase', WAYS.length, 10);
         return 1;
       },
       shove: () => {},
+    root: () => {},
+    burn: () => {},
+    mend: () => {},
     };
     const kit = new Attacks();
     kit.equip({ weapon, depth: 3 }, [{ way: '火爆', depth: 1 }]);
@@ -2346,6 +2356,9 @@ check('ten ways, two to a phase', WAYS.length, 10);
     closest: () => ({ x: 500, y: 400 }),
     cull: () => 1,
     shove: () => {},
+    root: () => {},
+    burn: () => {},
+    mend: () => {},
   };
   const kit = new Attacks();
   const body = { x: 400, y: 400, radius: 46 };
@@ -2355,6 +2368,162 @@ check('ten ways, two to a phase', WAYS.length, 10);
   // One frame after the swap is far less than 盾's own interval, so nothing should have fired.
   for (let i = 0; i < 3; i++) kit.update(1 / 120, body, field);
   checkTrue('a swap starts the new weapon on its own clock', swing('盾', 1) > 3 / 120);
+}
+
+{
+  // **Every one of the ten, through the real engine.** Each is given a bow to ride on — the
+  // plainest of the five — and watched for the verb it is supposed to produce.
+  //
+  // This is the check the whole system needs most. A way that silently does nothing looks exactly
+  // like a way that is working but subtle, and there are ten of them.
+  const seen = {
+    culls: 0,
+    wide: 0,
+    shoves: 0,
+    roots: 0,
+    burns: 0,
+    mends: 0,
+  };
+  const mob = [
+    { x: 520, y: 400 },
+    { x: 548, y: 406 },
+    { x: 500, y: 418 },
+  ];
+  const field = (): Battlefield => ({
+    targets: () => mob,
+    closest: (x, y, within) => (Math.hypot(mob[0].x - x, mob[0].y - y) <= within ? mob[0] : null),
+    cull: (_x, _y, radius) => {
+      seen.culls++;
+      if (radius >= 40) seen.wide++;
+      return 1;
+    },
+    shove: () => {
+      seen.shoves++;
+    },
+    root: () => {
+      seen.roots++;
+    },
+    burn: () => {
+      seen.burns++;
+    },
+    mend: () => {
+      seen.mends++;
+    },
+  });
+
+  const ran = (ways: { way: (typeof WAYS)[number]; depth: number }[]): typeof seen => {
+    seen.culls = 0;
+    seen.wide = 0;
+    seen.shoves = 0;
+    seen.roots = 0;
+    seen.burns = 0;
+    seen.mends = 0;
+    const kit = new Attacks();
+    kit.equip({ weapon: '弓', depth: 1 }, ways);
+    const body = { x: 400, y: 400, radius: 46 };
+    for (let i = 0; i < 120 * 4; i++) kit.update(1 / 120, body, field());
+    return { ...seen };
+  };
+  const with1 = (way: (typeof WAYS)[number]) => ran([{ way, depth: 2 }]);
+
+  // **A bow carrying nothing**, which is what everything else is measured against.
+  //
+  // The first version of this used 金锐 as the baseline and called it bare — so the yardstick was
+  // an arrow already passing through three things, and 水流 duly came out "worse than nothing".
+  // A wrong baseline does not fail, it lies, and this one lied in the direction of a real way
+  // looking broken.
+  const bare = ran([]);
+  checkTrue(`a bare bow lands hits: ${bare.culls}`, bare.culls > 0);
+
+  {
+    const pierced = with1('金锐');
+    checkTrue(
+      `金锐 passes through rather than stopping: ${pierced.culls} against ${bare.culls} bare`,
+      pierced.culls > bare.culls,
+    );
+  }
+  checkTrue(`金鸣 throws: ${with1('金鸣').shoves} shoves`, with1('金鸣').shoves > 0);
+  checkTrue(`木缠 holds: ${with1('木缠').roots} roots`, with1('木缠').roots > 0);
+  checkTrue(`木荣 gives back: ${with1('木荣').mends} mends`, with1('木荣').mends > 0);
+  checkTrue(`火燎 sets alight: ${with1('火燎').burns} burns`, with1('火燎').burns > 0);
+  {
+    const wide = with1('火爆');
+    checkTrue(`火爆 opens a wide circle: ${wide.wide}`, wide.wide > 0);
+  }
+  {
+    const quake = with1('土崩');
+    checkTrue(`土崩 opens the ground: ${quake.shoves} pillars throwing`, quake.shoves > 0);
+  }
+  {
+    // 水寒 lays a field rather than calling anything, so it is read back off `fields`.
+    const kit = new Attacks();
+    kit.equip({ weapon: '弓', depth: 1 }, [{ way: '水寒', depth: 1 }]);
+    const body = { x: 400, y: 400, radius: 46 };
+    for (let i = 0; i < 120 * 2; i++) kit.update(1 / 120, body, field());
+    checkTrue(`水寒 leaves cold ground: ${kit.fields().length} patches`, kit.fields().length > 0);
+  }
+  {
+    // 水流 hops to a second target, so it lands more hits than the bow alone does.
+    const flowed = with1('水流');
+    checkTrue(
+      `水流 reaches a second: ${flowed.culls} hits against ${bare.culls} bare`,
+      flowed.culls > bare.culls,
+    );
+  }
+  {
+    // 土固 is armour, not a landing. It is read off the shell.
+    const kit = new Attacks();
+    kit.equip({ weapon: '弓', depth: 1 }, [{ way: '土固', depth: 2 }]);
+    kit.update(1 / 120, { x: 400, y: 400, radius: 46 }, field());
+    check('土固 is armour, one layer a depth', kit.shell, 2);
+    checkTrue('and it eats a hit like the card does', kit.absorb());
+  }
+  {
+    // And the two sources of shell are one shell, not two.
+    const kit = new Attacks();
+    kit.equip({ weapon: '弓', depth: 1 }, [{ way: '土固', depth: 1 }]);
+    kit.guard(2);
+    kit.update(1 / 120, { x: 400, y: 400, radius: 46 }, field());
+    check('金钟 and 土固 stack into one shell', kit.shell, 3);
+  }
+}
+
+{
+  // 缠木 and 燎火 act on the 邪气 themselves, so they are checked against a real trial rather than
+  // against a stub that only counts the call.
+  const run = new Trial();
+  run.start(3);
+  const body = { x: 600, y: 400, radius: 46 };
+  for (let i = 0; i < 120 * 8; i++) run.update(1 / 120, body, 1200, 800, undefined);
+  const before = run.targets();
+  checkTrue('a field to work on', before.length > 2);
+
+  // Held where it stands: after a root, the nearest one has not closed any further.
+  const near = before.reduce((best, m) =>
+    Math.hypot(m.x - body.x, m.y - body.y) < Math.hypot(best.x - body.x, best.y - body.y) ? m : best,
+  );
+  run.root(near.x, near.y, 40, 0.5);
+  const held = Math.hypot(near.x - body.x, near.y - body.y);
+  for (let i = 0; i < 24; i++) run.update(1 / 120, body, 1200, 800, undefined);
+  const stillThere = run
+    .targets()
+    .some((m) => Math.abs(Math.hypot(m.x - body.x, m.y - body.y) - held) < 1.5);
+  checkTrue(`a rooted 邪气 does not close while it is held (${held.toFixed(0)}px)`, stillThere);
+
+  // And burning kills on its own, with nothing else touching it.
+  const lit = new Trial();
+  lit.start(1);
+  for (let i = 0; i < 120 * 6; i++) lit.update(1 / 120, body, 1200, 800, undefined);
+  const alive = lit.targets().length;
+  const killsBefore = lit.killCount;
+  for (const m of lit.targets()) lit.burn(m.x, m.y, 10, BurnBeat * 4);
+  for (let i = 0; i < Math.round(BurnBeat * 5 * 120); i++) {
+    lit.update(1 / 120, body, 1200, 800, undefined);
+  }
+  checkTrue(
+    `burning kills on its own: ${lit.killCount - killsBefore} died of ${alive} alight`,
+    lit.killCount > killsBefore,
+  );
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -2407,6 +2576,9 @@ check('ten ways, two to a phase', WAYS.length, 10);
     shove: () => {
       shoved++;
     },
+    root: () => {},
+    burn: () => {},
+    mend: () => {},
   };
   const kit = new Attacks();
   const body = { x: 400, y: 300, radius: 46 };
@@ -2492,6 +2664,9 @@ function recorder(): { context: CanvasRenderingContext2D; marks: () => number } 
     closest: () => null,
     cull: () => 0,
     shove: () => {},
+    root: () => {},
+    burn: () => {},
+    mend: () => {},
   };
   const kit = new Attacks();
   kit.carry([{ school: '土', level: 3, evolved: false }], []);

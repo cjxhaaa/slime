@@ -78,6 +78,22 @@ export interface Battlefield {
    * killing fast enough — which is why 山崩 trades almost all of its damage for this.
    */
   shove(x: number, y: number, radius: number, speed: number): void;
+  /**
+   * 缠木: holds everything within `radius` where it stands, for `seconds`.
+   *
+   * Short on purpose. A root long enough to be a stun is a different move and a much stronger one;
+   * what this buys is the half-second that turns a press into a line you can walk out of.
+   */
+  root(x: number, y: number, radius: number, seconds: number): void;
+  /**
+   * 燎火: sets everything within `radius` alight for `seconds`.
+   *
+   * On the 邪气 rather than on the ground it was standing on. A patch of burning ground is a
+   * thing you can walk out of, and 「中者带火」 says the opposite — it goes with them.
+   */
+  burn(x: number, y: number, radius: number, seconds: number): void;
+  /** 荣木: gives back a share of 护体. */
+  mend(amount: number): void;
 }
 
 /** A slowing region the trial reads back each frame. 冰魄 is the only thing that makes them. */
@@ -158,6 +174,24 @@ const ArrowSpeed = 1180;
 const ShotRange = 620;
 /** 爆火: how wide the burst is at the first depth. */
 const BurstReach = 54;
+/** 鸣金: how far the knock reaches, and how hard. */
+const RingReachWay = 110;
+const RingShove = 460;
+/** 缠木: how wide it catches, and how long it holds. Short — a long root is a stun. */
+const RootReach = 52;
+const RootSeconds = 0.4;
+/** 荣木: 护体 given back per hit, which is small on purpose. */
+const LeechGift = 0.06;
+/** 寒水: how wide the patch is and how long it lasts. */
+const ChillReach = 74;
+const ChillSeconds = 2.6;
+/** 流水: how far it looks for the next one. */
+const ChainReach = 150;
+/** 燎火: how wide it catches and how long it burns. */
+const BurnReach = 40;
+const BurnSeconds = 1.6;
+/** 土崩: the blast a hit opens, which is smaller than 山崩's own. */
+const QuakeWay = 92;
 
 /** 刀: how fast a 刀气 travels along the ground, and how wide its cut is. */
 const SlashSpeed = 540;
@@ -439,6 +473,8 @@ export class Attacks {
   reset(): void {
     this.shellLeft = 0;
     this.shellLayers = 0;
+    this.shieldCards = 0;
+    this.plateWay = 0;
     this.shellBack = 0;
     this.shellBurst = 0;
     this.arena = null;
@@ -618,7 +654,9 @@ export class Attacks {
     // 冻土's patches. They are live effects rather than a second list, so they expire with their
     // own drawing and nothing has to remember to clean them up.
     for (const e of this.live) {
-      if (e.school === '土' && e.kind === 'frost') {
+      // Any frost, whoever laid it: 冻土 lays one where the ground opened, 寒水 where a hit
+      // landed, and the slow a 邪气 wades through does not care which.
+      if (e.kind === 'frost') {
         out.push({ x: e.x, y: e.y, radius: e.reach, factor: 0.62 });
       }
     }
@@ -795,11 +833,32 @@ export class Attacks {
     if (arm?.weapon !== this.arm?.weapon) this.swingLeft = 0;
     this.arm = arm;
     this.ways = ways;
+    // 固土 is the one of the ten that is not an on-hit effect at all — it is armour, so it is
+    // settled here rather than in `land`. One layer a depth.
+    this.plateWay = this.depthOf('土固');
+    this.reshell();
   }
 
   /** True while the pet is fighting with 兵器 rather than with the nine schools. */
   get armed(): boolean {
     return this.arm !== null;
+  }
+
+  /** How deep a way is carried, or 0 if it is not carried at all. */
+  private depthOf(way: Way): number {
+    return this.ways.find((w) => w.way === way)?.depth ?? 0;
+  }
+
+  /**
+   * 锐金: how many more things one shot can pass through.
+   *
+   * Asked by the weapons rather than settled in `land`, because what it changes is whether the
+   * thing that hit is **spent** — and that is a fact about the projectile, not about the point it
+   * arrived at. It is the one of the ten that reaches back into delivery, and saying so here is
+   * cheaper than pretending the split is tidier than it is.
+   */
+  private pierce(): number {
+    return this.depthOf('金锐');
   }
 
   /**
@@ -830,7 +889,7 @@ export class Attacks {
         Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX),
         LIFE.aimed,
         Touch + reach,
-        ARMS[arm.weapon].bite,
+        ARMS[arm.weapon].bite + this.pierce(),
       );
       return;
     }
@@ -854,7 +913,7 @@ export class Attacks {
           heading,
           SlashSeconds,
           reach,
-          ARMS[arm.weapon].bite,
+          ARMS[arm.weapon].bite + this.pierce(),
         );
       }
       return;
@@ -889,7 +948,7 @@ export class Attacks {
         aim,
         2.4,
         Touch + reach,
-        ARMS[arm.weapon].bite,
+        ARMS[arm.weapon].bite + this.pierce(),
       );
       return;
     }
@@ -935,16 +994,59 @@ export class Attacks {
       const path = PATHS[held.way];
       const depth = Math.max(1, Math.min(MaxDepth, held.depth));
 
+      // Deepening widens or lengthens, and never only raises a number. The rule the schools were
+      // built on, and the one that keeps a build readable without a stat screen.
+      const more = 1 + (depth - 1) * 0.18;
+
       if (path.on === 'burst') {
-        // 爆火: a small circle of fire where it hit. Deepening widens it rather than making the
-        // number bigger — the rule the schools were built on and the one that keeps a build
-        // readable.
-        const radius = BurstReach * (1 + (depth - 1) * 0.18);
+        // 爆火: a small circle of fire where it hit.
+        const radius = BurstReach * more;
         battlefield.cull(x, y, radius, 1 + Math.floor(depth / 2));
         this.push('火', 'burst', x, y, 0, 0, 0, 0.42, radius, 0);
         this.spark(x, y, 7, '火', 260, heading, 2.2);
+      } else if (path.on === 'shove') {
+        // 鸣金: the ground back, which is the thing this mode has least of.
+        battlefield.shove(x, y, RingReachWay * more, RingShove);
+        this.push('金', 'burst', x, y, 0, 0, 0, 0.3, RingReachWay * more, 0);
+        this.spark(x, y, 6, '金', 300, heading, Math.PI * 2);
+      } else if (path.on === 'root') {
+        // 缠木: held where it stands. Deepening holds longer rather than wider — reaching
+        // further would make it a crowd answer, and it is meant to be a *moment*.
+        battlefield.root(x, y, RootReach, RootSeconds * more);
+        this.push('木', 'snare', x, y, 0, 0, heading, RootSeconds * more, RootReach, 0);
+      } else if (path.on === 'leech') {
+        // 荣木: a sliver of 护体 back per hit. Small, because a weapon that swings fast would
+        // otherwise make the body unkillable rather than durable.
+        battlefield.mend(LeechGift * depth);
+        this.spark(x, y, 3, '木', 120, -Math.PI / 2, 1.1);
+      } else if (path.on === 'chill') {
+        // 寒水: the ground stays cold. `fields()` reads these back, so the slow is the one the
+        // 邪气 already know how to wade through rather than a second system.
+        this.push('水', 'frost', x, y, 0, 0, 0, ChillSeconds, ChillReach * more, 0);
+      } else if (path.on === 'chain') {
+        // 流水: on to the next one. One hop rather than a cascade — a chain that keeps going is
+        // a screen-clear, and this is supposed to be a reach extension.
+        const next = battlefield.closest(x, y, ChainReach * more);
+        if (next) {
+          battlefield.cull(next.x, next.y, Touch, 1);
+          const fork = this.push('水', 'chain', x, y, 0, 0, 0, 0.2, ChainReach, 0);
+          fork.path = [
+            { x, y },
+            { x: next.x, y: next.y },
+          ];
+        }
+      } else if (path.on === 'burn') {
+        // 燎火: alight, and it goes with them.
+        battlefield.burn(x, y, BurnReach, BurnSeconds * more);
+        this.spark(x, y, 4, '火', 150, heading, Math.PI);
+      } else if (path.on === 'quake') {
+        // 土崩: the ground opens where it landed. The same eruption 山崩 throws a stone for,
+        // smaller and with no stone and no warning — a weapon hit is the warning.
+        this.erupt(x, y, QuakeWay * more, depth);
+      } else if (path.on === 'pierce' || path.on === 'plate') {
+        // Neither of these happens at a landing point. 金锐 decides whether the thing that landed
+        // is spent (the weapon's business, in `step`), and 固土 is armour (`equip`'s).
       }
-      // The other nine arrive in stage three.
     }
   }
 
@@ -962,8 +1064,25 @@ export class Attacks {
    * way and a second path to the same source is a second thing that can disagree with the first.
    */
   guard(layers: number): void {
+    this.shieldCards = layers;
+    this.reshell();
+  }
+
+  /** How many layers the card gave. 固土 keeps its own count beside it. */
+  private shieldCards = 0;
+  private plateWay = 0;
+
+  /**
+   * Totals the two sources of shell and hands the difference to the body.
+   *
+   * 金钟罩 is a card and 固土 is one of the ten, and they are the same armour — so they are
+   * summed rather than kept as two shells with two clocks, which would mean two sets of plates
+   * turning around the pet at two radii and no way to tell what either one was.
+   */
+  private reshell(): void {
+    const layers = this.shieldCards + this.plateWay;
     if (layers === this.shellLayers) return;
-    // A layer taken mid-run is a layer you have now, not one you have in nine seconds.
+    // A layer gained mid-run is a layer you have now, not one you have in nine seconds.
     const gained = Math.max(0, layers - this.shellLayers);
     this.shellLayers = layers;
     this.shellLeft = Math.min(layers, this.shellLeft + gained);
@@ -1700,10 +1819,15 @@ export class Attacks {
         e.x += e.vx * dt;
         e.y += e.vy * dt;
         if (battlefield.cull(e.x, e.y, Touch, 1) > 0) {
-          this.land(e.x, e.y, battlefield, Math.atan2(e.vy, e.vx));
+          const aim = Math.atan2(e.vy, e.vx);
+          this.land(e.x, e.y, battlefield, aim);
           this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
-          this.spark(e.x, e.y, 5, '符', 180, Math.atan2(e.vy, e.vx), 2.1);
-          continue;
+          this.spark(e.x, e.y, 5, '符', 180, aim, 2.1);
+          // 锐金 is why this is a count rather than a `continue`: without it the arrow is spent
+          // on the first thing it reaches, and with it it keeps going.
+          e.bite -= 1;
+          if (e.bite <= 0) continue;
+          e.cool = 0.05;
         }
       } else if (e.kind === 'slash') {
         // 刀气. It travels along the ground and cuts through what it passes — wide across its
@@ -1745,11 +1869,13 @@ export class Attacks {
         }
         e.x += e.vx * dt;
         e.y += e.vy * dt;
-        if (battlefield.cull(e.x, e.y, Touch, 1) > 0) {
+        if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch, 1) > 0) {
           this.land(e.x, e.y, battlefield, e.angle);
           this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
           this.spark(e.x, e.y, 6, '符', 190, e.angle, 2.1);
-          continue;
+          e.bite -= 1;
+          if (e.bite <= 0) continue;
+          e.cool = 0.08;
         }
       } else if (e.kind === 'sword') {
         // 飞剑. Two states and no flag for them: a positive `hits` means it is in the middle of a
@@ -2330,6 +2456,25 @@ export class Attacks {
       context.beginPath();
       context.arc(e.x, e.y, r * 1.15, 0, Math.PI * 2);
       context.fill();
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'snare') {
+      // 缠木: roots closing over the spot, drawn as a few arcs tightening rather than as a ring.
+      // A ring would read as a radius you must stay out of, and this is a thing that has already
+      // happened to whatever is inside it.
+      const shut = e.life > 0 ? Math.min(1, e.age / e.life) : 1;
+      const grip = e.reach * (1 - shut * 0.45);
+      context.globalAlpha = 0.5 * (1 - shut * shut);
+      context.strokeStyle = hue.body;
+      context.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const at = e.angle + (i / 4) * Math.PI * 2;
+        context.beginPath();
+        context.arc(e.x, e.y, grip, at, at + 0.9 + shut * 0.6);
+        context.stroke();
+      }
       context.globalAlpha = 1;
       return;
     }

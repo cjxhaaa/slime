@@ -54,6 +54,9 @@ import {
 /** How long a run lasts, in seconds. */
 export const RunSeconds = 90;
 
+/** 燎火: seconds between one tick of burning and the next. */
+export const BurnBeat = 0.45;
+
 /**
  * How fast 山崩's throw bleeds off, in seconds.
  *
@@ -198,6 +201,11 @@ export interface Menace {
    */
   flingX: number;
   flingY: number;
+  /** 缠木: seconds it is held where it stands. */
+  rootLeft: number;
+  /** 燎火: seconds it keeps burning, and the clock to its next tick of it. */
+  burnLeft: number;
+  burnNext: number;
 }
 
 /**
@@ -304,6 +312,8 @@ export class Trial {
   mend(points: number): void {
     this.hurt = Math.max(0, this.hurt - points);
   }
+  // 荣木 calls this too, through `Battlefield`. It wanted exactly what 调息 already did, so it
+  // got the same method rather than a second one beside it that drifted.
 
   get untouchable(): boolean {
     return this.grace > 0;
@@ -369,6 +379,30 @@ export class Trial {
       const bite = 1 - (away / radius) * 0.65;
       m.flingX += Math.cos(angle) * speed * bite;
       m.flingY += Math.sin(angle) * speed * bite;
+    }
+  }
+
+  /**
+   * 缠木. Held where it stands, not slowed — a slow is 寒水's job and having two things that are
+   * almost the same is how a roster stops being readable.
+   *
+   * Takes the longer of what it has and what it is given rather than adding: roots that stack
+   * would let one build hold a whole field still for ever, which is not a reprieve, it is a win
+   * condition with no fight in it.
+   */
+  root(x: number, y: number, radius: number, seconds: number): void {
+    for (const m of this.menaces) {
+      if (Math.hypot(m.x - x, m.y - y) > radius) continue;
+      m.rootLeft = Math.max(m.rootLeft, seconds);
+    }
+  }
+
+  /** 燎火. Alight for a while, and it travels with them. */
+  burn(x: number, y: number, radius: number, seconds: number): void {
+    for (const m of this.menaces) {
+      if (Math.hypot(m.x - x, m.y - y) > radius) continue;
+      if (m.burnLeft <= 0) m.burnNext = BurnBeat;
+      m.burnLeft = Math.max(m.burnLeft, seconds);
     }
   }
 
@@ -481,6 +515,32 @@ export class Trial {
       let drag = 1;
       for (const field of fields) {
         if (Math.hypot(m.x - field.x, m.y - field.y) <= field.radius) drag = Math.min(drag, field.factor);
+      }
+
+      // 缠木: held where it stands. Before the steering below rather than after, so a rooted 邪气
+      // does not spend its half-second quietly building up a velocity to leave with.
+      if (m.rootLeft > 0) {
+        m.rootLeft -= dt;
+        m.vx = 0;
+        m.vy = 0;
+      }
+
+      // 燎火: it burns, and it burns wherever it goes. Ticked rather than applied continuously so
+      // the damage is a count of beats — the same way everything else in here does damage, which
+      // is what keeps one roster of numbers comparable with another.
+      if (m.burnLeft > 0) {
+        m.burnLeft -= dt;
+        m.burnNext -= dt;
+        if (m.burnNext <= 0) {
+          m.burnNext = BurnBeat;
+          m.health -= 1;
+          if (m.health <= 0) {
+            this.kills += 1;
+            this.undo(m);
+            m.burnLeft = 0;
+            continue;
+          }
+        }
       }
 
       const pace = speed * breed.pace * drag;
@@ -897,6 +957,9 @@ function born(
     vy: 0,
     flingX: 0,
     flingY: 0,
+    rootLeft: 0,
+    burnLeft: 0,
+    burnNext: 0,
     phase: Math.random() * Math.PI * 2,
     arrival: extra.arrival ?? 0,
     health: breed.health,
