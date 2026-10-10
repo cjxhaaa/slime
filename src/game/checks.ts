@@ -2303,6 +2303,60 @@ check('ten ways, two to a phase', WAYS.length, 10);
   checkTrue(`and deepening it widens it further: ${widest.toFixed(0)}px`, widest > plain);
 }
 
+{
+  // All five weapons, driven through the engine against a standing crowd. The point is not what
+  // each one does — that is what looking at them is for — but that each one **lands hits at all**
+  // and that **each one settles its ways**, which is the seam the whole system hangs on and the
+  // one that fails silently.
+  const mob = [
+    { x: 520, y: 400 },
+    { x: 545, y: 415 },
+    { x: 500, y: 425 },
+  ];
+  for (const weapon of WEAPONS) {
+    let hits = 0;
+    let bursts = 0;
+    const field: Battlefield = {
+      targets: () => mob,
+      closest: (x, y, within) =>
+        Math.hypot(mob[0].x - x, mob[0].y - y) <= within ? mob[0] : null,
+      cull: (_x, _y, radius) => {
+        hits++;
+        // 爆火's circle is far wider than any weapon's own contact, so counting the wide ones
+        // counts the ways settling rather than the weapon landing.
+        if (radius >= 40) bursts++;
+        return 1;
+      },
+      shove: () => {},
+    };
+    const kit = new Attacks();
+    kit.equip({ weapon, depth: 3 }, [{ way: '火爆', depth: 1 }]);
+    const body = { x: 400, y: 400, radius: 46 };
+    for (let i = 0; i < 120 * 6; i++) kit.update(1 / 120, body, field);
+    checkTrue(`${weapon} lands hits: ${hits}`, hits > 0);
+    checkTrue(`and ${weapon} settles its ways: ${bursts} bursts`, bursts > 0);
+  }
+}
+
+{
+  // Swapping a weapon does not fire the new one instantly off the old one's clock — which it
+  // would, going from something slow to something fast.
+  const field: Battlefield = {
+    targets: () => [{ x: 500, y: 400 }],
+    closest: () => ({ x: 500, y: 400 }),
+    cull: () => 1,
+    shove: () => {},
+  };
+  const kit = new Attacks();
+  const body = { x: 400, y: 400, radius: 46 };
+  kit.equip({ weapon: '剑', depth: 1 }, []);
+  for (let i = 0; i < 60; i++) kit.update(1 / 120, body, field);
+  kit.equip({ weapon: '盾', depth: 1 }, []);
+  // One frame after the swap is far less than 盾's own interval, so nothing should have fired.
+  for (let i = 0; i < 3; i++) kit.update(1 / 120, body, field);
+  checkTrue('a swap starts the new weapon on its own clock', swing('盾', 1) > 3 / 120);
+}
+
 // -------------------------------------------------------------------------------------------------
 // 金钟罩 — the shell, back as a card of its own.
 //

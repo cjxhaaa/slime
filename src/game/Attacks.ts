@@ -24,10 +24,25 @@
  */
 import { clear, mix } from '../slime/colour.js';
 import type { Depth, Painter } from './depth.js';
+/**
+ * What an effect can be coloured by, while two systems are live at once.
+ *
+ * The nine schools are being replaced by 兵器 + 五行 (see `COMBAT.md`), and for the three
+ * stages in between, effects from both exist in the same list. Some keys sit in two of the
+ * three sets — 符 and 剑 are a school **and** a weapon, 火 and 土 a school **and** a phase —
+ * which is fine because in every such case they mean the same thing and are nearly the same
+ * colour. `hueOf` resolves schools first so the game as it is actually played today does not
+ * shift under the rewrite; once the schools go, the lookup falls through to the other two and
+ * this union narrows back to a single set.
+ */
+export type Hued = School | Weapon | Element;
+
 import {
   ARMS,
   MaxDepth,
   PATHS,
+  FIVE,
+  type Element,
   type Way,
   type Weapon,
   span as weaponSpan,
@@ -75,7 +90,7 @@ export interface Field {
 }
 
 interface Effect {
-  school: School;
+  school: Hued;
   kind: string;
   x: number;
   y: number;
@@ -112,6 +127,14 @@ interface Effect {
    * and the half-second warning is only honest if the mark does not move after it is drawn.
    */
   at?: { x: number; y: number };
+  /**
+   * 剑: cuts left in the flurry this sword is in the middle of.
+   *
+   * Its own field rather than borrowed from `bite`, which already means "how many more things this
+   * can hit before it is spent" — a flying sword is never spent, and two meanings in one number is
+   * a bug with a delay on it. (三才剑阵 taught that lesson through `index`.)
+   */
+  hits?: number;
 }
 
 /** How long each motion's effect lives, in seconds. */
@@ -135,6 +158,29 @@ const ArrowSpeed = 1180;
 const ShotRange = 620;
 /** 爆火: how wide the burst is at the first depth. */
 const BurstReach = 54;
+
+/** 刀: how fast a 刀气 travels along the ground, and how wide its cut is. */
+const SlashSpeed = 540;
+const SlashSeconds = 0.44;
+const SlashWidth = 46;
+/** How far apart the blades of one swing are fanned, in radians. */
+const SlashFan = 0.34;
+
+/** 盾: how fast the 罡气 turns, and how long a node waits between bites. */
+const GuardRate = 2.1;
+const GuardCool = 0.42;
+
+/** 符箓: slower than an arrow, but it turns. Radians a second it can bend its own heading by. */
+const CharmSpeed = 430;
+const CharmTurn = 4.2;
+
+/** 剑: how fast the flying sword travels, how close it has to be, and the flurry it lands. */
+const SwordSpeed = 520;
+const SwordBite = 30;
+const SwordFlurry = 4;
+const SwordBeat = 0.11;
+/** How long it rests after a flurry before it goes looking again. */
+const SwordRest = 0.3;
 
 /**
  * 山崩, in order: the stone leaves, it lands, the ground waits, the ground opens.
@@ -429,7 +475,12 @@ export class Attacks {
     return this.held.find((h) => h.school === school)?.level ?? 1;
   }
 
-  private evolved(school: School): boolean {
+  /**
+   * Whether a school is evolved. Only a school can be — a weapon deepens instead, and asking
+   * this of one is a question with a plain answer rather than an error.
+   */
+  private evolved(key: Hued): boolean {
+    const school = key as School;
     return this.held.find((h) => h.school === school)?.evolved ?? false;
   }
 
@@ -439,7 +490,9 @@ export class Attacks {
    * Every density below is driven off this and nothing else, so "a level looks like something"
    * lives in one expression rather than in nine scattered `levelOf` calls that can drift apart.
    */
-  private rung(school: School): number {
+  /** How deep a school is held. A weapon or a phase is not, so it answers zero. */
+  private rung(key: Hued): number {
+    const school = key as School;
     return Math.max(0, Math.min(4, this.levelOf(school) - 1));
   }
 
@@ -450,9 +503,16 @@ export class Attacks {
    * and pulled toward gold, which is the colour none of the nine owns — so it reads as "above the
    * nine" instead of "the fire one".
    */
-  private hueOf(school: School): Palette {
-    const base = PALETTE[school];
-    return this.evolved(school) ? ascend(base) : base;
+  private hueOf(key: Hued): Palette {
+    const base = (PALETTE as Partial<Record<Hued, Palette>>)[key];
+    // Schools first, deliberately: see `Hued`.
+    if (base) return this.evolved(key as School) ? ascend(base) : base;
+    const arm = (ARMS as Partial<Record<Hued, { tint: string }>>)[key];
+    const tint = arm?.tint ?? (FIVE as Partial<Record<Hued, { tint: string }>>)[key]?.tint;
+    // A weapon or a phase carries one colour rather than three, so the body and the rim are
+    // derived from it instead of being three more numbers to keep in step.
+    const lit = tint ?? '#ffffff';
+    return { core: mix(lit, '#ffffff', 0.55), body: lit, edge: mix(lit, '#1a1208', 0.5) };
   }
 
   /**
@@ -725,9 +785,14 @@ export class Attacks {
    * schools, which is what the arena and every un-migrated caller still want.
    */
   equip(arm: { weapon: Weapon; depth: number } | null, ways: { way: Way; depth: number }[]): void {
-    // A weapon swap starts its next swing from now rather than inheriting the old one's clock,
-    // so changing to something slower cannot fire it instantly.
-    if (arm?.weapon !== this.arm?.weapon) this.swingLeft = arm ? swing(arm.weapon, arm.depth) : 0;
+    // A newly equipped weapon swings **at once**, and a swap restarts the clock so changing to
+    // something slower cannot ride the old one's timer.
+    //
+    // At once rather than after one interval: 剑 and 盾 do not fire, they *place* something that
+    // then works on its own, and 剑's interval is 1.9s deep. Waiting that long meant picking up a
+    // flying sword and watching nothing happen for two seconds — which is how it looked in the
+    // first frame strip, and is indistinguishable from the weapon being broken.
+    if (arm?.weapon !== this.arm?.weapon) this.swingLeft = 0;
     this.arm = arm;
     this.ways = ways;
   }
@@ -769,7 +834,89 @@ export class Attacks {
       );
       return;
     }
-    // 刀, 剑, 盾 and 符 arrive in the stages after this one.
+    if (arm.weapon === '刀') {
+      // A fan of 刀气 along the ground, aimed at whatever is nearest. Short-lived and wide: this is
+      // the weapon that asks you to be facing the right way, which is the only thing it asks.
+      const mark = battlefield.closest(this.bodyX, this.bodyY, reach * 2.4);
+      const aim = mark
+        ? Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX)
+        : Math.random() * Math.PI * 2;
+      const blades = 2 + Math.floor(arm.depth / 2);
+      for (let i = 0; i < blades; i++) {
+        const heading = aim + (i - (blades - 1) / 2) * SlashFan;
+        this.push(
+          '刀',
+          'slash',
+          this.bodyX + Math.cos(heading) * this.bodyR * 0.7,
+          this.bodyY + Math.sin(heading) * this.bodyR * 0.7,
+          Math.cos(heading) * SlashSpeed,
+          Math.sin(heading) * SlashSpeed,
+          heading,
+          SlashSeconds,
+          reach,
+          ARMS[arm.weapon].bite,
+        );
+      }
+      return;
+    }
+
+    if (arm.weapon === '盾') {
+      // 罡气 does not get thrown; it is simply there. The swing clock tops the ring up rather than
+      // launching anything, so a 盾 build is the one that never has to aim and never stops working.
+      const want = 2 + Math.floor((arm.depth - 1) * 0.75);
+      const have = this.live.filter((e) => e.kind === 'guard').length;
+      for (let i = have; i < want; i++) {
+        const node = this.push('盾', 'guard', this.bodyX, this.bodyY, 0, 0, 0, 0, reach, 1);
+        node.index = i;
+      }
+      return;
+    }
+
+    if (arm.weapon === '符') {
+      // A charm that steers. Slower than an arrow on purpose — what it buys is that it arrives,
+      // and a thing that both arrives and arrives quickly has nothing left to trade.
+      const mark = this.pickAway(battlefield, [], ShotRange);
+      const aim = mark
+        ? Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX)
+        : Math.random() * Math.PI * 2;
+      this.push(
+        '符',
+        'charm',
+        this.bodyX,
+        this.bodyY,
+        Math.cos(aim) * CharmSpeed,
+        Math.sin(aim) * CharmSpeed,
+        aim,
+        2.4,
+        Touch + reach,
+        ARMS[arm.weapon].bite,
+      );
+      return;
+    }
+
+    if (arm.weapon === '剑') {
+      // One flying sword, and another at the third and fifth depth. It is never spent, so the
+      // swing clock only decides whether there is one — after that it keeps itself busy.
+      const want = 1 + (arm.depth >= 3 ? 1 : 0) + (arm.depth >= 5 ? 1 : 0);
+      const have = this.live.filter((e) => e.kind === 'sword').length;
+      for (let i = have; i < want; i++) {
+        const blade = this.push(
+          '剑',
+          'sword',
+          this.bodyX,
+          this.bodyY,
+          0,
+          0,
+          0,
+          0,
+          reach,
+          ARMS[arm.weapon].bite,
+        );
+        blade.index = i;
+        blade.hits = 0;
+      }
+      return;
+    }
   }
 
   /**
@@ -1297,12 +1444,12 @@ export class Attacks {
     x: number,
     y: number,
     count: number,
-    school: School,
+    school: Hued,
     speed: number,
     aim: number | null = null,
     cone = Math.PI * 2,
   ): void {
-    const hue = PALETTE[school];
+    const hue = this.hueOf(school);
     for (let i = 0; i < count; i++) {
       if (this.sparks.length >= MaxSparks) return;
       const angle = aim === null ? Math.random() * Math.PI * 2 : aim + (Math.random() - 0.5) * cone;
@@ -1322,7 +1469,7 @@ export class Attacks {
   }
 
   private push(
-    school: School,
+    school: Hued,
     kind: string,
     x: number,
     y: number,
@@ -1557,6 +1704,83 @@ export class Attacks {
           this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
           this.spark(e.x, e.y, 5, '符', 180, Math.atan2(e.vy, e.vx), 2.1);
           continue;
+        }
+      } else if (e.kind === 'slash') {
+        // 刀气. It travels along the ground and cuts through what it passes — wide across its
+        // travel rather than a point, because a slash is a *cut* and something that only connected
+        // on its centre line would read as a thrown stick.
+        e.x += e.vx * dt;
+        e.y += e.vy * dt;
+        if (e.bite > 0 && battlefield.cull(e.x, e.y, SlashWidth / 2, 1) > 0) {
+          e.bite -= 1;
+          this.land(e.x, e.y, battlefield, e.angle);
+          this.spark(e.x, e.y, 4, '刀', 210, e.angle + Math.PI, 2.2);
+        }
+      } else if (e.kind === 'guard') {
+        // 罡气. It turns with the body rather than being thrown from it, so it is drawn from the
+        // body's position every frame instead of integrating one of its own.
+        const nodes = Math.max(1, this.live.filter((n) => n.kind === 'guard').length);
+        const at = this.clock * GuardRate + ((e.index ?? 0) / nodes) * Math.PI * 2;
+        e.angle = at;
+        e.x = this.bodyX + Math.cos(at) * e.reach;
+        e.y = this.bodyY + Math.sin(at) * e.reach;
+        if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch + 8, 1) > 0) {
+          e.cool = GuardCool;
+          this.land(e.x, e.y, battlefield, at + Math.PI / 2);
+          this.spark(e.x, e.y, 4, '盾', 180, at + Math.PI / 2, 1.5);
+        }
+      } else if (e.kind === 'charm') {
+        // It bends toward what it is chasing rather than turning on the spot, so a target that
+        // moves is still caught and one that moves *hard* can still make it miss.
+        const mark = battlefield.closest(e.x, e.y, 700);
+        if (mark) {
+          const want = Math.atan2(mark.y - e.y, mark.x - e.x);
+          let off = want - e.angle;
+          while (off > Math.PI) off -= Math.PI * 2;
+          while (off < -Math.PI) off += Math.PI * 2;
+          const turn = Math.max(-CharmTurn * dt, Math.min(CharmTurn * dt, off));
+          e.angle += turn;
+          e.vx = Math.cos(e.angle) * CharmSpeed;
+          e.vy = Math.sin(e.angle) * CharmSpeed;
+        }
+        e.x += e.vx * dt;
+        e.y += e.vy * dt;
+        if (battlefield.cull(e.x, e.y, Touch, 1) > 0) {
+          this.land(e.x, e.y, battlefield, e.angle);
+          this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
+          this.spark(e.x, e.y, 6, '符', 190, e.angle, 2.1);
+          continue;
+        }
+      } else if (e.kind === 'sword') {
+        // 飞剑. Two states and no flag for them: a positive `hits` means it is in the middle of a
+        // flurry, and anything else means it is looking for the next thing to be in the middle of.
+        if ((e.hits ?? 0) > 0) {
+          e.cool -= dt;
+          if (e.cool <= 0) {
+            e.hits = (e.hits ?? 0) - 1;
+            e.angle += 1.9;
+            battlefield.cull(e.x, e.y, SwordBite, 1);
+            this.land(e.x, e.y, battlefield, e.angle);
+            this.spark(e.x, e.y, 3, '剑', 240, e.angle, 1.6);
+            // `cool` is the beat between cuts while there are cuts left, and the rest after the
+            // last one. One timer, two jobs, and which job it is doing is `hits`.
+            //
+            // The first version rested *unconditionally* at the end of every frame the sword was
+            // not cutting — so the timer was re-armed to 0.3s a frame after it expired, the
+            // "ready to cut" test was almost never true, and the sword chased things forever
+            // without ever landing anything. The checks caught it at zero hits in six seconds.
+            e.cool = (e.hits ?? 0) > 0 ? SwordBeat : SwordRest;
+          }
+        } else {
+          e.cool = Math.max(0, e.cool - dt);
+          const mark = battlefield.closest(e.x, e.y, 1200);
+          const goal = mark ?? { x: this.bodyX, y: this.bodyY };
+          const away = Math.hypot(goal.x - e.x, goal.y - e.y) || 1;
+          e.x += ((goal.x - e.x) / away) * SwordSpeed * dt;
+          e.y += ((goal.y - e.y) / away) * SwordSpeed * dt;
+          e.angle = Math.atan2(goal.y - e.y, goal.x - e.x);
+          // Close enough, rested, and there is something to cut: it stops and goes to work.
+          if (mark && away <= SwordBite && e.cool <= 0) e.hits = SwordFlurry;
         }
       } else if (e.kind === 'stone') {
         // In flight it is inert — it does not cut what it passes. A stone thrown at the ground is
@@ -2107,6 +2331,128 @@ export class Attacks {
       context.arc(e.x, e.y, r * 1.15, 0, Math.PI * 2);
       context.fill();
       context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'slash') {
+      // 刀气: a crescent lying along its travel, thinning as it spends itself. Drawn from the
+      // heading rather than rotated into place, so a fan of them opens outward correctly.
+      const run = Math.min(1, e.age / Math.max(0.001, e.life));
+      const thin = 1 - run * 0.55;
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.globalAlpha = 0.85 * (1 - run * run);
+      const edge = context.createLinearGradient(-SlashWidth * 0.5, 0, SlashWidth * 0.5, 0);
+      edge.addColorStop(0, clear(hue.body));
+      edge.addColorStop(0.5, hue.core);
+      edge.addColorStop(1, clear(hue.body));
+      context.strokeStyle = edge;
+      context.lineWidth = 3.5 * thin;
+      context.beginPath();
+      // Bowed backward along the travel: a straight bar is a plank, a bow is a cut.
+      context.moveTo(-10, -SlashWidth * 0.5 * thin);
+      context.quadraticCurveTo(10, 0, -10, SlashWidth * 0.5 * thin);
+      context.stroke();
+      context.restore();
+      this.bloom(context, e.x, e.y, 18 * thin, hue, 0.3 * (1 - run));
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'guard') {
+      // 罡气: a mote on its orbit with a short arc of the orbit drawn behind it, so the ring is
+      // legible as a ring even when only two of them are up.
+      // A long wake rather than a short one, and a faint full circle under it. 盾 is the weapon
+      // whose whole identity is being **always on**, and two small dots going round read as two
+      // small dots — the ring has to be legible as a ring at a glance for the weapon to say what
+      // it is.
+      context.globalAlpha = 0.1;
+      context.strokeStyle = hue.body;
+      context.lineWidth = 1;
+      context.beginPath();
+      context.arc(this.bodyX, this.bodyY, e.reach, 0, Math.PI * 2);
+      context.stroke();
+      const wake = context.createLinearGradient(
+        this.bodyX + Math.cos(e.angle - 1.1) * e.reach,
+        this.bodyY + Math.sin(e.angle - 1.1) * e.reach,
+        e.x,
+        e.y,
+      );
+      wake.addColorStop(0, clear(hue.body));
+      wake.addColorStop(1, hue.core);
+      context.globalAlpha = 0.75;
+      context.strokeStyle = wake;
+      context.lineWidth = 3.5;
+      context.beginPath();
+      context.arc(this.bodyX, this.bodyY, e.reach, e.angle - 1.1, e.angle);
+      context.stroke();
+      this.bloom(context, e.x, e.y, 19, hue, 0.6);
+      context.globalAlpha = 1;
+      context.fillStyle = hue.core;
+      context.beginPath();
+      context.arc(e.x, e.y, 5.5, 0, Math.PI * 2);
+      context.fill();
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'charm') {
+      // The charm itself, turned to face where it is going, with a short wake. It is slow enough
+      // that the shape is actually seen, which is why this one is drawn and the arrow is a streak.
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.globalAlpha = 0.4;
+      context.strokeStyle = hue.body;
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(-22, 0);
+      context.lineTo(-7, 0);
+      context.stroke();
+      context.globalAlpha = 0.9;
+      context.fillStyle = hue.body;
+      context.fillRect(-7, -5, 14, 10);
+      context.fillStyle = hue.core;
+      context.fillRect(-7, -5, 14, 2);
+      context.fillRect(-7, 3, 14, 2);
+      context.restore();
+      this.bloom(context, e.x, e.y, 16, hue, 0.4);
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'sword') {
+      // 飞剑: a blade pointing the way it is going, and a flurry drawn as the cuts themselves
+      // rather than as the sword moving — at four cuts in half a second, a sword that travelled
+      // between them would be a blur with no cuts in it.
+      const cutting = (e.hits ?? 0) > 0;
+      if (cutting) {
+        context.globalAlpha = 0.75;
+        context.strokeStyle = hue.core;
+        context.lineWidth = 2.5;
+        for (let i = 0; i < 2; i++) {
+          const at = e.angle - i * 1.1;
+          context.beginPath();
+          context.moveTo(e.x - Math.cos(at) * SwordBite, e.y - Math.sin(at) * SwordBite);
+          context.lineTo(e.x + Math.cos(at) * SwordBite, e.y + Math.sin(at) * SwordBite);
+          context.stroke();
+        }
+      }
+      this.bloom(context, e.x, e.y, cutting ? 26 : 16, hue, cutting ? 0.6 : 0.35);
+      context.save();
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.globalAlpha = 1;
+      context.fillStyle = hue.core;
+      context.beginPath();
+      context.moveTo(17, 0);
+      context.lineTo(-2, -3.5);
+      context.lineTo(-11, 0);
+      context.lineTo(-2, 3.5);
+      context.closePath();
+      context.fill();
+      context.restore();
       return;
     }
 
