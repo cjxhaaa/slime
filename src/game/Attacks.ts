@@ -25,6 +25,15 @@
 import { clear, mix } from '../slime/colour.js';
 import type { Depth, Painter } from './depth.js';
 import {
+  ARMS,
+  MaxDepth,
+  PATHS,
+  type Way,
+  type Weapon,
+  span as weaponSpan,
+  swing,
+} from './kit.js';
+import {
   type Combo,
   Crown,
   PALETTE,
@@ -120,6 +129,12 @@ const LIFE: Record<string, number> = {
 
 /** How fast an aimed talisman flies. */
 const AimedSpeed = 980;
+
+/** 弓: how fast an arrow flies, and how far it will look for something to shoot. */
+const ArrowSpeed = 1180;
+const ShotRange = 620;
+/** 爆火: how wide the burst is at the first depth. */
+const BurstReach = 54;
 
 /**
  * 山崩, in order: the stone leaves, it lands, the ground waits, the ground opens.
@@ -693,6 +708,99 @@ export class Attacks {
     }
   }
 
+  /**
+   * 兵器与五行, when one is equipped.
+   *
+   * **This is the switch between the two systems.** A weapon in here means the pet fights with it
+   * and the nine schools are not consulted; nothing in here means the schools run as before. That
+   * is deliberately not a flag: a flag can be set with no weapon behind it, and then the pet
+   * stands there doing nothing while every check still passes.
+   */
+  private arm: { weapon: Weapon; depth: number } | null = null;
+  private ways: { way: Way; depth: number }[] = [];
+  private swingLeft = 0;
+
+  /**
+   * Equips a weapon and the ways carried with it. Passing null hands the fight back to the
+   * schools, which is what the arena and every un-migrated caller still want.
+   */
+  equip(arm: { weapon: Weapon; depth: number } | null, ways: { way: Way; depth: number }[]): void {
+    // A weapon swap starts its next swing from now rather than inheriting the old one's clock,
+    // so changing to something slower cannot fire it instantly.
+    if (arm?.weapon !== this.arm?.weapon) this.swingLeft = arm ? swing(arm.weapon, arm.depth) : 0;
+    this.arm = arm;
+    this.ways = ways;
+  }
+
+  /** True while the pet is fighting with 兵器 rather than with the nine schools. */
+  get armed(): boolean {
+    return this.arm !== null;
+  }
+
+  /**
+   * One swing of whatever is equipped.
+   *
+   * Five branches, one per weapon, and **none of them knows an element exists**. What a swing does
+   * on contact is `land`'s business, which is the whole split this system is built on: a weapon
+   * decides what goes out and where, a way decides what happens where it arrives.
+   */
+  private strike(battlefield: Battlefield): void {
+    const arm = this.arm;
+    if (!arm) return;
+    const reach = weaponSpan(arm.weapon, arm.depth);
+
+    if (arm.weapon === '弓') {
+      // One arrow at the nearest thing. The plainest of the five on purpose: it is the one that
+      // has to make a way legible without any delivery of its own to confuse it.
+      const mark = battlefield.closest(this.bodyX, this.bodyY, ShotRange);
+      if (!mark) return;
+      const away = Math.hypot(mark.x - this.bodyX, mark.y - this.bodyY) || 1;
+      this.push(
+        '符',
+        'arrow',
+        this.bodyX,
+        this.bodyY,
+        ((mark.x - this.bodyX) / away) * ArrowSpeed,
+        ((mark.y - this.bodyY) / away) * ArrowSpeed,
+        Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX),
+        LIFE.aimed,
+        Touch + reach,
+        ARMS[arm.weapon].bite,
+      );
+      return;
+    }
+    // 刀, 剑, 盾 and 符 arrive in the stages after this one.
+  }
+
+  /**
+   * Where a swing landed, and what the ways do about it.
+   *
+   * **This is the fifty.** Five weapons times ten ways is fifty pairings and not one of them is
+   * written down: a weapon calls this with a point, and every way carried applies itself there.
+   * 爆 on an arrow is an exploding arrow and 爆 on a 刀气 is a row of bursting slashes, out of one
+   * piece of code — which is the only reason this system is affordable at all.
+   *
+   * Ways settle **in the order they are carried**, each doing its own thing, so two that both act
+   * on the same hit compound rather than one winning.
+   */
+  private land(x: number, y: number, battlefield: Battlefield, heading: number): void {
+    for (const held of this.ways) {
+      const path = PATHS[held.way];
+      const depth = Math.max(1, Math.min(MaxDepth, held.depth));
+
+      if (path.on === 'burst') {
+        // 爆火: a small circle of fire where it hit. Deepening widens it rather than making the
+        // number bigger — the rule the schools were built on and the one that keeps a build
+        // readable.
+        const radius = BurstReach * (1 + (depth - 1) * 0.18);
+        battlefield.cull(x, y, radius, 1 + Math.floor(depth / 2));
+        this.push('火', 'burst', x, y, 0, 0, 0, 0.42, radius, 0);
+        this.spark(x, y, 7, '火', 260, heading, 2.2);
+      }
+      // The other nine arrive in stage three.
+    }
+  }
+
   /** 金钟罩: layers still unbroken, and the clock on the ones that are. */
   private shellLeft = 0;
   private shellLayers = 0;
@@ -768,17 +876,31 @@ export class Attacks {
       if (this.shellBack <= 0) this.shellLeft = this.shellLayers;
     }
 
-    for (const h of this.held) {
-      const period = h.evolved ? this.evolvedCadence(h.school) : cadence(h.school, h.level);
-      let left = (this.timers.get(h.school) ?? period) - dt;
-      // Clamped to one activation a frame: a cadence shorter than a frame would otherwise fire a
-      // burst proportional to how badly the machine is struggling, which is backwards.
-      if (left <= 0) {
-        // A school may ask for a different gap before its next turn — 剑气 does, because its three
-        // forms are not evenly spaced. Everything else returns nothing and keeps the flat cadence.
-        left = period * (this.fire(h.school, battlefield) ?? 1);
+    // A branch rather than an early return. Everything after this — sparks ageing out, a pairing's
+    // rings expiring, the shell re-forming — has to keep running whichever system is live, and a
+    // return here would quietly strand all of it.
+    if (this.arm) {
+      // One weapon, one clock. The schools keep a timer each because four run at once; there is
+      // only ever one of these.
+      this.swingLeft -= dt;
+      if (this.swingLeft <= 0) {
+        this.swingLeft = swing(this.arm.weapon, this.arm.depth);
+        this.strike(battlefield);
       }
-      this.timers.set(h.school, left);
+    } else {
+      for (const h of this.held) {
+        const period = h.evolved ? this.evolvedCadence(h.school) : cadence(h.school, h.level);
+        let left = (this.timers.get(h.school) ?? period) - dt;
+        // Clamped to one activation a frame: a cadence shorter than a frame would otherwise fire a
+        // burst proportional to how badly the machine is struggling, which is backwards.
+        if (left <= 0) {
+          // A school may ask for a different gap before its next turn — 剑气 does, because its
+          // three forms are not evenly spaced. Everything else returns nothing and keeps the flat
+          // cadence.
+          left = period * (this.fire(h.school, battlefield) ?? 1);
+        }
+        this.timers.set(h.school, left);
+      }
     }
 
     this.step(dt, battlefield);
@@ -1424,6 +1546,18 @@ export class Attacks {
             1,
           );
         }
+      } else if (e.kind === 'arrow') {
+        // 弓. It flies until it reaches something, and then the ways have their turn. The arrow
+        // itself does **one** thing — it hits — and everything else about what that means belongs
+        // to whatever is carried with it.
+        e.x += e.vx * dt;
+        e.y += e.vy * dt;
+        if (battlefield.cull(e.x, e.y, Touch, 1) > 0) {
+          this.land(e.x, e.y, battlefield, Math.atan2(e.vy, e.vx));
+          this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
+          this.spark(e.x, e.y, 5, '符', 180, Math.atan2(e.vy, e.vx), 2.1);
+          continue;
+        }
       } else if (e.kind === 'stone') {
         // In flight it is inert — it does not cut what it passes. A stone thrown at the ground is
         // not a projectile, and making it one would quietly give 山崩 back the damage the whole
@@ -1972,6 +2106,31 @@ export class Attacks {
       context.beginPath();
       context.arc(e.x, e.y, r * 1.15, 0, Math.PI * 2);
       context.fill();
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'arrow') {
+      // 弓. A streak along its own heading rather than a drawn arrow: at this speed the shape is
+      // never seen, only the line it leaves, and a shaft with fletchings on it reads as a smear.
+      const lit = Math.min(1, e.age * 14);
+      const back = 26 + Math.min(16, e.age * 90);
+      const tail = context.createLinearGradient(
+        e.x - Math.cos(e.angle) * back,
+        e.y - Math.sin(e.angle) * back,
+        e.x,
+        e.y,
+      );
+      tail.addColorStop(0, clear(hue.body));
+      tail.addColorStop(1, hue.core);
+      context.globalAlpha = lit;
+      context.strokeStyle = tail;
+      context.lineWidth = 2.6;
+      context.beginPath();
+      context.moveTo(e.x - Math.cos(e.angle) * back, e.y - Math.sin(e.angle) * back);
+      context.lineTo(e.x, e.y);
+      context.stroke();
+      this.bloom(context, e.x, e.y, 13, hue, 0.5 * lit);
       context.globalAlpha = 1;
       return;
     }

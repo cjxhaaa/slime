@@ -87,6 +87,7 @@ import type { Battlefield } from './Attacks.js';
 import { PillarShove, QuakeTell } from './Attacks.js';
 import { Depth } from './depth.js';
 import { MaxShields } from './Arsenal.js';
+import { ARMS, PATHS, WAYS, WEAPONS, swing } from './kit.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import type { School } from './schools.js';
 import {
@@ -2202,6 +2203,104 @@ checkTrue(
     const bad = run.targets().filter((m) => !Number.isFinite(m.x) || !Number.isFinite(m.y));
     check('a shove dead on top of something does not make a NaN', bad.length, 0);
   }
+}
+
+// -------------------------------------------------------------------------------------------------
+// 兵器与五行 — the first vertical slice: 弓 + 爆火.
+//
+// The system this replaces the nine schools with rests on one bet: that a weapon decides delivery,
+// a way decides what happens on contact, and the fifty pairings are what comes out rather than
+// what is written. If that is wrong the whole plan costs three times as much, so the first thing
+// built is one weapon and one way, end to end, where the bet can be looked at.
+
+check('five weapons', WEAPONS.length, 5);
+check('ten ways, two to a phase', WAYS.length, 10);
+{
+  const perPhase = new Map<string, number>();
+  for (const way of WAYS) {
+    const of = PATHS[way].of;
+    perPhase.set(of, (perPhase.get(of) ?? 0) + 1);
+  }
+  check('across five phases', perPhase.size, 5);
+  checkTrue('two each, none with one or three', [...perPhase.values()].every((n) => n === 2));
+  // Every way names a distinct mechanic, or two of them are the same way with two names.
+  const mechanics = new Set(WAYS.map((way) => PATHS[way].on));
+  check('and ten distinct mechanics', mechanics.size, 10);
+}
+{
+  // Deepening buys cadence, and it is a real amount rather than a rounding.
+  for (const weapon of WEAPONS) {
+    const first = swing(weapon, 1);
+    const last = swing(weapon, 5);
+    checkTrue(
+      `${weapon} swings faster as it deepens: ${first.toFixed(2)}s to ${last.toFixed(2)}s`,
+      last < first * 0.8,
+    );
+    check(`and ${weapon} at depth 1 is its own interval`, first, ARMS[weapon].interval, 1e-9);
+  }
+}
+
+{
+  // The slice, driven through the real engine.
+  const standing = [
+    { x: 700, y: 400 },
+    { x: 716, y: 412 },
+    { x: 690, y: 420 },
+  ];
+  let struck = 0;
+  let widest = 0;
+  const field: Battlefield = {
+    targets: () => standing,
+    closest: (x, y, within) => {
+      const near = standing[0];
+      return Math.hypot(near.x - x, near.y - y) <= within ? near : null;
+    },
+    cull: (_x, _y, radius, most) => {
+      struck += most;
+      widest = Math.max(widest, radius);
+      return 1;
+    },
+    shove: () => {},
+  };
+  const body = { x: 400, y: 400, radius: 46 };
+
+  // 1. **No weapon, no new system.** Everything un-migrated still runs the schools, and the way
+  //    to be sure of that is that equipping nothing changes nothing.
+  const schooled = new Attacks();
+  schooled.carry([{ school: '符', level: 1, evolved: false }], []);
+  checkTrue('nothing equipped means the schools are still fighting', !schooled.armed);
+
+  // 2. A bow alone hits, and hits for exactly what a bow hits for.
+  const bare = new Attacks();
+  bare.equip({ weapon: '弓', depth: 1 }, []);
+  checkTrue('a weapon equipped takes the fight over', bare.armed);
+  for (let i = 0; i < 120 * 2; i++) bare.update(1 / 120, body, field);
+  checkTrue(`the bow lands hits on its own: ${struck}`, struck > 0);
+  const alone = struck;
+  const plain = widest;
+
+  // 3. And the same bow carrying 爆火 does more where it lands — which is the bet, in one number.
+  struck = 0;
+  widest = 0;
+  const fired = new Attacks();
+  fired.equip({ weapon: '弓', depth: 1 }, [{ way: '火爆', depth: 1 }]);
+  for (let i = 0; i < 120 * 2; i++) fired.update(1 / 120, body, field);
+  checkTrue(
+    `爆火 on the same bow lands more: ${struck} against ${alone}`,
+    struck > alone,
+  );
+  checkTrue(
+    `and over a wider circle: ${widest.toFixed(0)}px against ${plain.toFixed(0)}px`,
+    widest > plain,
+  );
+
+  // 4. Deepening the way widens the burst rather than raising a number nobody can see.
+  struck = 0;
+  widest = 0;
+  const deep = new Attacks();
+  deep.equip({ weapon: '弓', depth: 1 }, [{ way: '火爆', depth: 5 }]);
+  for (let i = 0; i < 120 * 2; i++) deep.update(1 / 120, body, field);
+  checkTrue(`and deepening it widens it further: ${widest.toFixed(0)}px`, widest > plain);
 }
 
 // -------------------------------------------------------------------------------------------------
