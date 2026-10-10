@@ -24,7 +24,6 @@ import type { Element, Way, Weapon } from '../game/kit.js';
  * translates it; the dictionary is keyed *by* it. Keeping it means the keys cannot drift as the
  * translations change, which is the failure this shape exists to prevent.
  */
-import type { School } from '../game/schools.js';
 import type { Kind } from '../game/menaces.js';
 
 /**
@@ -68,12 +67,6 @@ export interface Dictionary {
    */
   fullness: [string, string, string, string];
 
-  schools: Record<School, Named>;
-  /** Keyed by the two school characters in the order `COMBOS` declares them. */
-  combos: Record<string, Named>;
-  /** Keyed by the three school characters in the order `TRIADS` declares them. */
-  triads: Record<string, Named>;
-  evolutions: Record<School, Named>;
   breeds: Record<Kind, string>;
 
   /** The twenty lines a 机缘 can say. */

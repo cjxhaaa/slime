@@ -38,72 +38,6 @@ export const en: Dictionary = {
   realmStage: '{realm} Layer {stage}',
   fullness: ['Barely gathered', 'Gathering', 'Nearly full', 'Ready to break through'],
 
-  schools: {
-    符: { name: 'Charm', blurb: 'One charm, one target' },
-    剑: { name: 'Sword Qi', blurb: 'A crescent that cuts through' },
-    雷: { name: 'Thunder', blurb: 'Strikes, then jumps to its neighbour' },
-    火: { name: 'Pill Fire', blurb: 'Burns where it fell' },
-    冰: { name: 'Ice Soul', blurb: 'A cold field; whatever enters slows' },
-    风: { name: 'Wind Blade', blurb: 'Turns about the body' },
-    土: { name: 'Mountain', blurb: 'Throws a stone; the ground opens and hurls them back' },
-    毒: { name: 'Miasma', blurb: 'Fouls the ground you cross' },
-    影: { name: 'Shadow Guard', blurb: 'One shade, fighting alone' },
-  },
-
-  combos: {
-    符雷: { name: 'Thunder Charm', blurb: 'Where a charm lands, one more forks to the nearest' },
-    符剑: { name: 'Charm Sword', blurb: 'The charm circles you three breaths, then flies' },
-    符土: { name: 'Charm Array', blurb: 'They stop flying and stand in a ring on the ground' },
-    符影: { name: 'Paper Effigy', blurb: 'The shade throws charms too' },
-    剑风: { name: 'Wind Sword', blurb: 'One crescent to each of the four quarters' },
-    剑雷: { name: 'Thunder Sword', blurb: 'Every cut draws a bolt down beside it' },
-    雷火: { name: 'Thunderfire', blurb: 'The ground fire reaches out for lightning' },
-    火冰: { name: 'Icefire', blurb: 'Anything burning inside the cold field bursts' },
-    火毒: { name: 'Burning Miasma', blurb: 'The cloud catches, and takes the rest with it' },
-    冰风: { name: 'Windsnow', blurb: 'The blades trail frost, and the frost bites' },
-    冰土: { name: 'Frozen Ground', blurb: 'Where the pillars rose, the ground stays cold' },
-    风毒: { name: 'Windborne Miasma', blurb: 'The cloud is blown wider, and drifts' },
-    土影: { name: 'Shadowed Earth', blurb: 'Two shadow guards walk out of the broken ground' },
-    毒影: { name: 'Venomed Shade', blurb: 'Every blow the shade lands is poisoned' },
-  },
-
-  triads: {
-    符剑雷: {
-      name: 'Three Powers Sword Array',
-      blurb: 'Charms fall into an array, lightning earths on it, and the crescents spiral out along it',
-    },
-    符土影: {
-      name: 'Underworld Seal',
-      blurb: 'A ring of talismans rises from the broken ground, and three shadow guards step out of it',
-    },
-    雷火冰: {
-      name: 'Three Calamities',
-      blurb: 'Every flame calls lightning down and bursts a ring of frost',
-    },
-    冰风土: {
-      name: 'Rimewall',
-      blurb: 'The blades leave the body and pin to the cold rim as a turning wall of ice',
-    },
-    风剑毒: { name: 'Miasma Edge', blurb: 'The crescents carry poison and lay it along their path' },
-    毒火影: { name: 'Karmic Fire Ghost', blurb: 'The shades burn as they travel, setting the ground alight' },
-    土冰影: {
-      name: 'Dark Watch',
-      blurb: 'The shadow guards stop roaming and circle the body instead',
-    },
-  },
-
-  evolutions: {
-    符: { name: 'Ten Thousand Charms', blurb: 'A charm every breath, and none of them miss' },
-    剑: { name: 'All Swords Return', blurb: 'Not one crescent — a sheaf of them' },
-    雷: { name: 'Nine Heavens Thunder', blurb: 'The bolt runs the whole length of them' },
-    火: { name: 'Sky-Burning Furnace', blurb: 'It never goes out, and it follows you' },
-    冰: { name: 'Black Ice Prison', blurb: 'Inside the field, nothing walks' },
-    风: { name: 'Gale Array', blurb: 'Three rings of blades, turning against each other' },
-    土: { name: 'Dragon Turning', blurb: 'The stone splits in three; three patches open in turn' },
-    毒: { name: 'Ten Thousand Venoms', blurb: 'The cloud hunts' },
-    影: { name: 'Threefold Shade', blurb: 'Three of them' },
-  },
-
   breeds: {
     drift: 'Drifter',
     dart: 'Charger',
@@ -145,10 +79,7 @@ export const en: Dictionary = {
     trialSurvived: { name: 'Trial Complete', blurb: 'Lasted a whole run' },
     trialUnhurt: { name: 'Untouched', blurb: 'Lasted a whole run without the guard being reached' },
     trialSlayer: { name: 'Three Hundred', blurb: 'Three hundred slain in a single run' },
-    pair: { name: 'Paired', blurb: 'Put two schools together' },
-    triad: { name: 'Triad', blurb: 'Put three schools together' },
-    evolve: { name: 'Evolved', blurb: 'Drew a jackpot' },
-    fullSet: { name: 'Four Schools', blurb: 'Filled all four slots' },
+    fullSet: { name: 'All Three', blurb: 'Every phase slot filled' },
     devour: { name: 'Window Eaten', blurb: 'Swallowed a window whole' },
     fortune: { name: 'A Find', blurb: 'Came across something' },
     lieLow: { name: 'Lay Low', blurb: 'Stepped aside for something else once' },
@@ -185,7 +116,7 @@ export const en: Dictionary = {
 
   arms: {
     刀: { name: 'Sabre', blurb: 'Cuts several arcs of qi along the ground' },
-    剑: { name: 'Sword', blurb: 'A flying sword hunts on its own, and flurries where it lands' },
+    剑: { name: 'Sword', blurb: 'Hunts on its own, and flurries where it lands' },
     盾: { name: 'Shield', blurb: 'Qi circles the body, and what it passes through is hurt' },
     弓: { name: 'Bow', blurb: 'One arrow, straight out, and it does not turn' },
     符: { name: 'Talisman', blurb: 'The charm finds its own mark and will not stop short' },
@@ -194,12 +125,12 @@ export const en: Dictionary = {
   ways: {
     金锐: { name: 'Keen Metal', blurb: 'Passes through, and does not stop for one' },
     金鸣: { name: 'Ringing Metal', blurb: 'One strike throws them off in every direction' },
-    木缠: { name: 'Binding Wood', blurb: 'What it strikes takes root, and cannot move for a moment' },
+    木缠: { name: 'Binding Wood', blurb: 'What it strikes takes root for a moment' },
     木荣: { name: 'Flourishing Wood', blurb: 'Every hit gives a little of the body back' },
     水寒: { name: 'Cold Water', blurb: 'Where it lands turns cold, and what crosses it slows' },
     水流: { name: 'Flowing Water', blurb: 'One strike carries on to the next of them' },
     火燎: { name: 'Spreading Fire', blurb: 'What it strikes catches, and burns for a while' },
-    火爆: { name: 'Bursting Fire', blurb: 'It goes off where it lands, and everything near it is hurt' },
+    火爆: { name: 'Bursting Fire', blurb: 'Goes off where it lands, hurting everything near' },
     土崩: { name: 'Crumbling Earth', blurb: 'The ground splits where it lands and stone heaves up' },
     土固: { name: 'Firm Earth', blurb: 'Stone armour on the body, and a hit does not land' },
   },
@@ -217,7 +148,7 @@ export const en: Dictionary = {
     mendBlurb: 'Restores three points of guard',
     shield: 'Ward',
     shieldTitle: 'Bell of Gold',
-    shieldBlurb: 'Eats one hit; when the last breaks it throws them off, then re-forms',
+    shieldBlurb: 'Eats a hit; the last one throws them off, then re-forms',
     levelStep: 'Level {from} → {to}',
     pairsWith: 'With {school} · {combo}',
     triadWith: 'Triad · {triad}',

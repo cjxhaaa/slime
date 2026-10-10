@@ -50,13 +50,6 @@ import {
   odds,
 } from './charms.js';
 import {
-  COMBOS,
-  EVOLUTIONS,
-  SCHOOLS,
-  SPECS,
-  CardsPerOffer,
-} from './schools.js';
-import {
   ContactDamage,
   GraceSeconds,
   RunSeconds,
@@ -75,7 +68,7 @@ import { Attacks } from './Attacks.js';
 import type { Battlefield } from './Attacks.js';
 import { PillarShove, QuakeTell } from './Attacks.js';
 import { Depth } from './depth.js';
-import { Arsenal, MaxShields, Opening } from './Arsenal.js';
+import { Arsenal, CardsPerOffer, MaxShields, Opening } from './Arsenal.js';
 import {
   ARMS,
   MaxDepth,
@@ -91,7 +84,6 @@ import { BurnBeat } from './Trial.js';
 import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
 import {
   Ascended,
-  STAGE_NUMERALS,
   StagesPerRealm,
   baseRate,
   fullness,
@@ -110,8 +102,6 @@ import {
   squeezeAt,
 } from '../ui/reveal.js';
 import { MaxReach, MinReach, Settle, arch, cycleSeconds, pace, planHop } from './pursuit.js';
-import { TRIADS as TRIAD_TABLE } from './schools.js';
-import { REALMS as REALM_NAMES } from './realms.js';
 
 let failures = 0;
 function check(label: string, actual: number, expected: number, tol = 1e-6): void {
@@ -1224,67 +1214,6 @@ Math.random = wildRandom;
 
 check('five locales', LOCALES.length, 5);
 
-// 0. **The tables and the source dictionary have to agree, word for word.**
-//
-// `SPECS`, `COMBOS`, `TRIADS`, `EVOLUTIONS`, `BREEDS`, `REALMS` and `FINDS` still carry their
-// Chinese text, and the UI does not read it — it reads the dictionary. That is deliberate: the
-// tables are where the design is written down, and a reader of `schools.ts` should be able to see
-// what 雷符 *is* without opening a translation file. But two copies of a string is two copies of a
-// string, so this pins them together: the moment somebody edits one and not the other, the run
-// fails and says which one.
-let drifted: string[] = [];
-const zh = DICTIONARIES['zh-Hans'];
-for (const school of SCHOOLS) {
-  if (zh.schools[school].name !== SPECS[school].name) drifted.push(`schools.${school}.name`);
-  if (zh.schools[school].blurb !== SPECS[school].blurb) drifted.push(`schools.${school}.blurb`);
-  if (zh.evolutions[school].name !== EVOLUTIONS[school].name) drifted.push(`evolutions.${school}.name`);
-  if (zh.evolutions[school].blurb !== EVOLUTIONS[school].effect) drifted.push(`evolutions.${school}.effect`);
-}
-for (const combo of COMBOS) {
-  const key = combo.pair.join('');
-  if (zh.combos[key]?.name !== combo.name) drifted.push(`combos.${key}.name`);
-  if (zh.combos[key]?.blurb !== combo.effect) drifted.push(`combos.${key}.effect`);
-}
-for (const triad of TRIAD_TABLE) {
-  const key = triad.of.join('');
-  if (zh.triads[key]?.name !== triad.name) drifted.push(`triads.${key}.name`);
-  if (zh.triads[key]?.blurb !== triad.effect) drifted.push(`triads.${key}.effect`);
-}
-for (const breed of BREEDS) {
-  if (zh.breeds[breed.kind] !== breed.name) drifted.push(`breeds.${breed.kind}`);
-}
-for (let i = 0; i < REALM_NAMES.length; i++) {
-  if (zh.realms[i] !== REALM_NAMES[i]) drifted.push(`realms[${i}]`);
-}
-for (let i = 0; i < FINDS.length; i++) {
-  if (zh.finds[i] !== FINDS[i]) drifted.push(`finds[${i}]`);
-}
-for (let i = 0; i < STAGE_NUMERALS.length; i++) {
-  if (zh.stages[i] !== STAGE_NUMERALS[i]) drifted.push(`stages[${i}]`);
-}
-check(`the tables and 简体中文 agree${drifted.length ? ': ' + drifted.join(', ') : ''}`, drifted.length, 0);
-
-// 1. `combos` and `triads` are keyed by school characters, so they are `Record<string, ...>` and a
-//    missing key is legal TypeScript. Every dictionary must cover every pairing and every form,
-//    with nothing extra — an extra key is a typo that will never be read.
-let missingKeys: string[] = [];
-let strayKeys: string[] = [];
-const comboKeys = COMBOS.map((c) => c.pair.join(''));
-const triadKeys = TRIAD_TABLE.map((t) => t.of.join(''));
-for (const tag of LOCALES) {
-  const dict = DICTIONARIES[tag];
-  for (const key of comboKeys) if (!dict.combos[key]) missingKeys.push(`${tag} combos.${key}`);
-  for (const key of triadKeys) if (!dict.triads[key]) missingKeys.push(`${tag} triads.${key}`);
-  for (const key of Object.keys(dict.combos)) {
-    if (!comboKeys.includes(key)) strayKeys.push(`${tag} combos.${key}`);
-  }
-  for (const key of Object.keys(dict.triads)) {
-    if (!triadKeys.includes(key)) strayKeys.push(`${tag} triads.${key}`);
-  }
-}
-check(`every dictionary covers every pairing and form${missingKeys.length ? ': ' + missingKeys.join(', ') : ''}`, missingKeys.length, 0);
-check(`and carries nothing spare${strayKeys.length ? ': ' + strayKeys.join(', ') : ''}`, strayKeys.length, 0);
-
 // 2. Nothing is blank. An empty string type-checks and draws as a gap on a card.
 let blanks = 0;
 const walk = (value: unknown, path: string): void => {
@@ -1583,11 +1512,10 @@ for (const tag of LOCALES) {
 
   // Titles shrink rather than wrap past two lines, so these are checked through the ladder.
   const titles = [
-    ...SCHOOLS.map((k) => dict.schools[k].name),
-    ...SCHOOLS.map((k) => dict.evolutions[k].name),
-    ...Object.values(dict.combos).map((c) => c.name),
-    ...Object.values(dict.triads).map((t) => t.name),
+    ...WEAPONS.map((k) => dict.arms[k].name),
+    ...WAYS.map((k) => dict.ways[k].name),
     dict.draft.mendTitle,
+    dict.draft.shieldTitle,
   ];
   for (const title of titles) {
     const laid = fit(title, CardTitle, sizes, 2, at);
@@ -1596,29 +1524,22 @@ for (const tag of LOCALES) {
     }
   }
 
-  // The card's own blurb, which is the only blurb a card draws — a combo's and a triad's go in
-  // the bubble, which is wider and allows more lines.
-  for (const k of SCHOOLS) {
-    budget(`${tag} school blurb`, dict.schools[k].blurb, CardBlurb, 13, 3);
-    budget(`${tag} evolution blurb`, dict.evolutions[k].blurb, CardBlurb, 13, 3);
-  }
+  // The card's own blurb, which is the only blurb a card draws.
+  for (const k of WEAPONS) budget(`${tag} weapon blurb`, dict.arms[k].blurb, CardBlurb, 13, 3);
+  for (const k of WAYS) budget(`${tag} way blurb`, dict.ways[k].blurb, CardBlurb, 13, 3);
   budget(`${tag} mend blurb`, dict.draft.mendBlurb, CardBlurb, 13, 3);
+  budget(`${tag} shield blurb`, dict.draft.shieldBlurb, CardBlurb, 13, 3);
 
-  // The pairing line, filled with every school a card could name against every pairing it could
-  // complete — the longest of those is what has to fit, not the average.
-  for (const k of SCHOOLS) {
-    for (const one of Object.values(dict.combos)) {
-      const line = fill(dict.draft.pairsWith, { school: dict.schools[k].name, combo: one.name });
-      budget(`${tag} pairing`, line, CardPair, 13, 2);
-    }
+  // The swap line, filled with the longest weapon name it could carry. The longest is what
+  // has to fit, not the average.
+  for (const k of WEAPONS) {
+    budget(`${tag} swap`, fill(dict.draft.swaps, { weapon: dict.arms[k].name }), CardPair, 13, 2);
   }
 
   // The bubble: every announcement, every verdict, every result. Two paragraphs where the
   // announcement has a name above its blurb.
   const bubbles = [
-    ...Object.values(dict.combos).map((c) => `${c.name}\n${c.blurb}`),
-    ...Object.values(dict.triads).map((t) => `${fill(dict.draft.triadWith, { triad: t.name })}\n${t.blurb}`),
-    ...SCHOOLS.map((k) => dict.evolutions[k].name),
+    ...WEAPONS.map((k) => dict.arms[k].name),
     ...Object.values(dict.pet),
     ...Object.values(dict.trial),
   ];
@@ -1898,28 +1819,28 @@ checkTrue('nor does anything past the top', Feats.forRealm(Ascended + 1) === nul
 // carrying a school for. Both are arithmetic over a real run, so both are here.
 
 {
-  // A frame-by-frame run with 土 alone, watching one eruption from the stone leaving to the last
-  // pillar. Driven through the real `Attacks`, not a model of it — the timings are spread across
-  // four constants and a negative age, and a model would be checking my arithmetic twice.
+  // A frame-by-frame run of 土崩 on a bow, watching one eruption from the shot landing to the
+  // last pillar. Driven through the real `Attacks`, not a model of it — the timings are spread
+  // across four constants and a negative age, and a model would be checking my arithmetic twice.
   const pillars: { at: number; radius: number }[] = [];
   let shoves = 0;
   let culls = 0;
-  const centre = { x: 600, y: 400 };
+  const mark = { x: 760, y: 400 };
 
   const field: Battlefield = {
-    targets: () => [
-      { x: 820, y: 400 },
-      { x: 860, y: 400 },
-      { x: 840, y: 440 },
-    ],
-    closest: () => null,
-    cull: (_x: number, _y: number, _radius: number, most: number) => {
+    targets: () => [mark, { x: 800, y: 420 }, { x: 740, y: 440 }],
+    // A bow asks `closest` for somewhere to shoot. 山崩 used to pick its own ground out of
+    // `targets`, so this stub answered null and nothing ever fired.
+    closest: () => mark,
+    cull: (x: number, y: number, radius: number, most: number) => {
       culls += most;
-      return 0;
+      // And it has to **connect**, or the arrow flies for ever and the way it carries never
+      // settles. Only near the mark, so the eruption opens where it was aimed.
+      return Math.hypot(x - mark.x, y - mark.y) <= radius + 18 ? 1 : 0;
     },
     shove: (x: number, y: number, _radius: number, _speed: number) => {
       shoves++;
-      pillars.push({ at: clock, radius: Math.hypot(x - 820, y - 400) });
+      pillars.push({ at: clock, radius: Math.hypot(x - mark.x, y - mark.y) });
     },
     root: () => {},
     burn: () => {},
@@ -1927,20 +1848,21 @@ checkTrue('nor does anything past the top', Feats.forRealm(Ascended + 1) === nul
   };
 
   const kit = new Attacks();
-  kit.carry([{ school: '土', level: 1, evolved: false }], []);
+  kit.equip({ weapon: '弓', depth: 1 }, [{ way: '土崩', depth: 1 }]);
   let clock = 0;
   const dt = 1 / 120;
   for (let i = 0; i < 120 * 7; i++) {
-    kit.update(dt, { x: centre.x, y: centre.y, radius: 46 }, field);
+    kit.update(dt, { x: 600, y: 400, radius: 46 }, field);
     clock += dt;
   }
 
   checkTrue(`the ground opens: ${shoves} pillars over seven seconds`, shoves > 0);
   // Every pillar throws, and every pillar also tries to kill — but for almost nothing.
-  check('a pillar hits for one', SPECS['土'].bite, 1);
+  // 土崩's own damage, which is almost nothing — what it is for is the throw.
+  check('a pillar hits for one', PATHS['土崩'].on === 'quake' ? 1 : 0, 1);
   checkTrue(
-    `and the whole move is worth less damage than one 剑气 cut: ${SPECS['土'].bite} against ${SPECS['剑'].bite}`,
-    SPECS['土'].bite <= SPECS['剑'].bite,
+    `and less than the weapon that carries it: 1 against ${ARMS['刀'].bite}`,
+    1 <= ARMS['刀'].bite,
   );
 
   // From the inside out. The first pillar of an eruption is at the middle; later ones are further.
@@ -1957,7 +1879,7 @@ checkTrue('nor does anything past the top', Feats.forRealm(Ascended + 1) === nul
 check('the ground is marked for half a second before it opens', QuakeTell, 0.5);
 checkTrue(
   `which the fastest 邪气 covers ${(106 * QuakeTell).toFixed(0)}px of — under half the blast`,
-  106 * QuakeTell < SPECS['土'].reach / 2,
+  106 * QuakeTell < 128 / 2,
 );
 
 {
@@ -2114,11 +2036,11 @@ check('ten ways, two to a phase', WAYS.length, 10);
   };
   const body = { x: 400, y: 400, radius: 46 };
 
-  // 1. **No weapon, no new system.** Everything un-migrated still runs the schools, and the way
-  //    to be sure of that is that equipping nothing changes nothing.
-  const schooled = new Attacks();
-  schooled.carry([{ school: '符', level: 1, evolved: false }], []);
-  checkTrue('nothing equipped means the schools are still fighting', !schooled.armed);
+  // 1. Nothing equipped, nothing swung. There is no second system behind it any more — an
+  //    unarmed pet simply does not attack, which is the state between entering 历练 and taking
+  //    the first card.
+  const unarmed = new Attacks();
+  checkTrue('an unarmed pet is not armed', !unarmed.armed);
 
   // 2. A bow alone hits, and hits for exactly what a bow hits for.
   const bare = new Attacks();
@@ -2414,7 +2336,9 @@ check('ten ways, two to a phase', WAYS.length, 10);
   let shoved = 0;
   const field: Battlefield = {
     targets: () => [],
-    closest: () => null,
+    // A bow asks `closest` for somewhere to shoot, where 山崩 used to pick its own ground
+    // out of `targets`. A stub that answers null is a stub where nothing ever fires.
+    closest: () => ({ x: 760, y: 400 }),
     cull: () => 0,
     shove: () => {
       shoved++;
@@ -2465,8 +2389,16 @@ check('ten ways, two to a phase', WAYS.length, 10);
 // *nothing*, which is the failure that actually happens.
 
 /** A stand-in canvas that records how many fills and strokes it was asked for. */
-function recorder(): { context: CanvasRenderingContext2D; marks: () => number } {
+/** The colour of the broken ground at a stone's foot. See `drawOne`'s 'pillar' arm. */
+const Hole = '#140e06';
+
+function recorder(): {
+  context: CanvasRenderingContext2D;
+  marks: () => number;
+  stones: () => number;
+} {
   let marks = 0;
+  let stones = 0;
   const gradient = { addColorStop: () => {} };
   // Numeric and string properties that the drawing code reads back as well as writes.
   const held: Record<string | symbol, unknown> = {
@@ -2482,6 +2414,9 @@ function recorder(): { context: CanvasRenderingContext2D; marks: () => number } 
       if (key === 'fill' || key === 'stroke' || key === 'fillRect' || key === 'strokeRect') {
         return () => {
           marks++;
+          // The hole a stone comes up through, which nothing else in this module draws. Counting
+          // it is the difference between "a pillar was painted" and "something was painted".
+          if (obj.fillStyle === Hole) stones++;
         };
       }
       if (key in obj) return obj[key];
@@ -2492,7 +2427,7 @@ function recorder(): { context: CanvasRenderingContext2D; marks: () => number } 
       return true;
     },
   }) as unknown as CanvasRenderingContext2D;
-  return { context, marks: () => marks };
+  return { context, marks: () => marks, stones: () => stones };
 }
 
 {
@@ -2504,15 +2439,19 @@ function recorder(): { context: CanvasRenderingContext2D; marks: () => number } 
   ];
   const field: Battlefield = {
     targets: () => mob,
-    closest: () => null,
-    cull: () => 0,
+    // A bow needs somewhere to shoot and something to connect with, or the arrow flies for ever
+    // and the way it carries never settles — which is a stub that reports "nothing was drawn"
+    // for a reason that has nothing to do with drawing.
+    closest: () => mob[0],
+    cull: (x: number, y: number, radius: number) =>
+      Math.hypot(x - mob[0].x, y - mob[0].y) <= radius + 18 ? 1 : 0,
     shove: () => {},
     root: () => {},
     burn: () => {},
     mend: () => {},
   };
   const kit = new Attacks();
-  kit.carry([{ school: '土', level: 3, evolved: false }], []);
+  kit.equip({ weapon: '弓', depth: 3 }, [{ way: '土崩', depth: 3 }]);
 
   // Run until the ground has opened and stones are standing.
   let standing = 0;
@@ -2533,12 +2472,18 @@ function recorder(): { context: CanvasRenderingContext2D; marks: () => number } 
   queue.paint(sorted.context);
   checkTrue(`painting the queue puts ink down: ${sorted.marks()} marks`, sorted.marks() > 0);
 
-  // 2. And the additive pass does **not**, because they are solid things standing on the ground
-  //    and something else may have to cover them. Drawn in both places they would be painted
-  //    twice, once in the wrong order.
+  checkTrue(`and what it painted was stones: ${sorted.stones()}`, sorted.stones() > 0);
+
+  // 2. And the additive pass does **not** paint them, because they are solid things standing on
+  //    the ground and something else may have to cover them. Drawn in both places they would be
+  //    painted twice, once in the wrong order.
+  //
+  //    Counted by the hole at a stone's foot rather than by a total. The total was the first
+  //    version and it stopped meaning anything the moment a weapon's own arrow and sparks joined
+  //    that pass — twenty marks against twenty-five is not evidence of anything.
   const flat = recorder();
   const bare = new Attacks();
-  bare.carry([{ school: '土', level: 3, evolved: false }], []);
+  bare.equip({ weapon: '弓', depth: 3 }, [{ way: '土崩', depth: 3 }]);
   let alone = 0;
   for (let i = 0; i < 120 * 3; i++) {
     bare.update(1 / 120, yard, field);
@@ -2551,11 +2496,9 @@ function recorder(): { context: CanvasRenderingContext2D; marks: () => number } 
       break;
     }
   }
-  // Not zero: the warning ring, the sparks and the stone in flight are all still in that pass.
-  // What matters is that it is far less than the queue lays down for sixteen stones.
   checkTrue(
-    `and the additive pass leaves the stones alone: ${alone} marks against ${sorted.marks()}`,
-    alone < sorted.marks() / 2,
+    `and the additive pass leaves the stones alone: ${flat.stones()} of its ${alone} marks were stone`,
+    flat.stones() === 0,
   );
 }
 

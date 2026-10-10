@@ -56,9 +56,6 @@ export const FEAT_IDS = [
   'trialSurvived',
   'trialUnhurt',
   'trialSlayer',
-  'pair',
-  'triad',
-  'evolve',
   'fullSet',
   // 日常.
   'devour',

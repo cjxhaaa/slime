@@ -30,7 +30,7 @@
  * reading as a blank card. The checks assert no dictionary is missing a key, so the fallback should
  * be dead — it exists for the release where somebody adds a pairing and forgets four files.
  */
-import type { Dictionary, Locale, Named } from './types.js';
+import type { Dictionary, Locale } from './types.js';
 import { LOCALES } from './types.js';
 import { zhHans } from './zh-Hans.js';
 import { zhHant } from './zh-Hant.js';
@@ -109,21 +109,6 @@ export function onLocaleChange(listener: () => void): void {
  */
 export function words(): Dictionary {
   return dictionary;
-}
-
-/**
- * A pairing's words, falling back to the source text rather than to `undefined`.
- *
- * Keyed by the two school characters in the order `COMBOS` declares them — `符雷`, not `雷符`.
- * Callers pass `pair.join('')` and never build the key by hand.
- */
-export function combo(key: string): Named {
-  return dictionary.combos[key] ?? zhHans.combos[key] ?? { name: key, blurb: '' };
-}
-
-/** The same, for the three-school forms. Keyed by the three characters `TRIADS` declares. */
-export function triad(key: string): Named {
-  return dictionary.triads[key] ?? zhHans.triads[key] ?? { name: key, blurb: '' };
 }
 
 /**

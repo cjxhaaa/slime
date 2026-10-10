@@ -36,7 +36,6 @@ import {
   WEAPONS,
   Ways,
 } from './kit.js';
-import { CardsPerOffer, exchangeCost } from './schools.js';
 
 /** The weapon in hand, and how deep it is carried. */
 export interface Armed {
@@ -62,6 +61,39 @@ export type Card =
   | { kind: 'way'; way: Way }
   | { kind: 'mend' }
   | { kind: 'shield' };
+
+/** Cards per offer. */
+export const CardsPerOffer = 3;
+
+/**
+ * What the meter costs for the nth exchange of a run, counting from zero.
+ *
+ * Escalating rather than flat, because a flat cost cannot serve both ends of the ladder: a run kills
+ * between five and ten hundred things depending on the realm, so any single figure is either a
+ * handful of exchanges at the bottom or dozens at the top.
+ *
+ * The first one costs thirty because of when it lands rather than what it is worth. At six kills a
+ * second — which is what a freshly drafted kit does — a cost of eight put the first upgrade
+ * at **1.3 seconds**, so the run had no opening: you were snowballing before you had looked at the
+ * screen. Thirty puts it around five seconds in, which is long enough to notice that the build you
+ * drafted is what is fighting.
+ *
+ * Growing at 18% gives nine exchanges over a 筑基 run and eleven over a 大乘 one. A high realm is a
+ * deeper build, which is most of what a realm buys you in here now.
+ */
+export const FirstExchange = 30;
+export const ExchangeGrowth = 1.18;
+
+export function exchangeCost(taken: number): number {
+  return Math.round(FirstExchange * ExchangeGrowth ** Math.max(0, taken));
+}
+
+/** Total kills to have taken `n` exchanges. */
+export function killsForExchanges(n: number): number {
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += exchangeCost(i);
+  return sum;
+}
 
 /** What `mend` gives back, in points of 护体. */
 export const MendAmount = 3;

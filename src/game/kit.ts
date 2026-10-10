@@ -268,3 +268,30 @@ export function span(weapon: Weapon, depth: number): number {
   const held = Math.max(1, Math.min(MaxDepth, depth));
   return ARMS[weapon].reach * (1 + (ARMS[weapon].grow ?? 0.1) * (held - 1));
 }
+
+/**
+ * What a school's light is made of.
+ *
+ * Three stops, not one colour, and that is most of the difference between this looking like a game
+ * and looking like a diagram. A single pastel tint drawn at some alpha is **chalk**: it has no hot
+ * centre, so it never reads as light, only as a coloured shape. Every glowing thing in the genre
+ * these are borrowed from is a ramp from a near-white core through a saturated body to a deep
+ * saturated edge, and it is the ramp that does the work.
+ *
+ * They are also far more saturated than the first set. The originals were picked to sit politely on
+ * a desktop; sitting politely is the opposite of what an attack should do, and the pet's own body
+ * colour is already the thing carrying "this is a calm object on your screen".
+ */
+export interface Palette {
+  /** The hot centre. Near white, with a trace of the hue left in it. */
+  core: string;
+  /** The saturated middle. This is the colour somebody would name the school by. */
+  body: string;
+  /** The deep outer, where the light falls off. Saturated, never grey. */
+  edge: string;
+}
+
+/** The colour of the mark an evolved school wears. Deliberately not any school's own. */
+export const Crown = '#ffe58a';
+
+
