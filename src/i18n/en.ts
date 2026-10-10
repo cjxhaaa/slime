@@ -175,6 +175,14 @@ export const en: Dictionary = {
     lockedUntil: 'Opens at Foundation',
   },
 
+  elements: {
+    金: 'Metal',
+    木: 'Wood',
+    水: 'Water',
+    火: 'Fire',
+    土: 'Earth',
+  },
+
   arms: {
     刀: { name: 'Sabre', blurb: 'Cuts several arcs of qi along the ground' },
     剑: { name: 'Sword', blurb: 'A flying sword hunts on its own, and flurries where it lands' },
@@ -229,6 +237,8 @@ export const en: Dictionary = {
 
   settings: {
     arenaTitle: 'Practice Yard',
+    yardTally: '{have} / {all}',
+    yardDepth: 'Depth',
     start: 'Begin',
     stop: 'Stop',
     combosLabel: 'Pairings',

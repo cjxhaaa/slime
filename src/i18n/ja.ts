@@ -148,6 +148,14 @@ export const ja: Dictionary = {
     lockedUntil: '築基から',
   },
 
+  elements: {
+    金: '金',
+    木: '木',
+    水: '水',
+    火: '火',
+    土: '土',
+  },
+
   arms: {
     刀: { name: '刀', blurb: 'その場から幾条もの刀気を薙ぐ' },
     剑: { name: '剣', blurb: '飛剣が自ら敵を追い、追いつけば連斬する' },
@@ -202,6 +210,8 @@ export const ja: Dictionary = {
 
   settings: {
     arenaTitle: '演武場',
+    yardTally: '{have} / {all}',
+    yardDepth: '深さ',
     start: '始める',
     stop: 'やめる',
     combosLabel: '合',

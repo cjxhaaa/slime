@@ -1,4 +1,4 @@
-import type { Way, Weapon } from '../game/kit.js';
+import type { Element, Way, Weapon } from '../game/kit.js';
 /**
  * 语言 — what a dictionary has to provide, and nothing about how it is chosen.
  *
@@ -121,6 +121,8 @@ export interface Dictionary {
     lockedUntil: string;
   };
 
+  /** 五行: the five phases, for grouping the ten ways. */
+  elements: Record<Element, string>;
   /** 兵器: the five, by their key in `kit.ts`. */
   arms: Record<Weapon, Named>;
   /** 五行: the ten ways, by their key. */
@@ -168,6 +170,10 @@ export interface Dictionary {
 
   settings: {
     arenaTitle: string;
+    /** How many of the three 五行 slots are spent, in the yard. */
+    yardTally: string;
+    /** The heading over the yard's depth sliders. */
+    yardDepth: string;
     start: string;
     stop: string;
     combosLabel: string;

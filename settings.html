@@ -9,28 +9,14 @@
     <main>
       <h1>Slime</h1>
 
-      <section id="rebirth-box" hidden>
-        <h2 id="rebirth-title"></h2>
-        <p id="rebirth-state" class="muted"></p>
-        <div class="row">
-          <button id="rebirth" class="secondary"></button>
-        </div>
-        <p id="rebirth-warn" class="muted"></p>
-      </section>
+      <!--
+        Ordered by what a thing *is*, which is the one ordering a reader can predict: what the
+        window is in, then the two switches that change how the pet behaves, then the record, then
+        the workshop, and the one irreversible thing last.
 
-      <section id="arena-box">
-        <h2 id="arena-title"></h2>
-
-        <div id="arena-schools" class="chips"></div>
-        <div id="arena-picked" class="picked"></div>
-        <p id="arena-combos" class="muted combos"></p>
-
-        <div class="row">
-          <button id="arena-start"></button>
-          <button id="arena-stop" class="secondary"></button>
-        </div>
-      </section>
-
+        It used to open on 演武场 — a practice yard nobody visits twice a week — above the language
+        window and the privacy switches.
+      -->
       <section id="language-box">
         <h2 id="language-title"></h2>
         <div id="language-chips" class="chips"></div>
@@ -55,10 +41,51 @@
         <p id="lielow-note" class="muted"></p>
       </section>
 
+      <section id="arena-box">
+        <h2 id="arena-title"></h2>
+
+        <!--
+          Two groups, because there are two rules. One weapon, up to three 五行 — shown as one row
+          of five and five rows of two, so the shape of the choice is visible before any of it is
+          read. Fifteen identical pills in one row was the version before this.
+        -->
+        <div class="group">
+          <div class="subhead"><span id="arena-arm-label"></span></div>
+          <div id="arena-arms" class="chips"></div>
+        </div>
+
+        <div class="group">
+          <div class="subhead">
+            <span id="arena-way-label"></span>
+            <span id="arena-way-count" class="tally"></span>
+          </div>
+          <div id="arena-ways" class="phases"></div>
+        </div>
+
+        <div class="group">
+          <div class="subhead"><span id="arena-depth-label"></span></div>
+          <div id="arena-picked" class="picked"></div>
+        </div>
+
+        <div class="row">
+          <button id="arena-start"></button>
+          <button id="arena-stop" class="secondary"></button>
+        </div>
+      </section>
+
       <section>
         <h2 id="feats-title"></h2>
         <p id="feats-count" class="muted"></p>
         <div id="feats-list" class="feats"></div>
+      </section>
+
+      <section id="rebirth-box" hidden>
+        <h2 id="rebirth-title"></h2>
+        <p id="rebirth-state" class="muted"></p>
+        <div class="row">
+          <button id="rebirth" class="secondary"></button>
+        </div>
+        <p id="rebirth-warn" class="muted"></p>
       </section>
 
       <footer>

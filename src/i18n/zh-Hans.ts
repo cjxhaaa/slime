@@ -135,6 +135,14 @@ export const zhHans: Dictionary = {
     lockedUntil: '筑基可开',
   },
 
+  elements: {
+    金: '金',
+    木: '木',
+    水: '水',
+    火: '火',
+    土: '土',
+  },
+
   arms: {
     刀: { name: '刀', blurb: '就地斩出数道刀气' },
     剑: { name: '剑', blurb: '飞剑自去追敌，追上便连斩' },
@@ -189,6 +197,8 @@ export const zhHans: Dictionary = {
 
   settings: {
     arenaTitle: '演武场',
+    yardTally: '{have} / {all}',
+    yardDepth: '深浅',
     start: '上桩',
     stop: '结束',
     combosLabel: '合',

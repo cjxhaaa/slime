@@ -143,6 +143,50 @@ footer {
   cursor: default;
 }
 
+/*
+ * A labelled block inside a section. The yard has two rules in it — one weapon, three 五行 — and
+ * a rule nobody can see is a rule nobody follows.
+ */
+.group {
+  margin-bottom: 14px;
+}
+
+.subhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+
+/* How many of the three are spent. The only count on this screen, and it earns its place: the
+   chips go flat when it is full and this is the sentence that says why. */
+.tally {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Five phases, two ways each. A grid rather than five flex rows so the two columns line up down
+   the whole block — which is what makes it read as a table of pairs instead of five lists. */
+.phases {
+  display: grid;
+  grid-template-columns: 1.6em 1fr 1fr;
+  align-items: center;
+  gap: 5px 7px;
+}
+
+.phases .of {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.phases .chip {
+  width: 100%;
+  text-align: center;
+}
+
 .picked {
   display: grid;
   gap: 8px;

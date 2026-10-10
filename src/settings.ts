@@ -1,12 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import {
+  ELEMENTS,
   MaxDepth,
-  WAYS,
   WEAPONS,
   type Way,
   Ways,
   type Weapon,
+  waysOf,
 } from './game/kit';
 import { FEAT_IDS, featBlurb, featName } from './game/feats';
 import {
@@ -345,9 +346,9 @@ function tell(name: string, payload?: unknown): void {
 let arm: Pick = { weapon: '弓', depth: 1 };
 let walked: Walk[] = [];
 
-const armRow = el<HTMLDivElement>('arena-schools');
-const wayRow = el<HTMLDivElement>('arena-picked');
-const comboLine = el<HTMLParagraphElement>('arena-combos');
+const armRow = el<HTMLDivElement>('arena-arms');
+const wayGrid = el<HTMLDivElement>('arena-ways');
+const depthRows = el<HTMLDivElement>('arena-picked');
 
 // The realm picker and 护体不损 are gone. Both existed because the yard used to run a real trial;
 // against posts that never move and never hit back, a realm decides nothing a depth slider does
@@ -405,14 +406,24 @@ function render(): void {
       chip.textContent = w.arms[key].name;
       chip.setAttribute('aria-pressed', String(arm.weapon === key));
       chip.addEventListener('click', () => {
-        // One weapon at a time, and swapping keeps the depth — the yard is for comparing
-        // deliveries, and re-dragging the slider after every swap is the thing that stops you.
+        // One at a time, and swapping keeps the depth — the yard is for comparing deliveries, and
+        // re-dragging the slider after every swap is the thing that stops you doing that.
         arm = { weapon: key, depth: arm.depth };
         render();
       });
       return chip;
     }),
-    ...WAYS.map((key) => {
+  );
+
+  // Five phases, two ways each, laid out as a grid of pairs. The 五行 are a *shape*, and a flat
+  // row of ten hides it — which was the whole complaint about the screen this replaced.
+  const cells: HTMLElement[] = [];
+  for (const of of ELEMENTS) {
+    const label = document.createElement('span');
+    label.className = 'of';
+    label.textContent = w.elements[of];
+    cells.push(label);
+    for (const key of waysOf(of)) {
       const chip = document.createElement('button');
       chip.className = 'chip';
       chip.type = 'button';
@@ -420,11 +431,22 @@ function render(): void {
       chip.setAttribute('aria-pressed', String(walks(key)));
       chip.disabled = !walks(key) && walked.length >= Ways;
       chip.addEventListener('click', () => toggle(key));
-      return chip;
-    }),
-  );
+      cells.push(chip);
+    }
+  }
+  wayGrid.replaceChildren(...cells);
 
-  wayRow.replaceChildren(
+  el<HTMLSpanElement>('arena-arm-label').textContent = w.draft.arm;
+  el<HTMLSpanElement>('arena-way-label').textContent = w.draft.way;
+  el<HTMLSpanElement>('arena-depth-label').textContent = w.settings.yardDepth;
+  el<HTMLSpanElement>('arena-way-count').textContent = fill(w.settings.yardTally, {
+    have: walked.length,
+    all: Ways,
+  });
+
+  // One slider a line, weapon first. Only what is actually carried gets one: a depth control for
+  // something you have not chosen is a control that changes nothing.
+  depthRows.replaceChildren(
     depthRow(w.arms[arm.weapon].name, arm.depth, (next) => {
       arm = { weapon: arm.weapon, depth: next };
     }),
@@ -435,7 +457,6 @@ function render(): void {
     ),
   );
 
-  comboLine.textContent = '';
   push();
 }
 

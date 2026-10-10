@@ -147,6 +147,14 @@ export const ko: Dictionary = {
     lockedUntil: '축기부터',
   },
 
+  elements: {
+    金: '금',
+    木: '목',
+    水: '수',
+    火: '화',
+    土: '토',
+  },
+
   arms: {
     刀: { name: '도', blurb: '그 자리에서 여러 줄기 칼기를 베어 낸다' },
     剑: { name: '검', blurb: '비검이 스스로 적을 쫓아가, 닿으면 연달아 벤다' },
@@ -201,6 +209,8 @@ export const ko: Dictionary = {
 
   settings: {
     arenaTitle: '연무장',
+    yardTally: '{have} / {all}',
+    yardDepth: '깊이',
     start: '시작',
     stop: '끝내기',
     combosLabel: '합',
