@@ -21,7 +21,7 @@ import { Ways } from './game/kit';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
 import { type FeatId, Feats, SlayerKills, featBlurb, featName } from './game/feats';
-import { type Plan, crawl, planCrawl } from './ui/reveal';
+import { type Plan, type Posture, crawl, planCrawl } from './ui/reveal';
 import {
   fill,
   isLocale,
@@ -666,7 +666,43 @@ const pause = new Pause();
  */
 const depth = new Depth();
 /** The pet's own entry in that queue. One function, made once. */
-const paintSlime: Painter = (context) => slime.draw(context);
+/**
+ * The posture the pet is squeezing out of the floor in, or null when it is simply standing.
+ *
+ * Set once a frame, read by `paintSlime`. A field rather than an argument because the depth pass
+ * calls the painter for us and has nowhere to pass one through.
+ */
+let crawlPosture: Posture | null = null;
+
+/**
+ * The pet's body, wearing whatever posture it is in.
+ *
+ * **The crawl belongs to the pet, not to the scene.** It used to be applied around everything the
+ * frame drew, which quietly undid the one thing the 敛息 return was built for: the charm is
+ * flicked out of the gap first and has to be lying on the floor *before* the pet appears, and a
+ * transform that drags the whole canvas down behind the taskbar takes the charm down with it. The
+ * two beats were measured, asserted and then composited back on top of each other — the charm rose
+ * into view riding the same squeeze as the body, which is exactly the one cluttered event the
+ * sequencing exists to avoid. It also meant a landed charm slid and stretched for the whole 3.6s
+ * instead of lying still where it fell.
+ *
+ * Applied here so that both draw paths — the plain one and the depth-sorted one 历练 uses — get
+ * it, and nothing else does.
+ */
+const paintSlime: Painter = (context) => {
+  if (crawlPosture === null) {
+    slime.draw(context);
+    return;
+  }
+  const posture = crawlPosture;
+  context.save();
+  context.translate(posture.dx, posture.dy);
+  context.translate(posture.anchorX, posture.anchorY);
+  context.scale(posture.scaleX, posture.scaleY);
+  context.translate(-posture.anchorX, -posture.anchorY);
+  slime.draw(context);
+  context.restore();
+};
 /** What to say once a run is over, and until when. */
 let trialSaid: string | null = null;
 let trialUntil = 0;
@@ -1595,15 +1631,15 @@ function frame(now: number): void {
     }
     context.clip(clip);
 
+    // Climbing out from behind the nearest edge — which, for a pet with gravity standing twelve
+    // pixels above the bottom of the overlay, is the taskbar. See `ui/reveal.ts`. Worked out here,
+    // worn by `paintSlime`: everything else on the screen is the world or the interface, and
+    // neither of those is climbing out of anything.
     if (back < 1) {
-      // Climbing out from behind the nearest edge — which, for a pet with gravity standing twelve
-      // pixels above the bottom of the overlay, is the taskbar. See `ui/reveal.ts`.
       const body = { x: slime.drawX, y: slime.drawY, radius: slime.blob.restRadius };
-      const posture = crawl(back, revealPlan ?? planCrawl(body, { width, height }), body);
-      context.translate(posture.dx, posture.dy);
-      context.translate(posture.anchorX, posture.anchorY);
-      context.scale(posture.scaleX, posture.scaleY);
-      context.translate(-posture.anchorX, -posture.anchorY);
+      crawlPosture = crawl(back, revealPlan ?? planCrawl(body, { width, height }), body);
+    } else {
+      crawlPosture = null;
     }
 
     // 历练 is a plane seen from above, so what covers what is decided by `y` rather than by the
@@ -1637,7 +1673,7 @@ function frame(now: number): void {
       depth.paint(context);
       attacks.draw(context);
     } else {
-      slime.draw(context);
+      paintSlime(context, 0);
     }
     volley.draw(context, slime.bodyColour);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
@@ -2188,6 +2224,12 @@ async function main(): Promise<void> {
     concealed = next;
     if (next) {
       achieve('lieLow');
+      // Nothing paints or updates while concealed, so a bubble that was up when the pet hid would
+      // still be up — timer frozen — when it comes back, hanging in the air above a body that is
+      // still under the floor. It used to be dragged down with the body by the frame-wide crawl;
+      // now that the crawl is the pet's own, this is where it goes. A pet that has hidden itself
+      // is not in the middle of a sentence anyway.
+      bubble.hide();
       context.clearRect(0, 0, canvas.width, canvas.height);
       previousDirty = null;
       fullRepaint = true;

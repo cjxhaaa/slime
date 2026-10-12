@@ -12,7 +12,7 @@
 declare const process: { exit(code: number): never };
 
 import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js';
-import { Glyphs, LongestFlightSeconds } from './Glyphs.js';
+import { Glyphs, LongestFlightSeconds, SlipHeight } from './Glyphs.js';
 import { FEAT_IDS, Feats, REALM_FEATS, featBlurb, featName } from './feats.js';
 import { BreakthroughSpread, Motes, StageSpread } from './Motes.js';
 import { Slime } from '../slime/Slime.js';
@@ -1627,6 +1627,26 @@ for (let i = 0; i <= 2000; i++) {
   }
 }
 checkTrue(`and is flat behind the edge until then (first stirs at ${stirred.toFixed(2)})`, stirred >= HiddenUntil);
+
+// **And the charm must not be wearing the pet's posture.** Two beats that are correctly *timed*
+// still arrive as one if the second one's transform is applied to the first one as well — which is
+// what happened: `crawl` was applied around the whole frame rather than around the body, so the
+// charm that had already landed was dragged down behind the taskbar with the pet and rose back
+// into view riding the same squeeze. Measured, asserted, and then composited back on top of each
+// other.
+//
+// What makes that a real hazard rather than a typo is the size of the displacement: at the moment
+// the charm lands, the crawl is still pushing anything drawn inside it **further than a charm is
+// tall**, so a charm caught in it is not merely nudged — it is somewhere else entirely.
+const landedAt = LongestFlightSeconds / RevealSeconds;
+const whileStillHidden = crawl(landedAt, plan, standing);
+checkTrue(
+  `the crawl is still displacing by ${whileStillHidden.dy.toFixed(0)}px when the charm lands, against a ${SlipHeight}px slip`,
+  whileStillHidden.dy > SlipHeight,
+);
+// Belt and braces on the direction: downward, i.e. behind the edge it is climbing out of. A crawl
+// that displaced upward would hide the pet off the top of the screen instead.
+checkTrue('and it is displacing away from the screen, not into it', whileStillHidden.dy > 0);
 
 // **A head next.** Something is through, and then it stops — that nub sitting in the gap while the
 // body works is what the rhythm is built on.
