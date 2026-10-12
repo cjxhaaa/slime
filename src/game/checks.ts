@@ -15,6 +15,7 @@ import { Cultivation, ExpectedKeysPerSecond, IdleFactor } from './cultivation.js
 import { Glyphs, LongestFlightSeconds } from './Glyphs.js';
 import { FEAT_IDS, Feats, REALM_FEATS, featBlurb, featName } from './feats.js';
 import { BreakthroughSpread, Motes, StageSpread } from './Motes.js';
+import { Slime } from '../slime/Slime.js';
 import { clear, mix } from '../slime/colour.js';
 import { smooth, wispFade } from '../slime/ease.js';
 import { resolveErrand } from './errand.js';
@@ -2659,6 +2660,64 @@ for (let i = 1; i <= 200; i++) {
 check('and it goes up once and comes down once', turns, 1);
 checkTrue('the shortest hop still leaves the ground', (planHop(Settle + 1)?.rise ?? 0) > 1);
 checkTrue('and the smallest reach is not below the floor', (planHop(1_000)?.reach ?? 0) >= MinReach);
+
+// 8. **Leaving the plane takes the hop with it.**
+//
+//    A run that ends mid-air was the one case nothing cleaned up. The hop is stepped only while
+//    `planar` is true, so switching the plane off while one was in flight froze it there — and a
+//    frozen hop is not cosmetic. `isPursuing` reads `hop !== null`, and `main.ts` refuses to count
+//    the pointer as being over the body while the body is pursuing, so **the pet could not be
+//    clicked again for the rest of the session.** The lift the arch had it at stayed subtracted
+//    from the drawn position on every later frame, and the hop's travel velocity — up to 638 px/s
+//    — was handed back to gravity.
+//
+//    These drive the real class rather than a model of it, which is the whole point: the previous
+//    version of this leak survived a passing suite because nothing here had ever constructed a
+//    Slime.
+const onThePlane = (): Slime => {
+  const pet = new Slime(100, 100);
+  pet.planar = true;
+  pet.centreIn(800, 600);
+  return pet;
+};
+
+// Mid-air: far enough away that the hop is a long one, stepped past the crouch and into the arch.
+let flier = onThePlane();
+flier.pursue({ x: 760, y: 560 });
+flier.update(0.2, { width: 800, height: 600, cursor: null });
+checkTrue('a chased slime is airborne after 0.2s', flier.isPursuing);
+flier.beginFrame(1);
+checkTrue('and the arch has it off the ground', flier.drawY < flier.y);
+
+flier.planar = false;
+checkTrue('leaving the plane ends the chase', !flier.isPursuing);
+flier.beginFrame(1);
+// The one that matters. `hitTest` measures against the drawn position, so a leftover lift moves
+// the clickable region off the body as well as drawing it in the wrong place.
+check('and the body is drawn where it actually is', flier.drawY - flier.y, 0);
+checkTrue('and it is not still travelling at hop speed', Math.hypot(flier.vx, flier.vy) < 1);
+// Not "quiet immediately" — the body is still unwinding the crouch, and that is motion the loop
+// is right to keep drawing. The property is that it ever goes quiet at all: a frozen hop makes
+// `isAnimating` answer yes forever, so the overlay never stands down to 20 Hz again for the rest
+// of the session.
+let everQuiet = false;
+for (let i = 0; i < 600 && !everQuiet; i++) {
+  flier.update(1 / 60, { width: 800, height: 600, cursor: null });
+  // The frame has to be begun as well as stepped: `isAnimating` asks whether the drawn position
+  // has caught up with the simulated one, and nothing ever moves it without this.
+  flier.beginFrame(1);
+  if (!flier.isAnimating) everQuiet = true;
+}
+checkTrue('and the loop can stand down again', everQuiet);
+
+// And the same thing through the grab path, because `pursue` refuses while grabbed and a run can
+// end on any frame at all.
+flier = onThePlane();
+flier.pursue({ x: 760, y: 560 });
+flier.update(0.2, { width: 800, height: 600, cursor: null });
+flier.planar = false;
+flier.planar = true;
+checkTrue('coming back onto the plane does not resurrect the old hop', !flier.isPursuing);
 
 // -------------------------------------------------------------------------------------------------
 // What actually reaches the screen.

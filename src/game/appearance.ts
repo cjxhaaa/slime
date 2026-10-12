@@ -1,4 +1,4 @@
-import type { BodyLook, Palette } from '../slime/Slime';
+import type { BodyLook, Palette } from '../slime/Slime.js';
 import type { Cultivation } from './cultivation.js';
 import { Ascended } from './realms.js';
 

@@ -1,4 +1,4 @@
-import { Blob } from './Blob';
+import { Blob } from './Blob.js';
 import {
   ArrayReach,
   BudReach,
@@ -14,12 +14,12 @@ import {
   type OrdealShape,
   type Shard,
   stepShards,
-} from './Breakthrough';
-import { HaloReach } from '../game/Glyphs';
-import { type Hop, arch, planHop } from '../game/pursuit';
-import { BreakthroughSpread, StageSpread } from '../game/Motes';
-import { clear, mix } from './colour';
-import { smooth } from './ease';
+} from './Breakthrough.js';
+import { HaloReach } from '../game/Glyphs.js';
+import { type Hop, arch, planHop } from '../game/pursuit.js';
+import { BreakthroughSpread, StageSpread } from '../game/Motes.js';
+import { clear, mix } from './colour.js';
+import { smooth } from './ease.js';
 
 export type Mood =
   | 'idle'
@@ -495,8 +495,47 @@ export class Slime {
    * body instead of bouncing it, and `groundFor` starts answering "directly underneath" — which is
    * what makes the contact shadow, the sleep marks and the dirty rect all correct without any of
    * them knowing a mode exists. They all ask the same question and it has a different answer.
+   *
+   * An accessor rather than a field, because **turning it off has to take the plane's state with
+   * it.** A hop is plane-only motion: it is stepped only while this is true, so a run that ended
+   * mid-air left `hop` frozen forever — and a frozen hop is not a cosmetic leftover. `isPursuing`
+   * stays true, which means the pointer is never counted as being over the body and **the pet can
+   * no longer be clicked at all**; `lift` stays where the arch had it, so every later frame draws
+   * the body that far above where it actually is; `vx`/`vy` keep the hop's travel speed, which
+   * gravity then picks up and flings the body sideways; and `isBusy` keeps answering yes, so the
+   * overlay never stands down to 20 Hz again.
+   *
+   * Entering already cuts all of this — `centreIn` does it — and leaving has to be the same cut.
+   * Putting it here rather than in `leaveTrial` is the point: the caller cannot forget, and it
+   * cannot get the order wrong, which the previous version of that function needed a comment to
+   * explain.
    */
-  planar = false;
+  private onPlane = false;
+
+  get planar(): boolean {
+    return this.onPlane;
+  }
+
+  set planar(on: boolean) {
+    if (on === this.onPlane) return;
+    this.onPlane = on;
+    if (!on) this.stopPlanarMotion();
+  }
+
+  /**
+   * Everything that only means something in a plane seen from above, put back to rest.
+   *
+   * Shared by `centreIn` and by leaving the plane, so the two cuts cannot drift apart.
+   */
+  private stopPlanarMotion(): void {
+    this.pursuit = null;
+    this.hop = null;
+    this.lift = 0;
+    this.prevLift = 0;
+    this.renderLift = 0;
+    this.vx = 0;
+    this.vy = 0;
+  }
 
   /**
    * Where the floor is, or — in a plane seen from above — the body's own position.
@@ -518,15 +557,9 @@ export class Slime {
    */
   centreIn(width: number, height: number): void {
     this.teleportTo(width / 2, height / 2);
-    this.vx = 0;
-    this.vy = 0;
+    this.stopPlanarMotion();
     this.hopsLeft = 0;
     this.chaseX = null;
-    this.pursuit = null;
-    this.hop = null;
-    this.lift = 0;
-    this.prevLift = 0;
-    this.renderLift = 0;
     this.mood = 'idle';
     this.moodUntil = this.clock;
     this.blob.pulse(70);

@@ -816,11 +816,15 @@ function leaveTrial(): void {
   attacks.reset();
   pause.hide();
   void invoke('watch_escape', { on: false }).catch(() => {});
-  // Before `planar` goes: `pursue` is a no-op off the plane, so clearing it afterwards would
-  // leave a hop running with gravity switched back on under it.
-  slime.pursue(null);
   slime.showVitality(null);
+  // Leaving the plane takes the chase, the hop, the hop's lift and the hop's velocity with it —
+  // see the `planar` setter. This used to clear the chase by hand and could only clear half of
+  // it, because `pursue(null)` deliberately lets a hop already in the air finish. In a run that
+  // ended while the body was mid-air the hop was then never stepped again, and a frozen hop is
+  // what made the pet unclickable and drew it floating above its own position.
   slime.planar = false;
+  // After the plane is gone, so the teleport is the last word on where the body is rather than
+  // something a leftover lift is still subtracted from.
   if (trialReturn) slime.teleportTo(trialReturn.x, trialReturn.y);
   trialReturn = null;
   bubble.hide();

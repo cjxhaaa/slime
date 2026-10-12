@@ -25,10 +25,10 @@
  *
  * Everything here is still Canvas primitives. There is no art in this repo.
  */
-import { drawTalisman } from '../game/Glyphs';
-import type { Palette } from './Slime';
-import { clear } from './colour';
-import { wispFade } from './ease';
+import { drawTalisman } from '../game/Glyphs.js';
+import type { Palette } from './Slime.js';
+import { clear } from './colour.js';
+import { wispFade } from './ease.js';
 
 /**
  * How wide the array lies, as a multiple of the body radius.
