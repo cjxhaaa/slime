@@ -105,6 +105,7 @@ import {
 } from './realms.js';
 import { DICTIONARIES, LOCALES, fill, isLocale, locale, localeFor, setLocale } from '../i18n/index.js';
 import { fit, wrap } from '../ui/text.js';
+import { drawWayIcon, drawWeaponIcon } from '../ui/icons.js';
 import {
   HiddenUntil,
   crawl,
@@ -115,7 +116,6 @@ import {
   squeezeAt,
 } from '../ui/reveal.js';
 import { MaxReach, MinReach, Settle, arch, cycleSeconds, pace, planHop } from './pursuit.js';
-import { Steering, steers } from './steering.js';
 
 let failures = 0;
 function check(label: string, actual: number, expected: number, tol = 1e-6): void {
@@ -1382,85 +1382,129 @@ Math.random = wildRandom;
 }
 
 // ---------------------------------------------------------------------------------------------
-// WASD, and moving the 行囊 around while something is walking at you.
+// 道具图标. Fifteen marks, and whether each of them is actually a mark.
+//
+// The failure this exists for has happened twice in this repo already: 山崩 drew nothing in the
+// 演武场 and the broken-ground ellipse was never visible at all, and in both cases every
+// assertion passed because not one of them asked whether anything reached the screen.
+//
+// An icon that draws nothing looks exactly like an icon for a slot you have not filled yet, and
+// one `switch` arm falling through to another looks exactly like two items that happen to be
+// similar. So: every one of the fifteen has to put ink down, and no two may put down the *same*
+// ink.
 
 {
-  // **Diagonals are not faster.** The oldest bug in the genre and one line to not have: W and D
-  // held together is a unit vector, not 1.41 of one.
-  const keys = new Steering();
-  keys.press('KeyW');
-  check('one key is a full step', Math.hypot(keys.heading()!.x, keys.heading()!.y), 1, 1e-9);
-  keys.press('KeyD');
-  check('and two are still a full step', Math.hypot(keys.heading()!.x, keys.heading()!.y), 1, 1e-9);
-  checkTrue('pointing between them', keys.heading()!.x > 0 && keys.heading()!.y < 0);
+  /** Counts marks, and fingerprints the path that produced them. */
+  const tracer = (): { context: CanvasRenderingContext2D; marks: () => number; trace: () => string } => {
+    let marks = 0;
+    const path: string[] = [];
+    const gradient = { addColorStop: () => {} };
+    const held: Record<string | symbol, unknown> = {
+      globalAlpha: 1,
+      lineWidth: 1,
+      lineJoin: 'round',
+      lineCap: 'round',
+      globalCompositeOperation: 'source-over',
+    };
+    const shaping = ['moveTo', 'lineTo', 'arc', 'quadraticCurveTo', 'bezierCurveTo', 'roundRect', 'closePath'];
+    const context = new Proxy(held, {
+      get(obj, key) {
+        if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => gradient;
+        if (key === 'fill' || key === 'stroke') {
+          return () => {
+            marks++;
+            path.push('!');
+          };
+        }
+        if (typeof key === 'string' && shaping.includes(key)) {
+          return (...args: number[]) => {
+            // Rounded, so that a tweak of half a pixel does not make this a change-detector test.
+            path.push(`${key}:${args.map((n) => Math.round(n)).join(',')}`);
+          };
+        }
+        if (key in obj) return obj[key];
+        return () => {};
+      },
+      set(obj, key, value) {
+        obj[key] = value;
+        return true;
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    return { context, marks: () => marks, trace: () => path.join('|') };
+  };
 
-  // Opposites cancel, because holding A and D is not holding anything — and a zero vector that
-  // got normalised anyway would send the body off in whatever direction the rounding chose.
-  keys.clear();
-  keys.press('KeyA');
-  keys.press('KeyD');
-  check('opposite keys cancel', keys.heading() === null ? 0 : 1, 0);
+  const traces = new Map<string, string>();
+  let silent = 0;
 
-  // **The target is one stretch ahead and moves with the body**, so the hop planner never decides
-  // it has arrived and keeps going for exactly as long as the key is down.
-  keys.clear();
-  keys.press('KeyD');
-  const aim = keys.target(100, 100)!;
-  check('the target is a full stretch out', Math.hypot(aim.x - 100, aim.y - 100), MaxReach, 1e-9);
-  checkTrue('and a full hop is planned to it', planHop(MaxReach) !== null);
+  for (const weapon of WEAPONS) {
+    const pen = tracer();
+    drawWeaponIcon(pen.context, weapon, 30, ARMS[weapon].tint);
+    if (pen.marks() === 0) silent++;
+    traces.set(`arm:${weapon}`, pen.trace());
+  }
+  for (const way of WAYS) {
+    const pen = tracer();
+    drawWayIcon(pen.context, way, 30, PATHS[way].tint);
+    if (pen.marks() === 0) silent++;
+    traces.set(`way:${way}`, pen.trace());
+  }
 
-  // **Everything drops on the way out.** A keyup that never arrives is a key held forever: the
-  // overlay is click-through, so clicking anything at all takes focus off it, and that is the
-  // ordinary way to leave rather than an accident.
-  keys.clear();
-  check('clearing stops the body', keys.target(100, 100) === null ? 0 : 1, 0);
-  checkTrue('and nothing is held', !keys.moving);
-  checkTrue('a key it does not own is left alone', !steers('KeyQ'));
-}
+  check('every one of the fifteen puts ink down', silent, 0);
+  check('fifteen of them', traces.size, WEAPONS.length + WAYS.length);
+  // Distinct shapes, not just distinct names. A `switch` arm that fell through to the next one
+  // would leave two items drawing the same mark in two different colours, which at twenty-six
+  // pixels is two items you cannot tell apart.
+  check('and no two draw the same shape', new Set(traces.values()).size, traces.size);
 
-{
-  // The panel's gestures, against a real 行囊 rather than a model of one.
-  const bag = new Pack();
-  for (let i = 0; i < Slots; i++) bag.accept(forge({ sort: 'arm', weapon: '弓' }, 1));
-  const spare = forge({ sort: 'way', way: '火爆' }, 1);
-  bag.accept(spare);
-  check('six worn and one spare', bag.wornCount, Slots);
+  // The one that is easy to get wrong without noticing: a mark drawn outside the box it was
+  // given, which in a 装备栏 slot means it laps over its neighbour.
+  //
+  // Measured per method rather than by scanning every number, because the numbers are not all
+  // coordinates — `roundRect` carries a width and a height, `arc` carries a radius and two
+  // angles, and a check that treated those as positions reported 符 as overflowing by its own
+  // height. It failed loudly, which was lucky; the same shape of mistake in the other direction
+  // is an assertion that passes and means nothing.
+  const reach = (trace: string): number => {
+    let far = 0;
+    const see = (x: number, y: number): void => {
+      far = Math.max(far, Math.abs(x), Math.abs(y));
+    };
+    for (const step of trace.split('|')) {
+      const [name, packed] = step.split(':');
+      if (!packed) continue;
+      const a = packed.split(',').map(Number);
+      if (name === 'moveTo' || name === 'lineTo') see(a[0], a[1]);
+      else if (name === 'quadraticCurveTo') {
+        see(a[0], a[1]);
+        see(a[2], a[3]);
+      } else if (name === 'bezierCurveTo') {
+        see(a[0], a[1]);
+        see(a[2], a[3]);
+        see(a[4], a[5]);
+      } else if (name === 'arc') {
+        // Centre plus radius, which is the only honest bound without integrating the angles.
+        see(a[0] + a[2], a[1] + a[2]);
+        see(a[0] - a[2], a[1] - a[2]);
+      } else if (name === 'roundRect') {
+        see(a[0], a[1]);
+        see(a[0] + a[2], a[1] + a[3]);
+      }
+    }
+    return far;
+  };
 
-  // Taking something off makes room, and putting it back takes the room again. One gesture, both
-  // directions — the panel has one click and cannot be asked which of two methods to call.
-  const worn = bag.worn[0]!;
-  checkTrue('a worn thing comes off', bag.toggle(worn.id));
-  check('leaving a slot open', bag.wornCount, Slots - 1);
-  checkTrue('and a spare goes on', bag.toggle(spare.id));
-  check('filling it again', bag.wornCount, Slots);
-  checkTrue('the thing that came off is in the bag now', bag.slotOf(worn.id) < 0);
-
-  // With every slot full, putting something on has to **swap** rather than refuse. "Nothing
-  // happened" is the worst answer an interface can give a deliberate click.
-  const other = forge({ sort: 'arm', weapon: '刀' }, 3);
-  bag.accept(other);
-  checkTrue('a swap into a full row works', bag.swapInto(0, other.id));
-  check('and the row is still full', bag.wornCount, Slots);
-  checkTrue('with the new thing worn', bag.slotOf(other.id) >= 0);
-}
-
-{
-  // **A fuse keeps the result on the body.** Dropping it into the bag would take the weapon off
-  // you at the exact moment you upgraded it, which reads as the upgrade having cost you the slot.
-  const bag = new Pack();
-  const a = forge({ sort: 'arm', weapon: '刀' }, 2);
-  const b = forge({ sort: 'arm', weapon: '刀' }, 2);
-  bag.accept(a);
-  bag.accept(b);
-  const slot = bag.slotOf(a.id);
-  const into = merged(a, b)!;
-  checkTrue('they fuse', bag.fuse(a.id, b.id, into));
-  check('and the result is worn, in the first slot', bag.slotOf(into.id), slot);
-  check(
-    'with neither of the two left anywhere',
-    (bag.find(a.id) ? 1 : 0) + (bag.find(b.id) ? 1 : 0),
-    0,
-  );
+  let widest = 0;
+  let widestName = '';
+  for (const [name, trace] of traces) {
+    const far = reach(trace);
+    if (far > widest) {
+      widest = far;
+      widestName = name;
+    }
+  }
+  // Half of 30, plus a pixel of stroke either side. An icon wider than its own box laps into the
+  // slot beside it, and in a row of six that reads as one smeared item rather than as two.
+  checkTrue(`every mark fits the box it was given (widest ${widestName} at ${widest})`, widest <= 16);
 }
 
 // 语言. Five dictionaries, and the ways a translation goes wrong quietly.

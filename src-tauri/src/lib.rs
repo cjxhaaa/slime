@@ -1,6 +1,5 @@
 mod devour;
 mod gather;
-mod keys;
 mod presence;
 mod save;
 
@@ -155,21 +154,6 @@ fn release_clicks(app: AppHandle, state: tauri::State<ClickState>) {
     apply_accepting(&app, &state, false);
 }
 
-/// Borrows the keyboard for a run, remembering whose it was. See `keys.rs`.
-#[tauri::command]
-fn take_keys(app: AppHandle) {
-    keys::remember();
-    if let Some(window) = app.get_webview_window("pet") {
-        let _ = window.set_focus();
-    }
-}
-
-/// Gives it back. Called when a run ends, however it ends.
-#[tauri::command]
-fn give_keys() {
-    keys::give_back();
-}
-
 #[tauri::command]
 fn open_settings(app: AppHandle) {
     toggle_settings(&app);
@@ -297,8 +281,6 @@ pub fn run() {
             open_settings,
             quit_app,
             watch_escape,
-            take_keys,
-            give_keys,
             gather::take_input,
             gather::set_quiet,
             gather::quiet_state,

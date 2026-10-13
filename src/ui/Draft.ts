@@ -19,8 +19,9 @@
  */
 import { clear } from '../slime/colour.js';
 import type { Armed, Card, Walked } from '../game/Arsenal.js';
-import { ARMS, MaxDepth, PATHS } from '../game/kit.js';
+import { ARMS, MaxDepth, PATHS, type Way, type Weapon } from '../game/kit.js';
 import { tintOf } from '../game/gear.js';
+import { drawItemIcon } from './icons.js';
 import { fill, onLocaleChange, words } from '../i18n/index.js';
 import { fit, wrap } from './text.js';
 
@@ -114,6 +115,8 @@ interface Face {
   kind: string;
   /** 品质 — its name and its colour. Null for 金钟 and 调息, which have no grade. */
   grade: { name: string; tint: string } | null;
+  /** The item's own mark, or null for the two cards that are not items. */
+  icon: { sort: 'arm'; weapon: Weapon } | { sort: 'way'; way: Way } | null;
   /** The jackpot is drawn differently, and it is the only thing that is. */
   jackpot: boolean;
 }
@@ -529,6 +532,16 @@ export class Draft {
 
     // The title is the one line with no room to wrap by default, so it is measured before it is
     // drawn rather than trusted to fit.
+    // The mark, above the name. It is what you will be reading off the 装备栏 in a moment, so the
+    // card is where you learn it — a slot you have never seen the card for is a slot you have to
+    // guess at.
+    if (face.icon) {
+      context.save();
+      context.translate(middle, y + 46);
+      drawItemIcon(context, face.icon, 30, face.tint);
+      context.restore();
+    }
+
     const title = fit(face.title, box.width - 20, TitleSizes, TitleLines, (size, text) => {
       context.font = titleFont(size);
       return context.measureText(text).width;
@@ -607,6 +620,7 @@ function face(card: Card, kit: Kit): Face {
       pairing: null,
       kind: w.draft.shield,
       grade: null,
+      icon: null,
       jackpot: false,
     };
   }
@@ -619,6 +633,7 @@ function face(card: Card, kit: Kit): Face {
       pairing: null,
       kind: w.draft.mend,
       grade: null,
+      icon: null,
       jackpot: false,
     };
   }
@@ -648,6 +663,7 @@ function face(card: Card, kit: Kit): Face {
       pairing: already > 0 ? fill(w.draft.alsoCarry, { count: String(already) }) : null,
       kind: w.draft.arm,
       grade: grade(card.tier),
+      icon: { sort: 'arm', weapon: card.weapon },
       jackpot: false,
     };
   }
@@ -664,6 +680,7 @@ function face(card: Card, kit: Kit): Face {
     pairing: held > 0 ? fill(w.draft.stacksTo, { depth: numeral(summed) }) : null,
     kind: w.draft.way,
     grade: grade(card.tier),
+    icon: { sort: 'way', way: card.way },
     jackpot: false,
   };
 }

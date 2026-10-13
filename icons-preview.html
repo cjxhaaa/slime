@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>icons</title>
+    <style>
+      body { margin: 0; background: #11151f; color: #cfd6e4; font: 13px system-ui, sans-serif; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c" width="980" height="420"></canvas>
+    <script type="module">
+      import { drawWeaponIcon, drawWayIcon } from '/src/ui/icons.ts';
+      import { ARMS, PATHS, WEAPONS, WAYS } from '/src/game/kit.ts';
+      import { GRADES } from '/src/game/gear.ts';
+
+      const c = document.getElementById('c');
+      const x = c.getContext('2d');
+
+      // A slot, the way the 装备栏 will draw one, so the icon is judged where it will live.
+      function slot(px, py, size, grade) {
+        x.save();
+        x.fillStyle = 'rgba(26, 33, 48, 0.94)';
+        x.beginPath();
+        x.roundRect(px - size / 2 - 7, py - size / 2 - 7, size + 14, size + 14, 8);
+        x.fill();
+        x.lineWidth = 1.6;
+        x.strokeStyle = grade;
+        x.beginPath();
+        x.roundRect(px - size / 2 - 7, py - size / 2 - 7, size + 14, size + 14, 8);
+        x.stroke();
+        x.restore();
+      }
+
+      function label(t, px, py) {
+        x.fillStyle = 'rgba(255,255,255,0.45)';
+        x.font = '11px system-ui, sans-serif';
+        x.textAlign = 'center';
+        x.fillText(t, px, py);
+      }
+
+      let row = 54;
+      // Weapons, at the size a slot uses and again at 3x to judge the shape.
+      WEAPONS.forEach((w, i) => {
+        const px = 70 + i * 92;
+        slot(px, row, 28, GRADES[2].tint);
+        x.save(); x.translate(px, row); drawWeaponIcon(x, w, 28, ARMS[w].tint); x.restore();
+        label(w, px, row + 36);
+        x.save(); x.translate(px, row + 120); drawWeaponIcon(x, w, 84, ARMS[w].tint); x.restore();
+      });
+
+      row = 250;
+      WAYS.slice(0, 5).forEach((way, i) => {
+        const px = 70 + i * 92;
+        slot(px, row, 28, GRADES[3].tint);
+        x.save(); x.translate(px, row); drawWayIcon(x, way, 28, PATHS[way].tint); x.restore();
+        label(way, px, row + 36);
+        x.save(); x.translate(px, row + 92); drawWayIcon(x, way, 62, PATHS[way].tint); x.restore();
+      });
+
+      WAYS.slice(5).forEach((way, i) => {
+        const px = 540 + i * 92;
+        slot(px, row, 28, GRADES[4].tint);
+        x.save(); x.translate(px, row); drawWayIcon(x, way, 28, PATHS[way].tint); x.restore();
+        label(way, px, row + 36);
+        x.save(); x.translate(px, row + 92); drawWayIcon(x, way, 62, PATHS[way].tint); x.restore();
+      });
+
+      // A row of six, which is what the bar will actually look like.
+      const bar = [['arm','刀'],['arm','刀'],['arm','弓'],['way','火爆'],['way','金锐'],['way','土固']];
+      bar.forEach(([kind, key], i) => {
+        const px = 560 + i * 54;
+        slot(px, 54, 28, GRADES[i % 6].tint);
+        x.save(); x.translate(px, 54);
+        if (kind === 'arm') drawWeaponIcon(x, key, 28, ARMS[key].tint);
+        else drawWayIcon(x, key, 28, PATHS[key].tint);
+        x.restore();
+      });
+      label('装备栏 · 六格', 560 + 2.5 * 54, 104);
+    </script>
+  </body>
+</html>
