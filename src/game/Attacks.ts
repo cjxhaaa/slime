@@ -108,6 +108,16 @@ interface Effect {
   /** For 影卫: which one it is, so three of them do not stack on the same pixel. */
   index?: number;
   /**
+   * Which equipped weapon put this here, or undefined for anything a 五行 spawned.
+   *
+   * Only 盾 reads it, and it is the whole reason it exists. 罡气 is not thrown — the swing clock
+   * **tops up a ring** by counting the nodes already out there, so two shields in the six slots
+   * would each see the other's nodes, believe the ring was full, and between them put out one
+   * ring instead of two. Tagging the node with the slot it came from is what keeps two shields
+   * two shields.
+   */
+  owner?: number;
+  /**
    * Radians a second this bends its own heading by. Zero, and absent, for everything that flies
    * straight.
    *
@@ -415,7 +425,7 @@ export class Attacks {
     return (
       // A weapon counts: 盾's ring and 剑's flying sword are effects that never expire, but a
       // bow between shots has nothing live and is still very much fighting.
-      this.live.length > 0 || this.sparks.length > 0 || this.surges.length > 0 || this.arm !== null
+      this.live.length > 0 || this.sparks.length > 0 || this.surges.length > 0 || this.armed
     );
   }
 
@@ -486,24 +496,38 @@ export class Attacks {
    * taking the first card. Deliberately not a flag: a flag can be set with no weapon behind it,
    * and then the pet stands there doing nothing while every check still passes.
    */
-  private arm: { weapon: Weapon; depth: number } | null = null;
+  private arms: { weapon: Weapon; depth: number }[] = [];
   private ways: { way: Way; depth: number }[] = [];
-  private swingLeft = 0;
+  /** One countdown per equipped weapon, parallel to `arms`. */
+  private swingLeft: number[] = [];
 
   /**
-   * Equips a weapon and the ways carried with it. Passing null hands the fight back to the
-   * schools, which is what the arena and every un-migrated caller still want.
+   * Equips the weapons in hand and the ways carried with them.
+   *
+   * A list, because the six slots hold any mix: three 刀 and a 弓 is a legal build, and every one
+   * of them swings on its own clock.
+   *
+   * ## Why the clocks are matched by weapon rather than reset
+   *
+   * A newly equipped weapon swings **at once** — not after one interval. 剑 and 盾 do not fire,
+   * they *place* something that then works on its own, and 剑's interval is 1.9s deep. Waiting
+   * that long meant picking up a flying sword and watching nothing happen for two seconds, which
+   * is indistinguishable from the weapon being broken.
+   *
+   * But with a backpack that can be opened mid-fight, `equip` is now called every time you move
+   * anything — and resetting every clock on every call would mean a build with a slow weapon in
+   * it **never swings that weapon** as long as you keep fiddling. So a weapon that was already in
+   * hand keeps its countdown, and only one that was not starts at zero.
    */
-  equip(arm: { weapon: Weapon; depth: number } | null, ways: { way: Way; depth: number }[]): void {
-    // A newly equipped weapon swings **at once**, and a swap restarts the clock so changing to
-    // something slower cannot ride the old one's timer.
-    //
-    // At once rather than after one interval: 剑 and 盾 do not fire, they *place* something that
-    // then works on its own, and 剑's interval is 1.9s deep. Waiting that long meant picking up a
-    // flying sword and watching nothing happen for two seconds — which is how it looked in the
-    // first frame strip, and is indistinguishable from the weapon being broken.
-    if (arm?.weapon !== this.arm?.weapon) this.swingLeft = 0;
-    this.arm = arm;
+  equip(arms: { weapon: Weapon; depth: number }[], ways: { way: Way; depth: number }[]): void {
+    const held = this.arms.map((a, i) => ({ weapon: a.weapon, left: this.swingLeft[i] ?? 0 }));
+    this.swingLeft = arms.map((arm) => {
+      const at = held.findIndex((h) => h.weapon === arm.weapon);
+      if (at < 0) return 0;
+      // Taken, so two of the same weapon cannot both inherit the one clock and fire in lockstep.
+      return held.splice(at, 1)[0].left;
+    });
+    this.arms = arms;
     this.ways = ways;
     // 固土 is the one of the ten that is not an on-hit effect at all — it is armour, so it is
     // settled here rather than in `land`. One layer a depth.
@@ -513,7 +537,7 @@ export class Attacks {
 
   /** True once a weapon has been drafted. An unarmed pet does not attack. */
   get armed(): boolean {
-    return this.arm !== null;
+    return this.arms.length > 0;
   }
 
   /** How deep a way is carried, or 0 if it is not carried at all. */
@@ -540,9 +564,7 @@ export class Attacks {
    * on contact is `land`'s business, which is the whole split this system is built on: a weapon
    * decides what goes out and where, a way decides what happens where it arrives.
    */
-  private strike(battlefield: Battlefield): void {
-    const arm = this.arm;
-    if (!arm) return;
+  private strike(battlefield: Battlefield, arm: { weapon: Weapon; depth: number }, owner: number): void {
     const reach = weaponSpan(arm.weapon, arm.depth);
 
     if (arm.weapon === '弓') {
@@ -595,9 +617,12 @@ export class Attacks {
       // 罡气 does not get thrown; it is simply there. The swing clock tops the ring up rather than
       // launching anything, so a 盾 build is the one that never has to aim and never stops working.
       const want = 2 + Math.floor((arm.depth - 1) * 0.75);
-      const have = this.live.filter((e) => e.kind === 'guard').length;
+      // Its own ring only. See `owner` on `Effect`: counting every guard node on the field would
+      // make a second 盾 believe the ring was already full and put out nothing.
+      const have = this.live.filter((e) => e.kind === 'guard' && e.owner === owner).length;
       for (let i = have; i < want; i++) {
         const node = this.push('盾', 'guard', this.bodyX, this.bodyY, 0, 0, 0, 0, reach, 1);
+        node.owner = owner;
         node.index = i;
       }
       return;
@@ -811,14 +836,14 @@ export class Attacks {
       if (this.shellBack <= 0) this.shellLeft = this.shellLayers;
     }
 
-    // One weapon, one clock. Clamped to one swing a frame: a cadence shorter than a frame would
-    // otherwise fire a burst proportional to how badly the machine is struggling, which is
+    // One clock per weapon. Clamped to one swing a frame each: a cadence shorter than a frame
+    // would otherwise fire a burst proportional to how badly the machine is struggling, which is
     // backwards.
-    if (this.arm) {
-      this.swingLeft -= dt;
-      if (this.swingLeft <= 0) {
-        this.swingLeft = swing(this.arm.weapon, this.arm.depth);
-        this.strike(battlefield);
+    for (let i = 0; i < this.arms.length; i++) {
+      this.swingLeft[i] -= dt;
+      if (this.swingLeft[i] <= 0) {
+        this.swingLeft[i] = swing(this.arms[i].weapon, this.arms[i].depth);
+        this.strike(battlefield, this.arms[i], i);
       }
     }
 

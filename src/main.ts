@@ -760,7 +760,7 @@ function startArena(kit: { weapon: Armed | null; ways: Walked[] }): void {
   slime.centreIn(width, height);
   dummies.place(slime.x, slime.y);
   attacks.reset();
-  attacks.equip(kit.weapon, kit.ways);
+  attacks.equip(kit.weapon ? [kit.weapon] : [], kit.ways);
   killsSeen = 0;
   bubble.hide();
   slime.clearAlert();
@@ -805,7 +805,7 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
  * is taken — two call sites for that is two chances to push one and forget the other.
  */
 function equipFromArsenal(): void {
-  attacks.equip(arsenal.weapon, arsenal.ways);
+  attacks.equip(arsenal.weapon ? [arsenal.weapon] : [], arsenal.ways);
   attacks.guard(arsenal.shields);
 }
 
@@ -2196,7 +2196,7 @@ async function main(): Promise<void> {
     if (arena === null || !inTrial) return;
     const kit = event.payload;
     if (!kit || !Array.isArray(kit.ways)) return;
-    attacks.equip(kit.weapon, kit.ways);
+    attacks.equip(kit.weapon ? [kit.weapon] : [], kit.ways);
   });
 
   await listen('arena-stop', () => {

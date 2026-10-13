@@ -1096,7 +1096,7 @@ function fight(
     for (const way of build.ways) kit.take({ kind: 'way', way });
   }
   while (kit.openingLeft > 0) kit.take(kit.offer(random)[0]);
-  arts.equip(kit.weapon, kit.ways);
+  arts.equip(kit.weapon ? [kit.weapon] : [], kit.ways);
   arts.guard(kit.shields);
 
   const body = { x: arena.width / 2, y: arena.height / 2, radius: 46 };
@@ -1134,7 +1134,7 @@ function fight(
       // 金钟 and 固土 are both armour and arrive by different routes, so both are pushed here.
       // Without the second the harness would draft a shell and then fight without it, and the run
       // it reports would be one nobody can have played.
-      arts.equip(kit.weapon, kit.ways);
+      arts.equip(kit.weapon ? [kit.weapon] : [], kit.ways);
       arts.guard(kit.shields);
     }
     seconds += dt;
@@ -1971,7 +1971,7 @@ checkTrue('nor does anything past the top', Feats.forRealm(Ascended + 1) === nul
   };
 
   const kit = new Attacks();
-  kit.equip({ weapon: '弓', depth: 1 }, [{ way: '土崩', depth: 1 }]);
+  kit.equip([{ weapon: '弓', depth: 1 }], [{ way: '土崩', depth: 1 }]);
   let clock = 0;
   const dt = 1 / 120;
   for (let i = 0; i < 120 * 7; i++) {
@@ -2167,7 +2167,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
 
   // 2. A bow alone hits, and hits for exactly what a bow hits for.
   const bare = new Attacks();
-  bare.equip({ weapon: '弓', depth: 1 }, []);
+  bare.equip([{ weapon: '弓', depth: 1 }], []);
   checkTrue('a weapon equipped takes the fight over', bare.armed);
   for (let i = 0; i < 120 * 2; i++) bare.update(1 / 120, body, field);
   checkTrue(`the bow lands hits on its own: ${struck}`, struck > 0);
@@ -2178,7 +2178,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
   struck = 0;
   widest = 0;
   const fired = new Attacks();
-  fired.equip({ weapon: '弓', depth: 1 }, [{ way: '火爆', depth: 1 }]);
+  fired.equip([{ weapon: '弓', depth: 1 }], [{ way: '火爆', depth: 1 }]);
   for (let i = 0; i < 120 * 2; i++) fired.update(1 / 120, body, field);
   checkTrue(
     `爆火 on the same bow lands more: ${struck} against ${alone}`,
@@ -2193,7 +2193,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
   struck = 0;
   widest = 0;
   const deep = new Attacks();
-  deep.equip({ weapon: '弓', depth: 1 }, [{ way: '火爆', depth: 5 }]);
+  deep.equip([{ weapon: '弓', depth: 1 }], [{ way: '火爆', depth: 5 }]);
   for (let i = 0; i < 120 * 2; i++) deep.update(1 / 120, body, field);
   checkTrue(`and deepening it widens it further: ${widest.toFixed(0)}px`, widest > plain);
 }
@@ -2228,7 +2228,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
     mend: () => {},
     };
     const kit = new Attacks();
-    kit.equip({ weapon, depth: 3 }, [{ way: '火爆', depth: 1 }]);
+    kit.equip([{ weapon, depth: 3 }], [{ way: '火爆', depth: 1 }]);
     const body = { x: 400, y: 400, radius: 46 };
     for (let i = 0; i < 120 * 6; i++) kit.update(1 / 120, body, field);
     checkTrue(`${weapon} lands hits: ${hits}`, hits > 0);
@@ -2250,12 +2250,89 @@ check('ten ways, two to a phase', WAYS.length, 10);
   };
   const kit = new Attacks();
   const body = { x: 400, y: 400, radius: 46 };
-  kit.equip({ weapon: '剑', depth: 1 }, []);
+  kit.equip([{ weapon: '剑', depth: 1 }], []);
   for (let i = 0; i < 60; i++) kit.update(1 / 120, body, field);
-  kit.equip({ weapon: '盾', depth: 1 }, []);
+  kit.equip([{ weapon: '盾', depth: 1 }], []);
   // One frame after the swap is far less than 盾's own interval, so nothing should have fired.
   for (let i = 0; i < 3; i++) kit.update(1 / 120, body, field);
   checkTrue('a swap starts the new weapon on its own clock', swing('盾', 1) > 3 / 120);
+}
+
+{
+  // **Six slots means more than one weapon, and every one of them swings.**
+  //
+  // `Attacks` held a single `arm` and `strike()` had five branches that each assumed it. Carrying
+  // two 刀 and a 弓 has to be three weapons working, not one weapon working and two slots of
+  // decoration — and "it compiles" says nothing at all about that.
+  //
+  // So: run each weapon by itself, then run them together, and the pair has to land about what
+  // the two landed apart. Not exactly — 盾's ring tops up on a clock and 剑 only flurries once it
+  // has caught something, so the arithmetic is approximate by construction. Comfortably more than
+  // either alone is the real claim, and it is the one that fails if the second slot is dead.
+  let culls = 0;
+  const mob = [
+    { x: 500, y: 400 },
+    { x: 530, y: 412 },
+    { x: 476, y: 420 },
+  ];
+  const field = (): Battlefield => ({
+    targets: () => mob,
+    closest: (x, y, within) => (Math.hypot(mob[0].x - x, mob[0].y - y) <= within ? mob[0] : null),
+    cull: () => {
+      culls++;
+      return 1;
+    },
+    shove: () => {},
+    root: () => {},
+    burn: () => {},
+    mend: () => {},
+  });
+  const over = (arms: { weapon: Weapon; depth: number }[]): number => {
+    culls = 0;
+    const kit = new Attacks();
+    kit.equip(arms, []);
+    const body = { x: 400, y: 400, radius: 46 };
+    for (let i = 0; i < 120 * 6; i++) kit.update(1 / 120, body, field());
+    return culls;
+  };
+
+  const bow = over([{ weapon: '弓', depth: 1 }]);
+  const blade = over([{ weapon: '刀', depth: 1 }]);
+  const both = over([
+    { weapon: '弓', depth: 1 },
+    { weapon: '刀', depth: 1 },
+  ]);
+  checkTrue(`a bow alone lands ${bow}`, bow > 0);
+  checkTrue(`a sabre alone lands ${blade}`, blade > 0);
+  checkTrue(
+    `and the two together land more than either (${both} against ${bow} and ${blade})`,
+    both > bow && both > blade,
+  );
+  checkTrue(
+    `— about the sum of them (${both} against ${bow + blade})`,
+    both >= (bow + blade) * 0.8 && both <= (bow + blade) * 1.2,
+  );
+
+  // **Two of the same weapon are two weapons**, which is the case a list gets wrong most easily:
+  // one shared clock, or one of them inheriting the other's countdown, and the second is free.
+  const twoBows = over([
+    { weapon: '弓', depth: 1 },
+    { weapon: '弓', depth: 1 },
+  ]);
+  checkTrue(`two bows land about twice one (${twoBows} against ${bow})`, twoBows >= bow * 1.7);
+
+  // **And two shields are two rings.** 罡气 is not thrown — the swing tops up a ring by counting
+  // what is already out there, so without the `owner` tag the second 盾 would look at the first
+  // one's nodes, decide the ring was full, and put out nothing at all.
+  const shield = over([{ weapon: '盾', depth: 1 }]);
+  const twoShields = over([
+    { weapon: '盾', depth: 1 },
+    { weapon: '盾', depth: 1 },
+  ]);
+  checkTrue(
+    `two shields are two rings (${twoShields} against ${shield})`,
+    twoShields >= shield * 1.7,
+  );
 }
 
 {
@@ -2307,7 +2384,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
     seen.burns = 0;
     seen.mends = 0;
     const kit = new Attacks();
-    kit.equip({ weapon: '弓', depth: 1 }, ways);
+    kit.equip([{ weapon: '弓', depth: 1 }], ways);
     const body = { x: 400, y: 400, radius: 46 };
     for (let i = 0; i < 120 * 4; i++) kit.update(1 / 120, body, field());
     return { ...seen };
@@ -2345,7 +2422,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
   {
     // 水寒 lays a field rather than calling anything, so it is read back off `fields`.
     const kit = new Attacks();
-    kit.equip({ weapon: '弓', depth: 1 }, [{ way: '水寒', depth: 1 }]);
+    kit.equip([{ weapon: '弓', depth: 1 }], [{ way: '水寒', depth: 1 }]);
     const body = { x: 400, y: 400, radius: 46 };
     for (let i = 0; i < 120 * 2; i++) kit.update(1 / 120, body, field());
     checkTrue(`水寒 leaves cold ground: ${kit.fields().length} patches`, kit.fields().length > 0);
@@ -2361,7 +2438,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
   {
     // 土固 is armour, not a landing. It is read off the shell.
     const kit = new Attacks();
-    kit.equip({ weapon: '弓', depth: 1 }, [{ way: '土固', depth: 2 }]);
+    kit.equip([{ weapon: '弓', depth: 1 }], [{ way: '土固', depth: 2 }]);
     kit.update(1 / 120, { x: 400, y: 400, radius: 46 }, field());
     check('土固 is armour, one layer a depth', kit.shell, 2);
     checkTrue('and it eats a hit like the card does', kit.absorb());
@@ -2369,7 +2446,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
   {
     // And the two sources of shell are one shell, not two.
     const kit = new Attacks();
-    kit.equip({ weapon: '弓', depth: 1 }, [{ way: '土固', depth: 1 }]);
+    kit.equip([{ weapon: '弓', depth: 1 }], [{ way: '土固', depth: 1 }]);
     kit.guard(2);
     kit.update(1 / 120, { x: 400, y: 400, radius: 46 }, field());
     check('金钟 and 土固 stack into one shell', kit.shell, 3);
@@ -2574,7 +2651,7 @@ function recorder(): {
     mend: () => {},
   };
   const kit = new Attacks();
-  kit.equip({ weapon: '弓', depth: 3 }, [{ way: '土崩', depth: 3 }]);
+  kit.equip([{ weapon: '弓', depth: 3 }], [{ way: '土崩', depth: 3 }]);
 
   // Run until the ground has opened and stones are standing.
   let standing = 0;
@@ -2606,7 +2683,7 @@ function recorder(): {
   //    that pass — twenty marks against twenty-five is not evidence of anything.
   const flat = recorder();
   const bare = new Attacks();
-  bare.equip({ weapon: '弓', depth: 3 }, [{ way: '土崩', depth: 3 }]);
+  bare.equip([{ weapon: '弓', depth: 3 }], [{ way: '土崩', depth: 3 }]);
   let alone = 0;
   for (let i = 0; i < 120 * 3; i++) {
     bare.update(1 / 120, yard, field);
