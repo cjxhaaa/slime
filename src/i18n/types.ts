@@ -131,7 +131,12 @@ export interface Dictionary {
     /** What kind of card this is, and what swapping a weapon costs. */
     arm: string;
     way: string;
-    swaps: string;
+    /** The six 品質, lowest first. Indexed by tier minus one. */
+    grades: string[];
+    /** `{count}` of this thing already carried. */
+    alsoCarry: string;
+    /** What a second copy of a way sums to — `{depth}`. */
+    stacksTo: string;
     mend: string;
     /** The title on the mend card. `mend` is the word for the *kind* of card, which is not the same. */
     mendTitle: string;
@@ -140,8 +145,6 @@ export interface Dictionary {
     shield: string;
     shieldTitle: string;
     shieldBlurb: string;
-    /** `{from}` and `{to}` are stage numerals. */
-    levelStep: string;
     /** `{school}` and `{combo}` are substituted. */
     pairsWith: string;
     triadWith: string;

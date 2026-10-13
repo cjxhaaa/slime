@@ -17,6 +17,7 @@ import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
 import { type Armed, Arsenal, type Walked } from './game/Arsenal';
+import { Pack } from './game/Pack';
 import { Ways } from './game/kit';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
@@ -75,7 +76,8 @@ const fortune = new Fortune();
 const volley = new Volley();
 const menu = new Menu();
 const trial = new Trial();
-const arsenal = new Arsenal();
+const pack = new Pack();
+const arsenal = new Arsenal(pack);
 const attacks = new Attacks();
 const draft = new Draft();
 /** Kills already paid into the meter, so the frame loop can spend only the new ones. */
@@ -771,26 +773,28 @@ function startArena(kit: { weapon: Armed | null; ways: Walked[] }): void {
 
 /** Puts three cards up, which also stops the clock until one is taken. */
 function offerDraft(): void {
-  draft.show(arsenal.offer(Math.random), { weapon: arsenal.weapon, ways: arsenal.ways });
+  // The band a card is rolled from moves with the run, so the offer has to be told where it is.
+  draft.show(arsenal.offer(Math.random, trial.through, cultivation.realm), {
+    arms: pack.arms,
+    ways: pack.ways,
+  });
   fullRepaint = true;
 }
 
 /** Spends a card and starts the fight again. */
 function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
-  const hadWeapon = arsenal.weapon?.weapon ?? null;
   const { mend } = arsenal.take(card);
   if (mend > 0) trial.mend(mend);
   equipFromArsenal();
 
-  // What the card actually did, said once. A weapon that **changed** is the only one of these
-  // worth interrupting for — it is the pick that alters how everything else you carry comes out.
-  const now = arsenal.weapon;
-  if (card.kind === 'arm' && now && now.weapon !== hadWeapon) {
-    attacks.herald('符');
-    trialSaid = words().arms[now.weapon].name;
+  // What the card actually did, said once. A weapon is the only one of these worth interrupting
+  // for — it is the pick that alters how everything else you carry comes out.
+  if (card.kind === 'arm') {
+    attacks.herald(card.weapon);
+    trialSaid = words().arms[card.weapon].name;
     trialUntil = performance.now() + 3_200;
   }
-  if (arsenal.ways.length >= Ways) achieve('fullSet');
+  if (pack.ways.length >= Ways) achieve('fullSet');
 
   draft.hide();
   // Another one may already be owed: the opening cards are drafted back to back.
@@ -805,7 +809,7 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
  * is taken — two call sites for that is two chances to push one and forget the other.
  */
 function equipFromArsenal(): void {
-  attacks.equip(arsenal.weapon ? [arsenal.weapon] : [], arsenal.ways);
+  attacks.equip(pack.arms, pack.ways);
   attacks.guard(arsenal.shields);
 }
 

@@ -19,7 +19,8 @@
  */
 import { clear } from '../slime/colour.js';
 import type { Armed, Card, Walked } from '../game/Arsenal.js';
-import { ARMS, PATHS } from '../game/kit.js';
+import { ARMS, MaxDepth, PATHS } from '../game/kit.js';
+import { tintOf } from '../game/gear.js';
 import { fill, onLocaleChange, words } from '../i18n/index.js';
 import { fit, wrap } from './text.js';
 
@@ -111,21 +112,22 @@ interface Face {
   pairing: string | null;
   /** A word for what kind of card this is, along the top. */
   kind: string;
-  /** Level one to two, and so on. Empty when it does not apply. */
-  step: string;
+  /** 品质 — its name and its colour. Null for 金钟 and 调息, which have no grade. */
+  grade: { name: string; tint: string } | null;
   /** The jackpot is drawn differently, and it is the only thing that is. */
   jackpot: boolean;
 }
 
 /** Just enough of a kit for a card to describe itself against. */
 export interface Kit {
-  weapon: Armed | null;
+  /** Every weapon being carried, not one — the six slots hold any mix. */
+  arms: Armed[];
   ways: Walked[];
 }
 
 export class Draft {
   private cards: Card[] = [];
-  private holding: Kit = { weapon: null, ways: [] };
+  private holding: Kit = { arms: [], ways: [] };
   private faces: Face[] = [];
   private open = false;
   private hot = -1;
@@ -185,7 +187,7 @@ export class Draft {
     this.open = false;
     this.flecks = [];
     this.cards = [];
-    this.holding = { weapon: null, ways: [] };
+    this.holding = { arms: [], ways: [] };
     this.faces = [];
     this.boxes = [];
     this.hot = -1;
@@ -537,10 +539,12 @@ export class Draft {
     const first = y + 74 - ((title.lines.length - 1) * lead) / 2;
     title.lines.forEach((line, i) => context.fillText(line, middle, first + i * lead));
 
-    if (face.step) {
+    if (face.grade) {
+      // In its own colour, not in grey. The grade is the thing you are choosing between when two
+      // cards are the same weapon, and a 黄 that looks like a 浅绿 makes that choice invisible.
       context.font = StepFont;
-      context.fillStyle = 'rgba(255, 255, 255, 0.55)';
-      context.fillText(face.step, middle, y + 104);
+      context.fillStyle = face.grade.tint;
+      context.fillText(face.grade.name, middle, y + 104);
     }
 
     context.font = BodyFont;
@@ -591,7 +595,7 @@ function wrapped(
  * old split between "take" and "raise" went with the schools: a duplicate deepens, so a card does
  * not have to say which of the two it is — it says what you would end up with.
  */
-function face(card: Card, kit: { weapon: Armed | null; ways: Walked[] }): Face {
+function face(card: Card, kit: Kit): Face {
   const w = words();
 
   if (card.kind === 'shield') {
@@ -602,7 +606,7 @@ function face(card: Card, kit: { weapon: Armed | null; ways: Walked[] }): Face {
       blurb: w.draft.shieldBlurb,
       pairing: null,
       kind: w.draft.shield,
-      step: '',
+      grade: null,
       jackpot: false,
     };
   }
@@ -614,7 +618,7 @@ function face(card: Card, kit: { weapon: Armed | null; ways: Walked[] }): Face {
       blurb: w.draft.mendBlurb,
       pairing: null,
       kind: w.draft.mend,
-      step: '',
+      grade: null,
       jackpot: false,
     };
   }
@@ -622,35 +626,44 @@ function face(card: Card, kit: { weapon: Armed | null; ways: Walked[] }): Face {
   // The numerals are the realm stages' — 一二三 in Chinese and Japanese, 1 2 3 in English and
   // Korean — so a depth reads the way that language counts rather than the way the source did.
   const numeral = (n: number): string => w.stages[n - 1] ?? String(n);
-  const deeper = (at: number): string =>
-    at > 0 ? fill(w.draft.levelStep, { from: numeral(at), to: numeral(at + 1) }) : '';
+
+  // 品质 is the line under the title now. It used to say "二重 → 三重", which was the answer to a
+  // question the draft no longer asks: a card does not deepen anything any more, it **is** a
+  // thing, at a grade, and the grade is the single most important fact on the face.
+  const grade = (tier: number): { name: string; tint: string } => ({
+    name: w.draft.grades[tier - 1] ?? String(tier),
+    tint: tintOf(tier),
+  });
 
   if (card.kind === 'arm') {
     const said = w.arms[card.weapon];
-    const holding = kit.weapon;
-    const same = holding?.weapon === card.weapon;
+    const already = kit.arms.filter((a) => a.weapon === card.weapon).length;
     return {
       title: said.name,
       tint: ARMS[card.weapon].tint,
       blurb: said.blurb,
-      // The one thing a weapon card has to say that nothing else does: taking this puts down the
-      // one in your hand — and your three ways come with you.
-      pairing:
-        holding && !same ? fill(w.draft.swaps, { weapon: w.arms[holding.weapon].name }) : null,
+      // No longer "this puts down the one in your hand" — it does not. A second 刀 is a second
+      // 刀, swinging on its own clock, so what the card has to say is how many you would then
+      // have.
+      pairing: already > 0 ? fill(w.draft.alsoCarry, { count: String(already) }) : null,
       kind: w.draft.arm,
-      step: same && holding ? deeper(holding.depth) : '',
+      grade: grade(card.tier),
       jackpot: false,
     };
   }
 
   const said = w.ways[card.way];
+  // Ways sum where weapons count, so the useful thing to say about a second 火爆 is what the pair
+  // comes to — which is not the same as what the card is worth on its own.
+  const held = kit.ways.find((w2) => w2.way === card.way)?.depth ?? 0;
+  const summed = Math.min(MaxDepth, held + card.tier);
   return {
     title: said.name,
     tint: PATHS[card.way].tint,
     blurb: said.blurb,
-    pairing: null,
+    pairing: held > 0 ? fill(w.draft.stacksTo, { depth: numeral(summed) }) : null,
     kind: w.draft.way,
-    step: deeper(kit.ways.find((held) => held.way === card.way)?.depth ?? 0),
+    grade: grade(card.tier),
     jackpot: false,
   };
 }

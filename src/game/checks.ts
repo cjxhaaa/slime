@@ -79,6 +79,8 @@ import {
 } from './Dummies.js';
 import { Depth } from './depth.js';
 import { Arsenal, CardsPerOffer, MaxShields, Opening } from './Arsenal.js';
+import { Capacity, Pack, Slots } from './Pack.js';
+import { Tiers, canMerge, dropTier, forge, merged } from './gear.js';
 import {
   ARMS,
   MaxDepth,
@@ -821,13 +823,17 @@ Math.random = realRandom;
 
 
 // ---------------------------------------------------------------------------------------------
-// 兵器与五行: the draft, now that a kit is one weapon and three ways.
+// 行囊: the draft, now that a kit is six slots of graded gear.
 //
-// This replaced the nine schools and their fourteen pairings. The guards that section carried —
-// the pairing graph, the 82% that justified an unweighted offer, the jackpot gate — were about a
-// shape that no longer exists. What carries over is the part that was never about schools: **the
-// opening has to hand you a build before the first 邪气 arrives**, because that is what makes an
-// unattended run worth nothing.
+// The rules this used to assert are gone, and they were load-bearing, so they are named here
+// rather than quietly deleted. **A duplicate no longer deepens** — it is a second item, and two
+// of them are either two things worn at once or one merge. **A weapon no longer swaps** — a
+// second weapon is carried alongside the first. **Nothing leaves the pool at a ceiling**, because
+// with 品质 there is no such thing as a card you already have.
+//
+// What carries over untouched is the one that was never about any of that: **the opening has to
+// hand you a build before the first 邪气 arrives**, because that is what makes an unattended run
+// worth nothing.
 
 // Its own generator. `fightRandom` is declared further down the file, and reaching for a shared
 // one would also make this block's outcome depend on how many draws happened above it — the exact
@@ -839,13 +845,14 @@ const draftRandom = (): number => {
 };
 
 {
-  const kit = new Arsenal();
+  const bag = new Pack();
+  const kit = new Arsenal(bag);
   kit.start();
-  check('the opening owes one weapon and three ways', kit.openingLeft, Opening);
-  checkTrue('and nothing is carried before it', kit.weapon === null && kit.ways.length === 0);
+  check('the opening owes four cards', kit.openingLeft, Opening);
+  checkTrue('and nothing is carried before it', bag.wornCount === 0 && bag.arms.length === 0);
 
-  // 1. **The first card of the run is a weapon.** A run that opened on three elements and no
-  //    weapon would be a pet standing in a crowd with nothing to swing.
+  // 1. **The first card of the run is a weapon.** A run that opened on four elements and nothing
+  //    to swing them with would be a pet standing in a crowd.
   const first = kit.offer(draftRandom);
   check('the first offer is three cards', first.length, CardsPerOffer);
   checkTrue(
@@ -853,9 +860,12 @@ const draftRandom = (): number => {
     first.every((c) => c.kind === 'arm'),
   );
   kit.take(first[0]);
-  checkTrue('so the run has something to swing', kit.weapon !== null);
+  checkTrue('so the run has something to swing', bag.arms.length === 1);
+  // **Straight onto the body**, not into the bag. This is the rule that decides whether the panel
+  // is an optional optimisation or a chore attached to every single drop.
+  check('and it is worn rather than stashed', bag.stash.length, 0);
 
-  // 2. And the rest of the opening fills the ways.
+  // 2. And the rest of the opening fills out the ways.
   while (kit.openingLeft > 0) {
     const offered = kit.offer(draftRandom);
     checkTrue(
@@ -864,87 +874,141 @@ const draftRandom = (): number => {
     );
     kit.take(offered[0]);
   }
-  check('the opening fills every way', kit.ways.length, Ways);
-  check('and no way is drafted twice inside it', new Set(kit.ways.map((w) => w.way)).size, Ways);
+  check('the opening fills four of the six slots', bag.wornCount, Opening);
+  check('and none of it went to the bag', bag.stash.length, 0);
+  check('three of them being ways', bag.ways.length, Ways);
 }
 
 {
-  // 3. **A duplicate deepens.** There is no separate raise card, so this is the only way depth is
-  //    bought, and it is the rule the whole pool shape rests on.
-  const kit = new Arsenal();
+  // 3. **A duplicate is a second item**, which is the rule the whole merge system rests on. The
+  //    old draft deepened in place; if any of that survived, a second 弓 would disappear into the
+  //    first one and you would be a slot down with nothing to show for it.
+  const bag = new Pack();
+  const kit = new Arsenal(bag);
   kit.start();
-  kit.take({ kind: 'arm', weapon: '弓' });
-  check('a weapon arrives at the first depth', kit.weapon?.depth ?? 0, 1);
-  kit.take({ kind: 'arm', weapon: '弓' });
-  check('and the same one again deepens it', kit.weapon?.depth ?? 0, 2);
-  checkTrue('without becoming a second weapon', kit.weapon?.weapon === '弓');
+  kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
+  check('a weapon arrives', bag.arms.length, 1);
+  kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
+  check('and the same one again is a second weapon', bag.arms.length, 2);
+  checkTrue('both of them 弓', bag.arms.every((a) => a.weapon === '弓'));
 
-  kit.take({ kind: 'way', way: '火爆' });
-  check('a way arrives at the first depth', kit.depthOf('火爆'), 1);
-  kit.take({ kind: 'way', way: '火爆' });
-  check('and again deepens it', kit.depthOf('火爆'), 2);
-  check('still one way, not two', kit.ways.length, 1);
-
-  // 4. **A swap keeps the ways.** This is the reason swapping a weapon is interesting rather than
-  //    a reset: your three 五行 come with you and come out differently.
-  kit.take({ kind: 'arm', weapon: '刀' });
-  checkTrue('a different weapon swaps in', kit.weapon?.weapon === '刀');
-  check('at the first depth, because it is new to you', kit.weapon?.depth ?? 0, 1);
-  check('and the ways are untouched', kit.depthOf('火爆'), 2);
+  // **Weapons are counted, ways are summed.** They are different kinds of thing: one acts, the
+  // other says how hard. Backwards, and a second 火爆 becomes a second explosion.
+  kit.take({ kind: 'way', way: '火爆', tier: 2 });
+  check('a way arrives at the grade it was drafted at', bag.ways[0].depth, 2);
+  kit.take({ kind: 'way', way: '火爆', tier: 2 });
+  check('and a second one sums rather than counting', bag.ways[0].depth, 4);
+  check('still one way, not two', bag.ways.length, 1);
 }
 
 {
-  // 5. Neither a weapon nor a way goes past its ceiling, and a maxed one leaves the pool —
-  //    otherwise a late offer is three cards that would do nothing.
-  const kit = new Arsenal();
-  kit.start();
-  for (let i = 0; i < MaxDepth + 3; i++) kit.take({ kind: 'arm', weapon: '弓' });
-  check('a weapon stops at its ceiling', kit.weapon?.depth ?? 0, MaxDepth);
-  for (let i = 0; i < MaxDepth + 3; i++) kit.take({ kind: 'way', way: '水寒' });
-  check('and so does a way', kit.depthOf('水寒'), MaxDepth);
-
-  let offeredMaxed = 0;
-  for (let i = 0; i < 200; i++) {
-    for (const card of kit.offer(draftRandom)) {
-      if (card.kind === 'arm' && card.weapon === '弓') offeredMaxed++;
-      if (card.kind === 'way' && card.way === '水寒') offeredMaxed++;
-    }
-  }
-  check('a maxed card leaves the pool', offeredMaxed, 0);
+  // 4. Summed depth stops at the ceiling rather than running past it, because `swing` and `span`
+  //    clamp there — and a number the engine clamps is a number the panel must not promise.
+  const bag = new Pack();
+  for (let i = 0; i < Slots; i++) bag.accept(forge({ sort: 'way', way: '水寒' }, Tiers));
+  check('a stack of ways stops at the ceiling', bag.ways[0].depth, MaxDepth);
 }
 
 {
-  // 6. With the ways full, an eleventh is never offered — there is nowhere to put it.
-  const kit = new Arsenal();
+  // 5. **Six slots, then the bag.** Nothing is dropped while there is room anywhere, and the
+  //    seventh item is what proves the slots are not simply a list that grows.
+  const bag = new Pack();
+  const kit = new Arsenal(bag);
   kit.start();
-  kit.take({ kind: 'arm', weapon: '弓' });
-  kit.take({ kind: 'way', way: '金锐' });
-  kit.take({ kind: 'way', way: '木缠' });
-  kit.take({ kind: 'way', way: '火爆' });
-  check('three ways is full', kit.ways.length, Ways);
-  let strangers = 0;
-  for (let i = 0; i < 300; i++) {
-    for (const card of kit.offer(draftRandom)) {
-      if (card.kind === 'way' && kit.depthOf(card.way) === 0) strangers++;
-    }
-  }
-  check('a way you have no room for is never offered', strangers, 0);
+  for (let i = 0; i < Slots; i++) kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
+  check('six slots fill', bag.wornCount, Slots);
+  check('with nothing spare yet', bag.stash.length, 0);
+  kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
+  check('the seventh goes to the bag', bag.stash.length, 1);
+  check('and the slots are untouched', bag.wornCount, Slots);
 }
 
 {
-  // 7. An offer is never empty. A meter that fills with nothing to spend it on reads as broken
-  //    rather than as finished, and at 大乘 "everything maxed" is a state people reach.
-  const kit = new Arsenal();
+  // 6. An offer is never empty. A meter that fills with nothing to spend it on reads as broken
+  //    rather than as finished, and with a bag that fills up it is a state people reach.
+  const bag = new Pack();
+  const kit = new Arsenal(bag);
   kit.start();
-  kit.take({ kind: 'arm', weapon: '弓' });
-  for (const way of ['金锐', '木缠', '火爆'] as const) {
-    for (let i = 0; i < MaxDepth; i++) kit.take({ kind: 'way', way });
-  }
-  for (let i = 0; i < MaxDepth; i++) kit.take({ kind: 'arm', weapon: '弓' });
-  for (let i = 0; i < MaxShields; i++) kit.take({ kind: 'shield' });
+  for (let i = 0; i < Slots + Capacity + 4; i++) kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
+  checkTrue('the 行囊 does fill up', bag.full);
   const late = kit.offer(draftRandom);
   check('an offer is always three cards', late.length, CardsPerOffer);
-  checkTrue('even when there is nothing left to deepen', late.length > 0);
+  checkTrue(
+    `and becomes 调息 when gear would hit the floor: ${late.map((c) => c.kind).join(', ')}`,
+    late.every((c) => c.kind === 'mend'),
+  );
+}
+
+{
+  // 7. **品质 climbs with the run.** Otherwise the top half of the ladder is decoration: merging
+  //    alone needs thirty-two 浅绿 to reach 彩, and ninety seconds does not deal thirty-two of
+  //    anything.
+  const early: number[] = [];
+  const late: number[] = [];
+  for (let i = 0; i < 400; i++) {
+    early.push(dropTier(0.05, 0, draftRandom));
+    late.push(dropTier(0.95, 0, draftRandom));
+  }
+  const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+  check('the first drops of a run are all the lowest grade', Math.max(...early), 1);
+  checkTrue(
+    `and the last are far better (${mean(late).toFixed(1)} against ${mean(early).toFixed(1)})`,
+    mean(late) > mean(early) + 2,
+  );
+  checkTrue('without ever exceeding the ladder', Math.max(...late) <= Tiers);
+
+  // And the realm lifts the whole thing, which is most of what a realm buys in here now.
+  const low = mean(Array.from({ length: 400 }, () => dropTier(0.5, 0, draftRandom)));
+  const high = mean(Array.from({ length: 400 }, () => dropTier(0.5, Ascended - 1, draftRandom)));
+  checkTrue(
+    `大乘 drops better than 筑基 at the same moment (${high.toFixed(1)} against ${low.toFixed(1)})`,
+    high > low,
+  );
+}
+
+{
+  // 8. **Merging.** Same kind, same grade, one step up — and the rules that keep it meaningful.
+  const a = forge({ sort: 'arm', weapon: '刀' }, 2);
+  const b = forge({ sort: 'arm', weapon: '刀' }, 2);
+  const c = forge({ sort: 'arm', weapon: '刀' }, 3);
+  const d = forge({ sort: 'way', way: '火爆' }, 2);
+  checkTrue('two of the same thing at the same grade merge', canMerge(a, b));
+  check('into one grade higher', merged(a, b)?.tier ?? 0, 3);
+  checkTrue('different grades do not', !canMerge(a, c));
+  // The one that stops 刀 + 火爆 having to produce either a random thing or a prompt — and either
+  // of those takes the point out of hoarding sabres.
+  checkTrue('and neither do different things at the same grade', !canMerge(a, d));
+  checkTrue('nor does an item with itself', !canMerge(a, a));
+  checkTrue(
+    'and the top of the ladder has nowhere to go',
+    !canMerge(forge({ sort: 'arm', weapon: '刀' }, Tiers), forge({ sort: 'arm', weapon: '刀' }, Tiers)),
+  );
+
+  // **The merge buys a slot and costs weight.** Two 蓝刀 worn are two sabres; the 黄刀 they make
+  // is one. That trade is the whole decision, so it is asserted rather than assumed.
+  const bag = new Pack();
+  const x = forge({ sort: 'arm', weapon: '刀' }, 2);
+  const y = forge({ sort: 'arm', weapon: '刀' }, 2);
+  bag.accept(x);
+  bag.accept(y);
+  check('two worn sabres are two weapons', bag.arms.length, 2);
+  const into = merged(x, y);
+  checkTrue('they can be fused', into !== null && bag.fuse(x.id, y.id, into));
+  check('leaving one weapon', bag.arms.length, 1);
+  check('a grade higher', bag.arms[0].depth, 3);
+  check('and a slot free', bag.wornCount, 1);
+}
+
+{
+  // 9. The panel offers every pair it could fuse, and offers each item in at most one of them — a
+  //    list that showed the same 蓝刀 in three pairs would be three buttons that fight each other.
+  const bag = new Pack();
+  for (let i = 0; i < 3; i++) bag.accept(forge({ sort: 'arm', weapon: '刀' }, 2));
+  bag.accept(forge({ sort: 'way', way: '火爆' }, 1));
+  const pairs = bag.pairs();
+  check('three of a kind is one pair, not three', pairs.length, 1);
+  const named = new Set(pairs.flatMap((p) => [p.a.id, p.b.id]));
+  check('and no item appears twice across the pairs', named.size, pairs.length * 2);
 }
 
 
@@ -1083,7 +1147,8 @@ function fight(
 ): Standing {
   const arena = { width: 1200, height: 800 };
   const trial = new Trial();
-  const kit = new Arsenal();
+  const bag = new Pack();
+  const kit = new Arsenal(bag);
   const arts = new Attacks();
   trial.start(realm);
   kit.start();
@@ -1091,13 +1156,20 @@ function fight(
 
   // The opening draft. A named kit when one is given — the guard has to test the *strongest* thing
   // somebody could walk away from, not whatever cards a seed happened to deal.
+  //
+  // At the grade the opening actually deals, not at the top of the ladder: the question this
+  // answers is whether a run you walk away from loses, and somebody walking away at ten seconds
+  // is carrying 浅绿.
   if (build) {
-    kit.take({ kind: 'arm', weapon: build.weapon });
-    for (const way of build.ways) kit.take({ kind: 'way', way });
+    kit.take({ kind: 'arm', weapon: build.weapon, tier: 1 });
+    for (const way of build.ways) kit.take({ kind: 'way', way, tier: 1 });
   }
-  while (kit.openingLeft > 0) kit.take(kit.offer(random)[0]);
-  arts.equip(kit.weapon ? [kit.weapon] : [], kit.ways);
-  arts.guard(kit.shields);
+  while (kit.openingLeft > 0) kit.take(kit.offer(random, trial.through, realm)[0]);
+  const rearm = (): void => {
+    arts.equip(bag.arms, bag.ways);
+    arts.guard(kit.shields);
+  };
+  rearm();
 
   const body = { x: arena.width / 2, y: arena.height / 2, radius: 46 };
   let seconds = 0;
@@ -1130,12 +1202,11 @@ function fight(
     for (let i = seen; i < now; i++) kit.countKill();
     seen = now;
     if (spend && kit.due) {
-      kit.take(kit.offer(random)[0]);
+      kit.take(kit.offer(random, trial.through, realm)[0]);
       // 金钟 and 固土 are both armour and arrive by different routes, so both are pushed here.
       // Without the second the harness would draft a shell and then fight without it, and the run
       // it reports would be one nobody can have played.
-      arts.equip(kit.weapon ? [kit.weapon] : [], kit.ways);
-      arts.guard(kit.shields);
+      rearm();
     }
     seconds += dt;
   }
@@ -1152,7 +1223,7 @@ function fight(
 // 1. The structural half. A run whose draft is never answered never starts — four cards are owed
 //    before the first 邪气 arrives — so no time passes and nothing is earned. This is what makes
 //    walking away worthless, and it does not depend on a single tuned number.
-const abandoned = new Arsenal();
+const abandoned = new Arsenal(new Pack());
 abandoned.start();
 const waiting = new Trial();
 waiting.start(Ascended - 1);
@@ -1633,10 +1704,15 @@ for (const tag of LOCALES) {
   budget(`${tag} mend blurb`, dict.draft.mendBlurb, CardBlurb, 13, 3);
   budget(`${tag} shield blurb`, dict.draft.shieldBlurb, CardBlurb, 13, 3);
 
-  // The swap line, filled with the longest weapon name it could carry. The longest is what
-  // has to fit, not the average.
-  for (const k of WEAPONS) {
-    budget(`${tag} swap`, fill(dict.draft.swaps, { weapon: dict.arms[k].name }), CardPair, 13, 2);
+  // The two lines a gear card can carry under its blurb, each filled with the widest thing it
+  // could hold. The widest is what has to fit, not the average.
+  budget(`${tag} carrying`, fill(dict.draft.alsoCarry, { count: '6' }), CardPair, 13, 2);
+  for (const stage of dict.stages) {
+    budget(`${tag} stacks`, fill(dict.draft.stacksTo, { depth: stage }), CardPair, 13, 2);
+  }
+  // And every 品质 name, which sits on the one line under the title.
+  for (const grade of dict.draft.grades) {
+    budget(`${tag} grade`, grade, CardPair, 13, 1);
   }
 
   // The bubble: every announcement, every verdict, every result. Two paragraphs where the
@@ -2498,7 +2574,8 @@ check('ten ways, two to a phase', WAYS.length, 10);
 // which left the body with no defence but moving; this puts it back where you can choose it.
 
 {
-  const kit = new Arsenal();
+  const bag = new Pack();
+  const kit = new Arsenal(bag);
   kit.start();
 
   // 1. **Never in the opening four.** Those are owed before the first 邪气 and they are what makes
@@ -2511,7 +2588,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
     kit.take(offered[0]);
   }
   check('金钟 is never in the opening draft', openingShields, 0);
-  check('so the opening still fills every way', kit.ways.length, Ways);
+  check('so the opening still fills every way', bag.ways.length, Ways);
 
   // 2. And it is offered afterwards, where it is a trade against a level.
   let laterShields = 0;

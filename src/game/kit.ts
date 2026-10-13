@@ -54,8 +54,15 @@ export const WAYS = [
 
 export type Way = (typeof WAYS)[number];
 
-/** How far a way can be deepened. Drafting one you already hold raises it instead. */
-export const MaxDepth = 5;
+/**
+ * How far a way can be deepened — and, since 品质 and 深浅 are the same number, how many 品质
+ * there are.
+ *
+ * Six rather than five because the ladder somebody named has six rungs on it: 浅绿, 蓝, 黄, 红,
+ * 白, 彩. `gear.ts` takes `Tiers` from here rather than declaring its own, so there is one answer
+ * to "how strong can this get" instead of two that agree today.
+ */
+export const MaxDepth = 6;
 
 /** How many ways can be carried at once. One weapon, three of these. */
 export const Ways = 3;

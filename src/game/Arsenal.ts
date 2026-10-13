@@ -28,14 +28,9 @@
  * rather than a reset. Drafting a way you already walk deepens that. So every card in the pool
  * either gives you something new or makes something you have better, and there is no third kind.
  */
-import {
-  MaxDepth,
-  type Way,
-  WAYS,
-  type Weapon,
-  WEAPONS,
-  Ways,
-} from './kit.js';
+import { type Way, WAYS, type Weapon, WEAPONS, Ways } from './kit.js';
+import { dropTier, forge } from './gear.js';
+import { Pack } from './Pack.js';
 
 /** The weapon in hand, and how deep it is carried. */
 export interface Armed {
@@ -57,8 +52,8 @@ export interface Walked {
  * spend it on would read as broken rather than as finished.
  */
 export type Card =
-  | { kind: 'arm'; weapon: Weapon }
-  | { kind: 'way'; way: Way }
+  | { kind: 'arm'; weapon: Weapon; tier: number }
+  | { kind: 'way'; way: Way; tier: number }
   | { kind: 'mend' }
   | { kind: 'shield' };
 
@@ -110,8 +105,6 @@ export const MaxShields = 3;
 export const Opening = 1 + Ways;
 
 export class Arsenal {
-  private arm: Armed | null = null;
-  private walked: Walked[] = [];
   private exchanges = 0;
   /** Kills banked toward the next exchange, and the total for the run. */
   private credit = 0;
@@ -120,23 +113,23 @@ export class Arsenal {
   private opening = 0;
   private shieldsTaken = 0;
 
+  /**
+   * The 行囊 this fills.
+   *
+   * Held rather than handed back to the caller. `take` used to return what it had given you and
+   * leave the caller to put it somewhere, which is two places that have to agree about one event
+   * — and the one that forgets is the one nobody notices, because a drafted item that silently
+   * goes nowhere looks exactly like a card you declined.
+   */
+  constructor(private readonly pack: Pack) {}
+
   start(): void {
-    this.arm = null;
-    this.walked = [];
     this.exchanges = 0;
     this.credit = 0;
     this.total = 0;
     this.opening = Opening;
     this.shieldsTaken = 0;
-  }
-
-  /** The weapon in hand, or null before the opening has dealt one. */
-  get weapon(): Armed | null {
-    return this.arm;
-  }
-
-  get ways(): Walked[] {
-    return this.walked;
+    this.pack.start();
   }
 
   get openingLeft(): number {
@@ -154,11 +147,6 @@ export class Arsenal {
   /** How many layers of 金钟 have been drafted. */
   get shields(): number {
     return this.shieldsTaken;
-  }
-
-  /** How deep a way is walked, or 0. */
-  depthOf(way: Way): number {
-    return this.walked.find((w) => w.way === way)?.depth ?? 0;
   }
 
   /** How full the meter is, 0 to 1. Drawn, so it has to be a fraction rather than a count. */
@@ -187,36 +175,43 @@ export class Arsenal {
    * Offers are **not** weighted toward what your build wants. The draft is a choice between three
    * things you did not pick, and a thumb on the scale would turn it into a formality with three
    * cards drawn on it.
+   *
+   * `through` and `realm` are here because a card now arrives at a 品质, and the band it is rolled
+   * from moves as the run goes on. Rolled per card at the moment of the offer rather than when it
+   * is taken, so the face can show what it is — a card that only told you its tier after you had
+   * chosen it would be a choice made blind.
    */
-  offer(random: () => number): Card[] {
+  offer(random: () => number, through = 0, realm = 0): Card[] {
     const pool: Card[] = [];
+    const tier = (): number => dropTier(through, realm, random);
+
+    if (this.pack.full) {
+      // Nowhere to put anything. 调息 is what an offer becomes when gear would be dropped on the
+      // floor, which is the same answer the old full-kit case gave.
+      return new Array(CardsPerOffer).fill(null).map(() => ({ kind: 'mend' }) as Card);
+    }
 
     if (this.opening === Opening) {
       // The first card of the run is a weapon, full stop. See the note at the top.
-      for (const weapon of WEAPONS) pool.push({ kind: 'arm', weapon });
+      for (const weapon of WEAPONS) pool.push({ kind: 'arm', weapon, tier: tier() });
     } else if (this.opening > 0) {
-      // And the rest of the opening fills the three ways, so the run starts able to fight.
-      for (const way of WAYS) if (this.depthOf(way) === 0) pool.push({ kind: 'way', way });
+      // And the rest of the opening fills out the ways, so the run starts able to fight. Ones you
+      // are not already carrying first — an opening that deals you the same way three times is an
+      // opening that gave you one card.
+      const held = new Set(this.pack.ways.map((w) => w.way));
+      const fresh = WAYS.filter((way) => !held.has(way));
+      for (const way of fresh.length > 0 ? fresh : WAYS) pool.push({ kind: 'way', way, tier: tier() });
     } else {
-      // A weapon you hold deepens; one you do not swaps in and keeps your ways. Both are worth
-      // offering, so all five are in the pool until the one in hand is at its ceiling — and then
-      // only that one drops out.
-      for (const weapon of WEAPONS) {
-        if (this.arm?.weapon === weapon && this.arm.depth >= MaxDepth) continue;
-        pool.push({ kind: 'arm', weapon });
-      }
-      for (const way of WAYS) {
-        const depth = this.depthOf(way);
-        // A way you do not walk is only worth offering while there is a slot for it.
-        if (depth === 0 && this.walked.length >= Ways) continue;
-        if (depth >= MaxDepth) continue;
-        pool.push({ kind: 'way', way });
-      }
+      // Anything, at whatever the run is dealing now. No exclusions: with 品质 there is no such
+      // thing as a card you already have — a second 蓝刀 is either a second sabre or half of a
+      // 黄刀, and which of those it is is the player's business rather than this function's.
+      for (const weapon of WEAPONS) pool.push({ kind: 'arm', weapon, tier: tier() });
+      for (const way of WAYS) pool.push({ kind: 'way', way, tier: tier() });
       // 金钟 is a real trade against a level rather than a free extra, and it drops out once it is
       // maxed — which is what stops a late offer being three of them.
       //
       // **Never in the opening.** Those picks are owed before the first 邪气 arrives and they are
-      // what makes an unattended run worth nothing; a shell among them is a run that starts a way
+      // what makes an unattended run worth nothing; a shell among them is a run that starts a card
       // short, which the checks caught the first time this was written.
       if (this.shieldsTaken < MaxShields) pool.push({ kind: 'shield' });
     }
@@ -229,8 +224,8 @@ export class Arsenal {
   /**
    * Takes one. Returns what it gave back in 护体, which is nothing for everything but 调息.
    *
-   * Every card either hands you something you did not have or deepens something you did. There is
-   * no third outcome, which is why this has no branch for "you already had that".
+   * Gear goes straight into the 行囊, which finds it a slot if there is one free. See `Pack` for
+   * why that rule is the one that decides whether the panel is optional.
    */
   take(card: Card): { mend: number } {
     if (this.opening > 0) this.opening -= 1;
@@ -240,19 +235,12 @@ export class Arsenal {
     }
 
     if (card.kind === 'arm') {
-      if (this.arm?.weapon === card.weapon) {
-        this.arm = { weapon: card.weapon, depth: Math.min(MaxDepth, this.arm.depth + 1) };
-      } else {
-        // A swap keeps the ways. The weapon is how they come out, not what they are.
-        this.arm = { weapon: card.weapon, depth: 1 };
-      }
+      this.pack.accept(forge({ sort: 'arm', weapon: card.weapon }, card.tier));
       return { mend: 0 };
     }
 
     if (card.kind === 'way') {
-      const held = this.walked.find((w) => w.way === card.way);
-      if (held) held.depth = Math.min(MaxDepth, held.depth + 1);
-      else if (this.walked.length < Ways) this.walked.push({ way: card.way, depth: 1 });
+      this.pack.accept(forge({ sort: 'way', way: card.way }, card.tier));
       return { mend: 0 };
     }
 
