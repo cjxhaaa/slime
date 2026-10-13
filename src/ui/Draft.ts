@@ -35,7 +35,15 @@ export interface Rect {
 }
 
 const CardWidth = 186;
-const CardHeight = 232;
+const CardHeight = 246;
+/**
+ * The item's tile at the top of the card.
+ *
+ * Bigger than a slot on purpose. The card is where you learn what a mark means before you meet it
+ * at slot size in the 装备栏, and a 30-pixel tile on a 186-pixel card hid exactly the detail —
+ * the tassel, the rings, the script on the 符 — that makes one tile tell you what it is.
+ */
+const IconSize = 40;
 const Gap = 18;
 const Radius = 14;
 /** How far above the middle of the screen the row sits. A little high, so the body is still visible. */
@@ -528,7 +536,8 @@ export class Draft {
 
     context.font = StepFont;
     context.fillStyle = face.jackpot ? '#ffd98a' : 'rgba(255, 255, 255, 0.45)';
-    context.fillText(face.kind, middle, y + 26);
+    // Up a little from where it was, so it clears the top edge of the icon tile under it.
+    context.fillText(face.kind, middle, y + 20);
 
     // The title is the one line with no room to wrap by default, so it is measured before it is
     // drawn rather than trusted to fit.
@@ -537,8 +546,8 @@ export class Draft {
     // guess at.
     if (face.icon) {
       context.save();
-      context.translate(middle, y + 46);
-      drawItemIcon(context, face.icon, 30, face.tint);
+      context.translate(middle, y + 52);
+      drawItemIcon(context, face.icon, IconSize, face.tint);
       context.restore();
     }
 
@@ -549,7 +558,7 @@ export class Draft {
     context.font = titleFont(title.size);
     context.fillStyle = face.tint;
     const lead = title.size * 1.06;
-    const first = y + 74 - ((title.lines.length - 1) * lead) / 2;
+    const first = y + 92 - ((title.lines.length - 1) * lead) / 2;
     title.lines.forEach((line, i) => context.fillText(line, middle, first + i * lead));
 
     if (face.grade) {
@@ -557,12 +566,12 @@ export class Draft {
       // cards are the same weapon, and a 黄 that looks like a 浅绿 makes that choice invisible.
       context.font = StepFont;
       context.fillStyle = face.grade.tint;
-      context.fillText(face.grade.name, middle, y + 104);
+      context.fillText(face.grade.name, middle, y + 120);
     }
 
     context.font = BodyFont;
     context.fillStyle = 'rgba(255, 255, 255, 0.76)';
-    wrapped(context, face.blurb, middle, y + 136, box.width - 26, 19, 3);
+    wrapped(context, face.blurb, middle, y + 148, box.width - 26, 19, 3);
 
     if (face.pairing) {
       // The one line that gets a rule above it, because it is the decision the mode is about.

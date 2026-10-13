@@ -9,75 +9,116 @@
     </style>
   </head>
   <body>
-    <canvas id="c" width="980" height="420"></canvas>
+    <canvas id="c"></canvas>
     <script type="module">
       import { drawWeaponIcon, drawWayIcon } from '/src/ui/icons.ts';
       import { ARMS, PATHS, WEAPONS, WAYS } from '/src/game/kit.ts';
       import { GRADES } from '/src/game/gear.ts';
 
+      const W = 1000;
+      const H = 640;
+      const dpr = window.devicePixelRatio || 1;
       const c = document.getElementById('c');
+      c.width = W * dpr;
+      c.height = H * dpr;
+      // Fits the window, so the whole sheet is on screen at once.
+      c.style.width = '100%';
+      c.style.maxWidth = W + 'px';
+      c.style.height = 'auto';
       const x = c.getContext('2d');
+      x.scale(dpr, dpr);
+
+      const items = [
+        ...WEAPONS.map((w) => ({ name: w, draw: (s) => drawWeaponIcon(x, w, s, ARMS[w].tint) })),
+        ...WAYS.map((w) => ({ name: w, draw: (s) => drawWayIcon(x, w, s, PATHS[w].tint) })),
+      ];
 
       // A slot, the way the 装备栏 will draw one, so the icon is judged where it will live.
       function slot(px, py, size, grade) {
         x.save();
         x.fillStyle = 'rgba(26, 33, 48, 0.94)';
         x.beginPath();
-        x.roundRect(px - size / 2 - 7, py - size / 2 - 7, size + 14, size + 14, 8);
+        x.roundRect(px - size / 2 - 4, py - size / 2 - 4, size + 8, size + 8, 7);
         x.fill();
         x.lineWidth = 1.6;
         x.strokeStyle = grade;
-        x.beginPath();
-        x.roundRect(px - size / 2 - 7, py - size / 2 - 7, size + 14, size + 14, 8);
         x.stroke();
         x.restore();
       }
 
       function label(t, px, py) {
-        x.fillStyle = 'rgba(255,255,255,0.45)';
+        x.fillStyle = 'rgba(255,255,255,0.5)';
         x.font = '11px system-ui, sans-serif';
         x.textAlign = 'center';
         x.fillText(t, px, py);
       }
 
-      let row = 54;
-      // Weapons, at the size a slot uses and again at 3x to judge the shape.
-      WEAPONS.forEach((w, i) => {
-        const px = 70 + i * 92;
-        slot(px, row, 28, GRADES[2].tint);
-        x.save(); x.translate(px, row); drawWeaponIcon(x, w, 28, ARMS[w].tint); x.restore();
-        label(w, px, row + 36);
-        x.save(); x.translate(px, row + 120); drawWeaponIcon(x, w, 84, ARMS[w].tint); x.restore();
-      });
-
-      row = 250;
-      WAYS.slice(0, 5).forEach((way, i) => {
-        const px = 70 + i * 92;
-        slot(px, row, 28, GRADES[3].tint);
-        x.save(); x.translate(px, row); drawWayIcon(x, way, 28, PATHS[way].tint); x.restore();
-        label(way, px, row + 36);
-        x.save(); x.translate(px, row + 92); drawWayIcon(x, way, 62, PATHS[way].tint); x.restore();
-      });
-
-      WAYS.slice(5).forEach((way, i) => {
-        const px = 540 + i * 92;
-        slot(px, row, 28, GRADES[4].tint);
-        x.save(); x.translate(px, row); drawWayIcon(x, way, 28, PATHS[way].tint); x.restore();
-        label(way, px, row + 36);
-        x.save(); x.translate(px, row + 92); drawWayIcon(x, way, 62, PATHS[way].tint); x.restore();
-      });
-
-      // A row of six, which is what the bar will actually look like.
-      const bar = [['arm','刀'],['arm','刀'],['arm','弓'],['way','火爆'],['way','金锐'],['way','土固']];
-      bar.forEach(([kind, key], i) => {
-        const px = 560 + i * 54;
-        slot(px, 54, 28, GRADES[i % 6].tint);
-        x.save(); x.translate(px, 54);
-        if (kind === 'arm') drawWeaponIcon(x, key, 28, ARMS[key].tint);
-        else drawWayIcon(x, key, 28, PATHS[key].tint);
+      function at(px, py, size, fn) {
+        x.save();
+        x.translate(px, py);
+        fn(size);
         x.restore();
+      }
+
+      // ?card: three draft cards, opened and settled, to judge the icon where it is actually seen.
+      if (location.search.includes('card')) {
+        const { Draft } = await import('/src/ui/Draft.ts');
+        const draft = new Draft();
+        draft.show(
+          [
+            { kind: 'arm', weapon: '刀', tier: 2 },
+            { kind: 'way', way: '火燎', tier: 3 },
+            { kind: 'way', way: '水流', tier: 1 },
+          ],
+          { arms: [], ways: [] },
+        );
+        draft.layout(W, H);
+        draft.advance(3);
+        draft.draw(x, W, H);
+        throw 'done';
+      }
+
+      // ?big: just the fifteen, large, to judge the drawing itself.
+      if (location.search.includes('big')) {
+        items.forEach((item, i) => {
+          at(100 + (i % 5) * 200, 100 + Math.floor(i / 5) * 210, 180, item.draw);
+        });
+        throw 'done';
+      }
+
+      // Row 1-2: every icon big, to judge the drawing.
+      items.forEach((item, i) => {
+        const col = i % 8;
+        const row = Math.floor(i / 8);
+        const px = 64 + col * 120;
+        const py = 70 + row * 150;
+        at(px, py, 96, item.draw);
+        label(item.name, px, py + 64);
       });
-      label('装备栏 · 六格', 560 + 2.5 * 54, 104);
+
+      // Row 3: every icon at the size the card uses (30), and in a slot at 28.
+      items.forEach((item, i) => {
+        const px = 40 + i * 62;
+        at(px, 400, 30, item.draw);
+        slot(px, 452, 28, GRADES[i % 6].tint);
+        at(px, 452, 28, item.draw);
+        label(item.name, px, 486);
+      });
+
+      // Row 4: a bar of six, as the 装备栏 will look.
+      const bar = [0, 0, 3, 12, 5, 14];
+      bar.forEach((k, i) => {
+        const px = 60 + i * 44;
+        slot(px, 560, 28, GRADES[i % 6].tint);
+        at(px, 560, 28, items[k].draw);
+      });
+      label('装备栏 · 六格', 60 + 2.5 * 44, 600);
+
+      // And at 48, for a larger HUD.
+      [1, 2, 4, 6, 8, 10].forEach((k, i) => {
+        const px = 420 + i * 64;
+        at(px, 560, 48, items[k].draw);
+      });
     </script>
   </body>
 </html>
