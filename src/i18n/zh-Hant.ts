@@ -138,6 +138,13 @@ export const zhHant: Dictionary = {
     triadWith: '三合 · {triad}',
   },
 
+  satchel: {
+    title: '行囊',
+    worn: '裝備',
+    stash: '囊中',
+    fuse: '合成',
+  },
+
   trial: {
     pauseTitle: '停手',
     pauseNote: '現在走，這一趟不算數。',

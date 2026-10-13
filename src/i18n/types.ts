@@ -150,6 +150,14 @@ export interface Dictionary {
     triadWith: string;
   };
 
+  /** The 行囊 panel, opened mid-run. */
+  satchel: {
+    title: string;
+    worn: string;
+    stash: string;
+    fuse: string;
+  };
+
   trial: {
     pauseTitle: string;
     pauseNote: string;

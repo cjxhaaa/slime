@@ -1503,37 +1503,7 @@ export class Slime {
     }
   }
 
-  /**
-   * A translucent copy of the body, wherever you are pointing.
-   *
-   * Traced from `this.points`, which `beginFrame` has already filled with the outline about to be
-   * painted — so the mark wobbles, stretches and squashes in lockstep with the real body. A
-   * circle was tried first and reads as a reticle; what makes this say "the slime goes here" is
-   * that it is unmistakably the same animal.
-   */
-  drawGhost(context: CanvasRenderingContext2D, x: number, y: number): void {
-    const palette = this.bodyLook.palette;
-    context.save();
-    context.translate(x, y);
-    Blob.trace(context, this.points, this.blob.count);
-    context.globalAlpha = 0.12;
-    context.fillStyle = palette.core;
-    context.fill();
-    context.globalAlpha = 0.55;
-    context.strokeStyle = palette.core;
-    context.lineWidth = 2;
-    // Dashed, so it never reads as a second pet — a solid outline at this alpha looked like the
-    // slime had been duplicated and one of them was lagging.
-    context.setLineDash([6, 5]);
-    context.stroke();
-    context.restore();
-  }
 
-  /** What `drawGhost` touches, for the dirty rect. */
-  ghostBounds(x: number, y: number): { x: number; y: number; width: number; height: number } {
-    const reach = this.radius * 1.5 + 4;
-    return { x: x - reach, y: y - reach, width: reach * 2, height: reach * 2 };
-  }
 
   /**
    * How much 护体 is left, or null to take the arc away.

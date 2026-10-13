@@ -130,6 +130,13 @@ export const zhHans: Dictionary = {
     triadWith: '三合 · {triad}',
   },
 
+  satchel: {
+    title: '行囊',
+    worn: '装备',
+    stash: '囊中',
+    fuse: '合成',
+  },
+
   trial: {
     pauseTitle: '停手',
     pauseNote: '现在走，这一趟不算数。',

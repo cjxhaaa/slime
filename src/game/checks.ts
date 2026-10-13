@@ -115,6 +115,7 @@ import {
   squeezeAt,
 } from '../ui/reveal.js';
 import { MaxReach, MinReach, Settle, arch, cycleSeconds, pace, planHop } from './pursuit.js';
+import { Steering, steers } from './steering.js';
 
 let failures = 0;
 function check(label: string, actual: number, expected: number, tol = 1e-6): void {
@@ -1378,6 +1379,88 @@ Math.random = wildRandom;
     marked.closest(first.x, first.y, 10) !== null,
   );
   check('and still in the target list', marked.targets().length, PostCount);
+}
+
+// ---------------------------------------------------------------------------------------------
+// WASD, and moving the 行囊 around while something is walking at you.
+
+{
+  // **Diagonals are not faster.** The oldest bug in the genre and one line to not have: W and D
+  // held together is a unit vector, not 1.41 of one.
+  const keys = new Steering();
+  keys.press('KeyW');
+  check('one key is a full step', Math.hypot(keys.heading()!.x, keys.heading()!.y), 1, 1e-9);
+  keys.press('KeyD');
+  check('and two are still a full step', Math.hypot(keys.heading()!.x, keys.heading()!.y), 1, 1e-9);
+  checkTrue('pointing between them', keys.heading()!.x > 0 && keys.heading()!.y < 0);
+
+  // Opposites cancel, because holding A and D is not holding anything — and a zero vector that
+  // got normalised anyway would send the body off in whatever direction the rounding chose.
+  keys.clear();
+  keys.press('KeyA');
+  keys.press('KeyD');
+  check('opposite keys cancel', keys.heading() === null ? 0 : 1, 0);
+
+  // **The target is one stretch ahead and moves with the body**, so the hop planner never decides
+  // it has arrived and keeps going for exactly as long as the key is down.
+  keys.clear();
+  keys.press('KeyD');
+  const aim = keys.target(100, 100)!;
+  check('the target is a full stretch out', Math.hypot(aim.x - 100, aim.y - 100), MaxReach, 1e-9);
+  checkTrue('and a full hop is planned to it', planHop(MaxReach) !== null);
+
+  // **Everything drops on the way out.** A keyup that never arrives is a key held forever: the
+  // overlay is click-through, so clicking anything at all takes focus off it, and that is the
+  // ordinary way to leave rather than an accident.
+  keys.clear();
+  check('clearing stops the body', keys.target(100, 100) === null ? 0 : 1, 0);
+  checkTrue('and nothing is held', !keys.moving);
+  checkTrue('a key it does not own is left alone', !steers('KeyQ'));
+}
+
+{
+  // The panel's gestures, against a real 行囊 rather than a model of one.
+  const bag = new Pack();
+  for (let i = 0; i < Slots; i++) bag.accept(forge({ sort: 'arm', weapon: '弓' }, 1));
+  const spare = forge({ sort: 'way', way: '火爆' }, 1);
+  bag.accept(spare);
+  check('six worn and one spare', bag.wornCount, Slots);
+
+  // Taking something off makes room, and putting it back takes the room again. One gesture, both
+  // directions — the panel has one click and cannot be asked which of two methods to call.
+  const worn = bag.worn[0]!;
+  checkTrue('a worn thing comes off', bag.toggle(worn.id));
+  check('leaving a slot open', bag.wornCount, Slots - 1);
+  checkTrue('and a spare goes on', bag.toggle(spare.id));
+  check('filling it again', bag.wornCount, Slots);
+  checkTrue('the thing that came off is in the bag now', bag.slotOf(worn.id) < 0);
+
+  // With every slot full, putting something on has to **swap** rather than refuse. "Nothing
+  // happened" is the worst answer an interface can give a deliberate click.
+  const other = forge({ sort: 'arm', weapon: '刀' }, 3);
+  bag.accept(other);
+  checkTrue('a swap into a full row works', bag.swapInto(0, other.id));
+  check('and the row is still full', bag.wornCount, Slots);
+  checkTrue('with the new thing worn', bag.slotOf(other.id) >= 0);
+}
+
+{
+  // **A fuse keeps the result on the body.** Dropping it into the bag would take the weapon off
+  // you at the exact moment you upgraded it, which reads as the upgrade having cost you the slot.
+  const bag = new Pack();
+  const a = forge({ sort: 'arm', weapon: '刀' }, 2);
+  const b = forge({ sort: 'arm', weapon: '刀' }, 2);
+  bag.accept(a);
+  bag.accept(b);
+  const slot = bag.slotOf(a.id);
+  const into = merged(a, b)!;
+  checkTrue('they fuse', bag.fuse(a.id, b.id, into));
+  check('and the result is worn, in the first slot', bag.slotOf(into.id), slot);
+  check(
+    'with neither of the two left anywhere',
+    (bag.find(a.id) ? 1 : 0) + (bag.find(b.id) ? 1 : 0),
+    0,
+  );
 }
 
 // 语言. Five dictionaries, and the ways a translation goes wrong quietly.

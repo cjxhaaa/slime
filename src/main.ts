@@ -18,6 +18,9 @@ import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
 import { type Armed, Arsenal, type Walked } from './game/Arsenal';
 import { Pack } from './game/Pack';
+import { Steering, steers } from './game/steering';
+import { type Act, Satchel } from './ui/Satchel';
+import { merged } from './game/gear';
 import { Ways } from './game/kit';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
@@ -77,6 +80,8 @@ const volley = new Volley();
 const menu = new Menu();
 const trial = new Trial();
 const pack = new Pack();
+const steering = new Steering();
+const satchel = new Satchel();
 const arsenal = new Arsenal(pack);
 const attacks = new Attacks();
 const draft = new Draft();
@@ -732,6 +737,11 @@ function enterTrial(width: number, height: number): void {
   // system-wide registration — see `watch_escape` in lib.rs for why it is not the keyboard hook,
   // and why it is not held permanently.
   void invoke('watch_escape', { on: true }).catch(() => {});
+  // Borrowed for the length of the run, and **remembered** so it can go back — see `keys.rs`.
+  // Taking focus is one call; not returning it is a bug with a ninety-second fuse, because the
+  // next thing typed after the run would land in a transparent window that ignores it.
+  void invoke('take_keys').catch(() => {});
+  steering.clear();
   arsenal.start();
   attacks.reset();
   killsSeen = 0;
@@ -803,6 +813,28 @@ function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
 }
 
 /**
+ * What a click on the 行囊 asked for.
+ *
+ * Every branch re-equips, and that is the point of routing them all through one function: the six
+ * slots are the only thing `Attacks` is told about, so a move or a fuse that changed the slots
+ * without saying so would leave the pet swinging a weapon it is no longer carrying — and it would
+ * keep doing it until the next card, which could be thirty seconds away.
+ */
+function doSatchel(act: Act): void {
+  if (act.do === 'open') satchel.show();
+  else if (act.do === 'close') satchel.hide();
+  else if (act.do === 'move') pack.toggle(act.id);
+  else if (act.do === 'fuse') {
+    const a = pack.find(act.a);
+    const b = pack.find(act.b);
+    const into = a && b ? merged(a, b) : null;
+    if (a && b && into) pack.fuse(a.id, b.id, into);
+  }
+  equipFromArsenal();
+  fullRepaint = true;
+}
+
+/**
  * Hands the kit to the fight.
  *
  * One place, because 金钟 and 固土 are both armour and both have to arrive before the next hit
@@ -857,6 +889,10 @@ function leaveTrial(): void {
   attacks.reset();
   pause.hide();
   void invoke('watch_escape', { on: false }).catch(() => {});
+  // Dropped before anything else: a direction still held when the run ends would be a direction
+  // held into the next one.
+  steering.clear();
+  void invoke('give_keys').catch(() => {});
   slime.showVitality(null);
   // Leaving the plane takes the chase, the hop, the hop's lift and the hop's velocity with it —
   // see the `planar` setter. This used to clear the chase by hand and could only clear half of
@@ -1307,18 +1343,20 @@ function frame(now: number): void {
   accumulator = Math.min(MAX_BACKLOG, accumulator + elapsed);
   const steps = Math.floor(accumulator / STEP);
   accumulator -= steps * STEP;
-  // 追形. In 历练 the body goes where you point, hop by hop — see `game/pursuit.ts` for why it
-  // hops rather than glides, and why this replaced steering by drag.
+  // 追形. In 历练 the body goes where you hold, hop by hop — see `game/pursuit.ts` for why it
+  // hops rather than glides, and `game/steering.ts` for why the keys took this over from the
+  // cursor. Short version: you cannot reach for a panel with the same hand that walks you, so the
+  // feet moved to WASD and the mouse was freed.
   //
   // **Not in the yard.** The arena exists to watch how far a build reaches from where the slime
-  // is standing, and a pet that follows the hand across to the settings window every time you
-  // move a slider cannot be stood anywhere. There you still drag it.
+  // is standing, and a pet that walked off every time you touched a key could not be stood
+  // anywhere. There you still drag it.
   //
   // Paused with everything else while a draft is up: the cards are the one thing in this mode
   // that stops the clock, and a body still crossing the screen behind them would arrive
   // somewhere nobody chose.
   const chasing = inTrial && arena === null && !draft.isOpen && !pause.isOpen;
-  slime.pursue(chasing ? cursor : null);
+  slime.pursue(chasing ? steering.target(slime.x, slime.y) : null);
   for (let i = 0; i < steps; i++) {
     slime.update(STEP, { width, height, cursor });
   }
@@ -1336,12 +1374,11 @@ function frame(now: number): void {
   // for the duration — which is the exact failure the lease exists to make impossible. So the
   // handle stays a body-sized patch in the middle of the meal.
   //
-  // Never while it is chasing the cursor. The body is under the pointer by construction for the
-  // whole run, so granting the lease on a hover would hand the overlay every click on the
-  // desktop for ninety seconds — which is the hostage-taking that steering by drag used to do
-  // explicitly, arriving by the back door.
-  const overBody =
-    cursor !== null && !slime.isPursuing && slime.hitTest(cursor.x, cursor.y);
+  // It used to refuse while the body was chasing the cursor, because the body was under the
+  // pointer *by construction* and granting a lease on that would have handed the overlay every
+  // click on the desktop for ninety seconds. With WASD the pointer no longer drags the body
+  // around, so hovering it is an ordinary hover and the exception is gone.
+  const overBody = cursor !== null && slime.hitTest(cursor.x, cursor.y);
 
   // Holding the slime still over a window starts a meal. Measured from the last time the hand
   // moved appreciably, so this fires on stillness rather than on elapsed grab time.
@@ -1524,9 +1561,22 @@ function frame(now: number): void {
     if (cursor !== null) pause.hover(cursor.x, cursor.y);
     fullRepaint = true;
   }
+  // The 行囊 is the one panel that does **not** force a full repaint: it washes nothing, because
+  // the fight is still going on behind it. Its own rect goes into the dirty union instead.
+  //
+  // Laid out every frame, and only during a run — a drop can land while it is open, so a layout
+  // held from the last click would be hit boxes belonging to the items that were there then.
+  if (inTrial && arena === null) {
+    satchel.layout(pack, width, height, (text) => context.measureText(text).width);
+    if (cursor !== null) satchel.hover(cursor.x, cursor.y);
+  } else if (satchel.isOpen) {
+    satchel.hide();
+  }
 
+  const overSatchel =
+    inTrial && arena === null && cursor !== null && satchel.covers(cursor.x, cursor.y);
   const wantsClicks =
-    grabbed || overBody || overBubble || menu.isOpen || draft.isOpen || pause.isOpen;
+    grabbed || overBody || overBubble || menu.isOpen || draft.isOpen || pause.isOpen || overSatchel;
 
   // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is
@@ -1543,23 +1593,19 @@ function frame(now: number): void {
 
   // Where the mark is this frame, or null. Read once: it decides both what is painted and what
   // is cleared, and those two disagreeing is a smear left on the desktop.
-  const ghostAt = chasing && cursor !== null ? cursor : null;
 
   // Repaint just what moved.
-  const painted = unionRect(
+  let painted = unionRect(
     slime.bounds(),
     unionRect(
       unionRect(
         unionRect(unionRect(glyphs.bounds(), motes.bounds()), volley.bounds()),
         inTrial
           ? unionRect(
-              unionRect(
-                arena !== null
-                  ? unionRect(arena.dummies.bounds(), arena.dummies.readoutBounds(width))
-                  : trial.bounds(),
-                attacks.bounds(),
-              ),
-              ghostAt ? slime.ghostBounds(ghostAt.x, ghostAt.y) : null,
+              arena !== null
+                ? unionRect(arena.dummies.bounds(), arena.dummies.readoutBounds(width))
+                : trial.bounds(),
+              attacks.bounds(),
             )
           : null,
       ),
@@ -1572,6 +1618,10 @@ function frame(now: number): void {
       ),
     ),
   );
+  // The 行囊 washes nothing, so unlike every other panel it does not get a full repaint — which
+  // means its own rect has to be in here or the chips would be painted into a region nobody
+  // clears, and a row that changes would smear over the row that was there.
+  if (inTrial && arena === null) painted = unionRect(painted, satchel.bounds());
   // Two regions, not their union: what has to be erased (last frame) and what has to be drawn
   // (this frame). Unioning them is only cheaper when they overlap. Once the slime is moving faster
   // than its own width per frame — which a throw does immediately — the union is mostly empty
@@ -1658,10 +1708,6 @@ function frame(now: number): void {
       if (arena !== null) arena.dummies.draw(context);
       else trial.draw(context);
     }
-    // Under the 邪气 and under the body: it is a mark on the ground, and anything that draws
-    // over it is a thing in the world. Over the attacks would make it look like a target being
-    // fired at rather than a place being walked to.
-    if (ghostAt) slime.drawGhost(context, ghostAt.x, ghostAt.y);
     motes.draw(context, slime.bodyColour);
     glyphs.draw(context, slime.bodyColour);
     if (inTrial) {
@@ -1686,6 +1732,7 @@ function frame(now: number): void {
       paintSlime(context, 0);
     }
     volley.draw(context, slime.bodyColour);
+    if (inTrial && arena === null) satchel.draw(context, pack);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     menu.draw(context);
     draft.draw(context, width, height);
@@ -1697,6 +1744,54 @@ function frame(now: number): void {
   requestClicks(wantsClicks, grabbed, now);
 
   requestAnimationFrame(frame);
+}
+
+/**
+ * WASD, for the length of a run.
+ *
+ * ## Why the overlay takes focus
+ *
+ * `lib.rs` says the overlay is "deliberately never focused", and that is still right for a pet
+ * sitting on your desktop. It is not right for ninety seconds of a game you just chose to start,
+ * and the two alternatives are both worse:
+ *
+ * - **A global shortcut per key.** A registration is swallowed system-wide — that is exactly why
+ *   Esc is only held for the length of a run. Swallowing W, A, S and D everywhere for ninety
+ *   seconds would break typing in every other application on the machine.
+ * - **The Raw Input hook `gather` already owns.** It reads the keyboard whatever has focus, so it
+ *   would work — and it must not be used for this. That hook hands over about **one key every
+ *   five seconds, drawn at random and out of order**, and that sampling is not an implementation
+ *   detail, it is the whole defence that stops a password crossing the desktop. Steering needs
+ *   every press and release of four specific keys, which is the opposite shape. It would also
+ *   mean 静修 — which turns that hook off at the OS level — silently broke the controls.
+ *
+ * So the window takes focus when a run starts and gives it up when the run ends. Keys reach it
+ * the ordinary way, through the DOM, and nothing reads the keyboard while another window is in
+ * front.
+ */
+function wireKeys(): void {
+  window.addEventListener('keydown', (event) => {
+    // The survivor run only. `inTrial` is also true in the 演武场, where the body is dragged
+    // rather than walked, and swallowing keys for a mode that does nothing with them would be
+    // taking something for nothing.
+    if (!inTrial || arena !== null || !steers(event.code)) return;
+    // Swallowed, so the arrow keys do not also scroll the webview under the fight.
+    event.preventDefault();
+    steering.press(event.code);
+  });
+  window.addEventListener('keyup', (event) => {
+    if (!steers(event.code)) return;
+    event.preventDefault();
+    steering.release(event.code);
+  });
+  // **Every way out drops everything.** A keyup that never arrives is a key held forever: alt-tab
+  // away mid-run with D down and the body runs east until the clock stops, and the player — now
+  // in another window — has no way to stop it. The overlay is click-through, so clicking anything
+  // at all takes focus off it; this is the ordinary path, not a corner case.
+  window.addEventListener('blur', () => steering.clear());
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) steering.clear();
+  });
 }
 
 function wirePointer(): void {
@@ -1861,6 +1956,17 @@ function wirePointer(): void {
         if (card) takeCard(card);
         paw.ping(event.clientX, event.clientY);
         return;
+      }
+      // After the two that stop the clock, before the menu and the body. The 行囊 does not pause
+      // anything, so it has no claim on a click that one of those wanted — but it does sit over
+      // the bottom of the screen, and a click that landed on it must not also poke the pet.
+      if (inTrial && arena === null) {
+        const act = satchel.click(event.clientX, event.clientY);
+        if (act) {
+          doSatchel(act);
+          paw.ping(event.clientX, event.clientY);
+          return;
+        }
       }
       if (menu.isOpen) {
         const picked = menu.click(event.clientX, event.clientY);
@@ -2067,6 +2173,7 @@ async function main(): Promise<void> {
   // whole point of this window is that something is visible on it; if a later await rejects, the
   // slime should still be there, just less aware of its surroundings.
   wirePointer();
+  wireKeys();
   requestAnimationFrame(frame);
 
   // Asked once, and not awaited before the loop starts: holding the slime still for two seconds is

@@ -143,6 +143,13 @@ export const ja: Dictionary = {
     triadWith: '三合 · {triad}',
   },
 
+  satchel: {
+    title: '行嚢',
+    worn: '装備',
+    stash: '控え',
+    fuse: '合成',
+  },
+
   trial: {
     pauseTitle: '手を止めた',
     pauseNote: 'ここで去れば、この一戦は無かったことになる。',

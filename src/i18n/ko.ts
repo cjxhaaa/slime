@@ -142,6 +142,13 @@ export const ko: Dictionary = {
     triadWith: '삼합 · {triad}',
   },
 
+  satchel: {
+    title: '행낭',
+    worn: '장비',
+    stash: '여분',
+    fuse: '합성',
+  },
+
   trial: {
     pauseTitle: '멈춤',
     pauseNote: '지금 나가면 이번 판은 셈에 들지 않는다.',

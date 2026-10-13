@@ -155,6 +155,13 @@ export const en: Dictionary = {
     triadWith: 'Triad · {triad}',
   },
 
+  satchel: {
+    title: 'Satchel',
+    worn: 'Worn',
+    stash: 'Spare',
+    fuse: 'Fuse',
+  },
+
   trial: {
     pauseTitle: 'Stopped',
     pauseNote: 'Leave now and this run does not count.',
