@@ -152,6 +152,9 @@ export const ja: Dictionary = {
     arena: '演武終われり\n的中 {kills} · 修為は増えず',
     nourishing: '温養中 · 残り {minutes} 分',
     charmCount: '符籙 {count} 枚',
+    yardOutput: '手数',
+    yardRate: '毎秒 {rate}',
+    yardTotal: '計 {hits} · {seconds} 秒',
   },
 
   settings: {

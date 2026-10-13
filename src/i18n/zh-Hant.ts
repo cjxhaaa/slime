@@ -147,6 +147,9 @@ export const zhHant: Dictionary = {
     arena: '演武已畢\n中樁 {kills} · 修為無增',
     nourishing: '溫養中 · 還餘 {minutes} 分鐘',
     charmCount: '符籙 {count} 張',
+    yardOutput: '輸出',
+    yardRate: '{rate} 次/秒',
+    yardTotal: '共 {hits} 次 · {seconds} 秒',
   },
 
   settings: {

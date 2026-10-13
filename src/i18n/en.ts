@@ -164,6 +164,9 @@ export const en: Dictionary = {
     arena: 'Practice over\n{kills} posts struck · progress unchanged',
     nourishing: 'Nourishing · {minutes} min left',
     charmCount: 'Charms · {count}',
+    yardOutput: 'Output',
+    yardRate: '{rate} hits/s',
+    yardTotal: '{hits} hits · {seconds}s',
   },
 
   settings: {

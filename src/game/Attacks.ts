@@ -173,9 +173,9 @@ const BurnSeconds = 1.6;
 const QuakeWay = 92;
 
 /** 刀: how fast a 刀气 travels along the ground, and how wide its cut is. */
-const SlashSpeed = 540;
+export const SlashSpeed = 540;
 const SlashSeconds = 0.44;
-const SlashWidth = 46;
+export const SlashWidth = 46;
 /** How far apart the blades of one swing are fanned, in radians. */
 const SlashFan = 0.34;
 
@@ -298,6 +298,13 @@ const ShellShove = 620;
 const ShellReach = 150;
 /** How close a thing has to be to count as touched by a persistent effect. */
 const Touch = 22;
+/**
+ * How far from a 罡气 node something is still cut.
+ *
+ * Exported because the 演武场 depends on it: the posts stand on an arc whose distance has to put
+ * them inside the orbit plus this, or 盾 is the one weapon the bench cannot measure at all.
+ */
+export const GuardBite = Touch + 8;
 
 /**
  * 共鸣 — the pet answering, on its own body, when a pairing fires.
@@ -1002,7 +1009,7 @@ export class Attacks {
         e.angle = at;
         e.x = this.bodyX + Math.cos(at) * e.reach;
         e.y = this.bodyY + Math.sin(at) * e.reach;
-        if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch + 8, 1) > 0) {
+        if (e.cool <= 0 && battlefield.cull(e.x, e.y, GuardBite, 1) > 0) {
           e.cool = GuardCool;
           this.land(e.x, e.y, battlefield, at + Math.PI / 2);
           this.spark(e.x, e.y, 4, '盾', 180, at + Math.PI / 2, 1.5);

@@ -151,6 +151,9 @@ export const ko: Dictionary = {
     arena: '연무를 마쳤다\n명중 {kills} · 공력은 늘지 않았다',
     nourishing: '온양 중 · {minutes}분 남음',
     charmCount: '부적 {count}장',
+    yardOutput: '타수',
+    yardRate: '초당 {rate}',
+    yardTotal: '합 {hits} · {seconds}초',
   },
 
   settings: {

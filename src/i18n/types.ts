@@ -159,6 +159,12 @@ export interface Dictionary {
     /** The two-line breakthrough and failure lines. */
     nourishing: string;
     charmCount: string;
+    /** The practice yard's live output readout. */
+    yardOutput: string;
+    /** `{rate}` hits a second, averaged over the last few. */
+    yardRate: string;
+    /** `{hits}` landed in `{seconds}` of standing there. */
+    yardTotal: string;
   };
 
   settings: {

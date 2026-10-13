@@ -67,7 +67,16 @@ import {
 } from './Trial.js';
 import { Attacks } from './Attacks.js';
 import type { Battlefield } from './Attacks.js';
-import { PillarShove, QuakeTell } from './Attacks.js';
+import { GuardBite, PillarShove, QuakeTell, SlashSpeed, SlashWidth } from './Attacks.js';
+import {
+  Dummies,
+  NumbSeconds,
+  PostCount,
+  PostRadius,
+  Range as YardRange,
+  RateWindow,
+  Spread as YardSpread,
+} from './Dummies.js';
 import { Depth } from './depth.js';
 import { Arsenal, CardsPerOffer, MaxShields, Opening } from './Arsenal.js';
 import {
@@ -79,6 +88,7 @@ import {
   type Way,
   Ways,
   type Weapon,
+  span,
   swing,
 } from './kit.js';
 import { BurnBeat } from './Trial.js';
@@ -1207,6 +1217,98 @@ Math.random = wildRandom;
 
 
 // ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// 演武场. A bench, and whether the number on it means anything.
+//
+// The yard had no assertions at all until now, which is how it kept a `centre()` that averaged the
+// posts' own positions — exact for closed rings around the body, and most of the way out to the
+// arc itself for an arc.
+
+{
+  const yard = new Dummies();
+  yard.place(500, 400);
+  check('four posts', yard.count, PostCount);
+
+  // **All at the same distance.** The bench compares one build against another, so no part of the
+  // answer may be about which post happened to be nearer.
+  let nearest = Infinity;
+  let furthest = 0;
+  let behind = 0;
+  for (const post of yard.targets()) {
+    const away = Math.hypot(post.x - 500, post.y - 400);
+    nearest = Math.min(nearest, away);
+    furthest = Math.max(furthest, away);
+    if (post.y <= 400) behind++;
+  }
+  check('all of them exactly the same distance out', furthest - nearest, 0, 1e-9);
+  check('at the range the arc is drawn at', nearest, YardRange, 1e-9);
+  check('and every one of them in front of the body', behind, 0);
+  checkTrue('spread wide enough to be four targets rather than one', YardSpread > 1);
+
+  // **Every weapon can engage them**, which is the whole reason the range is the number it is. 盾
+  // is the binding one by a long way: its 罡气 orbits at `span` and never touches anything outside
+  // that orbit plus a node's own bite.
+  const offOrbit = Math.abs(YardRange - span('盾', 1));
+  checkTrue(
+    `盾 reaches the arc at the first level (${offOrbit.toFixed(0)}px off an orbit of ${span('盾', 1).toFixed(0)}, against a bite of ${GuardBite + PostRadius})`,
+    offOrbit <= GuardBite + PostRadius,
+  );
+  checkTrue(`刀 reaches it (${span('刀', 1)} against ${YardRange})`, span('刀', 1) >= YardRange);
+  // And the inner ring this replaced did not, which is what makes the line above a fix rather than
+  // a number that happens to work.
+  checkTrue(
+    'where the 150px ring it replaced was outside 盾 entirely',
+    Math.abs(150 - span('盾', 1)) > GuardBite + PostRadius,
+  );
+
+  // **One pass counts once.** A 刀气 is within cutting distance of a post for this long and has no
+  // cooldown of its own — only `bite`. If a struck post took hits again before the slash had gone
+  // by, one cut would be counted three times and the bench would report triple.
+  const brush = ((SlashWidth / 2 + PostRadius) * 2) / SlashSpeed;
+  checkTrue(
+    `a post stays numb longer than a 刀气 takes to cross it (${NumbSeconds}s against ${brush.toFixed(3)}s)`,
+    NumbSeconds > brush,
+  );
+
+  // **And the ceiling is above anything a build does.** Four posts that each refuse hits for
+  // `NumbSeconds` cannot report more than this however hard they are hit, which is why the readout
+  // says when it is sitting on it.
+  const ceiling = PostCount / NumbSeconds;
+  checkTrue(`the bench can show at least 20 hits a second (${ceiling})`, ceiling >= 20);
+}
+
+{
+  // The rate is over a window, not over the lifetime. A lifetime average keeps sinking while you
+  // stand still reading it and barely moves when you swap a weapon, which is the opposite of what
+  // a bench is for.
+  const bench = new Dummies();
+  bench.place(0, 0);
+  for (let i = 0; i < 40; i++) {
+    const post = bench.targets()[i % PostCount];
+    bench.cull(post.x, post.y, 4, 1);
+    bench.update(NumbSeconds + 1e-6);
+  }
+  checkTrue(`a bench being hit reads a rate (${bench.rate.toFixed(1)}/s)`, bench.rate > 0);
+  for (let i = 0; i < 100; i++) bench.update(RateWindow / 20);
+  check('and falls to zero once nothing is landing', bench.rate, 0);
+}
+
+{
+  // Numb means it stops taking hits, not that it stops being a target: 剑 and 符 both steer at the
+  // nearest one, and a post that blinked out of the list on every hit would send a 飞剑 wandering
+  // between flurries — which is not what it does to a 邪气.
+  const marked = new Dummies();
+  marked.place(0, 0);
+  const first = marked.targets()[0];
+  check('a hit lands', marked.cull(first.x, first.y, 4, 1), 1);
+  check('and the same blow does not land twice', marked.cull(first.x, first.y, 4, 1), 0);
+  checkTrue(
+    'but it is still standing there to be aimed at',
+    marked.closest(first.x, first.y, 10) !== null,
+  );
+  check('and still in the target list', marked.targets().length, PostCount);
+}
+
 // 语言. Five dictionaries, and the ways a translation goes wrong quietly.
 //
 // TypeScript already forces the fixed-shape parts — `realms`, `schools`, `evolutions`, `breeds`

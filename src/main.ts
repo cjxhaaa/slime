@@ -89,8 +89,9 @@ let killsSeen = 0;
  * for something to walk into range, losing what you were watching when it died, and being thrown
  * out after a minute and a half. A preview should not have an opponent.
  *
- * So it is `Dummies` now: posts that stand still in three rings and get back up a moment after
- * they go down. Nothing arrives, nothing attacks, and **it does not end** until you say so.
+ * So it is `Dummies` now: four posts that stand still in an arc in front of the pet, with a live
+ * output rate along the top. Nothing arrives, nothing attacks, and **it does not end** until you
+ * say so.
  *
  * It still pays nothing and writes nothing, which is what makes it safe in the release build
  * rather than behind a dev flag. The hooks this app shipped by accident once were dangerous
@@ -1549,7 +1550,9 @@ function frame(now: number): void {
         inTrial
           ? unionRect(
               unionRect(
-                arena !== null ? arena.dummies.bounds() : trial.bounds(),
+                arena !== null
+                  ? unionRect(arena.dummies.bounds(), arena.dummies.readoutBounds(width))
+                  : trial.bounds(),
                 attacks.bounds(),
               ),
               ghostAt ? slime.ghostBounds(ghostAt.x, ghostAt.y) : null,
@@ -1672,6 +1675,9 @@ function frame(now: number): void {
       depth.add(slime.y, paintSlime, 0);
       depth.paint(context);
       attacks.draw(context);
+      // Last, and in screen space: it is an instrument reading the yard, not a thing standing in
+      // it. See `Dummies.drawReadout`.
+      if (arena !== null) arena.dummies.drawReadout(context, width);
     } else {
       paintSlime(context, 0);
     }

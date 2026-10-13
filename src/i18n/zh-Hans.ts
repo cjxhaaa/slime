@@ -139,6 +139,9 @@ export const zhHans: Dictionary = {
     arena: '演武已毕\n中桩 {kills} · 修为无增',
     nourishing: '温养中 · 还余 {minutes} 分钟',
     charmCount: '符箓 {count} 张',
+    yardOutput: '输出',
+    yardRate: '{rate} 次/秒',
+    yardTotal: '共 {hits} 次 · {seconds} 秒',
   },
 
   settings: {
