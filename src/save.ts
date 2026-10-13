@@ -54,6 +54,14 @@ export interface SaveState {
    * another language and this one alone stays behind.
    */
   locale: string | null;
+  /**
+   * 关卡: the level the next 历练 is fought at, 1 to 99.
+   *
+   * The furthest reached, which is always one not yet beaten. A second line of progress beside the
+   * realm, on purpose — see TOWER.md §2 for the cost of that. Absent in every save from before the
+   * tower, and absent means the bottom of it.
+   */
+  tower: { level: number };
 }
 
 /**
@@ -112,6 +120,7 @@ export async function loadSave(): Promise<SaveState | null> {
       quiet?: unknown;
       lieLow?: unknown;
       locale?: unknown;
+      tower?: { level?: unknown };
     };
     // A file from a future version is not something this build can reason about, and guessing at
     // it is how a save gets quietly mangled. Starting fresh is bad; corrupting is worse.
@@ -153,6 +162,7 @@ export async function loadSave(): Promise<SaveState | null> {
       // Absent in every save written before there was a language menu, which is the common case
       // and not an error: null means "follow the system", and that is the right default for them.
       locale: typeof parsed.locale === 'string' ? parsed.locale : null,
+      tower: { level: Math.max(1, Math.floor(numberOr(parsed.tower?.level, 1))) },
     };
   } catch {
     return null;

@@ -16,6 +16,8 @@ import { Motes, StageSpread } from './game/Motes';
 import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
+import { TopLevel, clampLevel } from './game/levels';
+import { drawWaveRow, waveRowBounds } from './ui/WaveRow';
 import { type Armed, Arsenal, type Walked } from './game/Arsenal';
 import { Pack } from './game/Pack';
 import { Ways } from './game/kit';
@@ -714,6 +716,17 @@ const TrialBubbleMs = 7_000;
 /** Where the pet was standing before the trial, so leaving puts it back rather than in the middle. */
 let trialReturn: { x: number; y: number } | null = null;
 
+/**
+ * 关卡 — the level the next 历练 is fought at.
+ *
+ * The furthest the pet has reached rather than the highest it has cleared, so it is always a level
+ * that has not been beaten yet. Losing does not move it: TOWER.md §9 settled on "try it again, no
+ * penalty", for the same reason the trial costs nothing — a desk pet does not get to take progress
+ * away because a fight went badly. Kept across rebirths too; the tower is a line of its own beside
+ * the realm, and a rebirth is a realm event.
+ */
+let towerLevel = 1;
+
 function trialUnlocked(): boolean {
   return cultivation.realm >= 1;
 }
@@ -727,7 +740,7 @@ function enterTrial(width: number, height: number): void {
   trialReturn = { x: slime.x, y: slime.y };
   slime.planar = true;
   slime.centreIn(width, height);
-  trial.start(cultivation.realm);
+  trial.start(towerLevel);
   // Esc is borrowed for the length of the run and handed straight back by `leaveTrial`. It is a
   // system-wide registration — see `watch_escape` in lib.rs for why it is not the keyboard hook,
   // and why it is not held permanently.
@@ -738,7 +751,7 @@ function enterTrial(width: number, height: number): void {
   bubble.hide();
   slime.clearAlert();
   // Four cards before the first 邪气 arrives. A survivors run normally earns its build over
-  // twenty minutes; this one lasts ninety seconds, so the ramp everybody means when they say the
+  // twenty minutes; a level lasts about two, so the ramp everybody means when they say the
   // early game drags is simply not affordable — you start with a whole build on the screen.
   offerDraft();
   fullRepaint = true;
@@ -834,18 +847,22 @@ function settleTrial(): void {
     cultivation.bestow(earned);
     applyLook();
   }
-  if (trial.outcome === 'survived') {
+  if (trial.outcome === 'cleared') {
+    // `trialSurvived` is the id this feat had when a run ended on a clock. Ids are never renamed
+    // (see `SaveState.feats`), and clearing a level is what surviving one became.
     achieve('trialSurvived');
     // Untouched. `integrity` is 1 only while nothing has landed at all, so this is exactly the run
     // where the body was never reached rather than one that merely ended healthy.
     if (trial.integrity >= 1) achieve('trialUnhurt');
+    // Only ever forward, and only from the level that was actually fought.
+    towerLevel = Math.max(towerLevel, Math.min(TopLevel, trial.level + 1));
   }
   if (trial.killCount >= SlayerKills) achieve('trialSlayer');
   trialUntil = performance.now() + TrialBubbleMs;
   trialSaid =
-    trial.outcome === 'survived'
-      ? fill(words().trial.survived, { kills: trial.killCount })
-      : fill(words().trial.overwhelmed, { kills: trial.killCount });
+    trial.outcome === 'cleared'
+      ? fill(words().trial.cleared, { level: trial.level, kills: trial.killCount })
+      : fill(words().trial.overwhelmed, { level: trial.level, wave: trial.wave + 1, kills: trial.killCount });
   leaveTrial();
   requestSave(currentSave());
 }
@@ -989,6 +1006,7 @@ function currentSave(): SaveState {
     lieLow,
     feats: feats.snapshot(),
     locale: chosenLocale,
+    tower: { level: towerLevel },
   };
 }
 
@@ -1562,7 +1580,7 @@ function frame(now: number): void {
           ? unionRect(
               arena !== null
                 ? unionRect(arena.dummies.bounds(), arena.dummies.readoutBounds(width))
-                : trial.bounds(),
+                : unionRect(trial.bounds(), waveRowBounds(width)),
               attacks.bounds(),
             )
           : null,
@@ -1682,6 +1700,7 @@ function frame(now: number): void {
       // Last, and in screen space: it is an instrument reading the yard, not a thing standing in
       // it. See `Dummies.drawReadout`.
       if (arena !== null) arena.dummies.drawReadout(context, width);
+      else drawWaveRow(context, width, trial.wave, trial.waveProgress);
     } else {
       paintSlime(context, 0);
     }
@@ -1948,6 +1967,7 @@ async function main(): Promise<void> {
         quiet = saved.quiet;
         lieLow = saved.lieLow;
         feats.restore(saved.feats);
+        towerLevel = clampLevel(saved.tower.level);
         // Rust starts out listening, so a save that says otherwise has to say so out loud.
         if (quiet) void invoke('set_quiet', { quiet: true }).catch(() => {});
         // Told every time rather than only when false. Rust starts this on, so saying so when it is
@@ -2126,6 +2146,14 @@ async function main(): Promise<void> {
 
     // The ordeal, without four days of climbing first.
     debugHooks.__ascend = () => slime.ascend();
+    // Straight into a level, any level, without climbing to it. For looking at what the curves in
+    // `levels.ts` actually put on the screen — the checks can say a level is harder, not how it looks.
+    debugHooks.__trial = (level = towerLevel) => {
+      if (inTrial) leaveTrial();
+      towerLevel = clampLevel(level);
+      if (!trialUnlocked()) cultivation.realm = 1;
+      enterTrial(canvas.width, canvas.height);
+    };
     // The charm hoard, for checking the odds and the failure without typing for an hour first.
     debugHooks.__charms = (held?: number) => {
       if (held !== undefined) {

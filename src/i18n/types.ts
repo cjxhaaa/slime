@@ -163,8 +163,11 @@ export interface Dictionary {
     pauseNote: string;
     pauseResume: string;
     pauseLeave: string;
-    /** `{kills}` is substituted in all three. */
-    survived: string;
+    /**
+     * `{kills}` is substituted in all three. `cleared` also takes `{level}`; `overwhelmed` takes
+     * `{level}` and the `{wave}` it fell on, counted from 1.
+     */
+    cleared: string;
     overwhelmed: string;
     arena: string;
     /** The two-line breakthrough and failure lines. */

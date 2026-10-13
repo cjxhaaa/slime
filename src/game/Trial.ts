@@ -1,46 +1,39 @@
 /**
- * 历练 — the survivors run, and what makes each realm feel different to play.
+ * 历练 — a level of the tower: ten waves, and a boss at the end of them.
  *
- * 邪气 drift in from the edges of the desktop toward the slime. What the slime does about them is
- * whatever it drafted — see `schools.ts` for the nine, and `Attacks.ts` for them running. You steer
- * by pointing: the body hops toward the cursor, and a mark shows where it is headed. See
- * `pursuit.ts`, which also records why this replaced steering by drag — a drag has to hold the
- * click lease, so the old scheme made the desktop unclickable for the whole run. Ninety seconds,
- * then it is over.
+ * 邪气 come in from the edges of the desktop toward the slime, which holds the middle and does not
+ * move. What it does about them is whatever it is carrying — see `kit.ts` for the five weapons and
+ * ten ways, and `Attacks.ts` for them running. They come in waves (`Waves.ts`), and the level ends
+ * one of two ways: the boss of wave ten falls, or the body does.
  *
- * **It costs nothing but time.** No charms — those are realm insurance now, and a play mode that
+ * **It costs nothing but time.** No charms — those are realm insurance, and a play mode that
  * quietly eats your 渡劫 odds is the same trap the automatic stages and the 御符 throw each set
- * once. Failing loses nothing either; you simply do not collect. A desk pet does not get to take
- * your progress because a fight went badly.
+ * once. Failing loses nothing either; you simply collect less, and the level is there to try again.
+ * A desk pet does not get to take your progress because a fight went badly.
  *
- * What it pays is time survived rather than kills — see `harvest`, which is where that reason
- * lives.
+ * What it pays is how far you got rather than how much you killed — see `harvest`, which is where
+ * that reason lives.
  *
- * ## Why the realms play differently
+ * ## The level sets the door, not the realm
  *
- * The obvious way to scale a fight by realm is to make the player stronger, and it is wrong on its
- * own: 大乘 would be 筑基 with the difficulty turned off, which is not a different experience, it
- * is the same experience without the interesting part.
- *
- * So **both sides scale hard, and the door stays a little ahead of the hand at every realm.** 筑基
- * is a handful of things closing in slowly. 大乘 is six hundred arrivals at twice the speed.
- * Neither can be won by standing still, and nothing else about them is alike.
- *
- * What changed when the schools arrived: the hand is no longer one number this file owns, it is a
- * drafted build that gets stronger over the run. So the door is not tuned against a column here
- * any more — it is tuned against a **whole run driven frame by frame in the checks**, with a real
- * build fighting it, and the thing being asserted is that standing still still loses. That is a
- * better guard than any arithmetic I could do on two columns, and it is the third time this
- * particular guard has had to be rebuilt.
+ * The door — how much arrives, how tough it is, how fast it closes — is read off the level
+ * (`levels.ts`), 1 to 99. It used to be read off the realm, seven rows, and the guard that kept it
+ * honest was rebuilt three times before it settled where it still is: **not in a column, but in a
+ * whole level fought frame by frame in the checks**, with a real build in it, asserting that a
+ * build nobody deepens does not get through.
  */
 import { clear } from '../slime/colour.js';
 import type { Depth, Painter } from './depth.js';
+import { clampLevel, menaceSpeed, schedule, toughness, vitality } from './levels.js';
 import {
   BY_KIND,
   DartRushSeconds,
   DartWindSeconds,
   type Kind,
+  RANKS,
+  type Rank,
   RootPulseReach,
+  RootPlantReach,
   RootPulseSeconds,
   RootTellSeconds,
   RootTravelSeconds,
@@ -49,10 +42,9 @@ import {
   WeaveSeconds,
   pacing,
   rollBreed,
+  rollChampion,
 } from './menaces.js';
-
-/** How long a run lasts, in seconds. */
-export const RunSeconds = 90;
+import { type Arrival, Waves } from './Waves.js';
 
 /** 燎火: seconds between one tick of burning and the next. */
 export const BurnBeat = 0.45;
@@ -66,94 +58,6 @@ export const BurnBeat = 0.45;
  */
 export const FlingTau = 0.26;
 
-/** 筑基 is realm 1, and the trial is gated there. This maps a realm onto 0 (筑基) through 6 (大乘). */
-export function rung(realm: number): number {
-  return Math.max(0, Math.min(6, realm - 1));
-}
-
-/**
- * The door: how much arrives, how fast it closes, and how much the body can take.
- *
- * One row per rung, and **only the door.** It had two more columns once — talismans per volley and
- * seconds between them — because the pet's whole offence used to be one number this file owned.
- * It is a drafted build now (`schools.ts`), so there is nothing here to compare against and the
- * comparison moved to where it can actually be made: a whole run, fought frame by frame in the
- * checks, with a real build in it.
- *
- * | rung | realm | arrivals/s | over a run | opens at | ends at | speed | vitality |
- * |---|---|---|---|---|---|---|---|
- * | 0 | 筑基 | 7.0 | 629 | 4.0/s | 26.8/s | 52 | 5 |
- * | 1 | 金丹 | 7.6 | 682 | 4.4/s | 29.2/s | 61 | 6.2 |
- * | 2 | 元婴 | 8.2 | 738 | 4.7/s | 31.4/s | 70 | 7.4 |
- * | 3 | 化神 | 8.8 | 793 | 5.1/s | 33.8/s | 79 | 8.6 |
- * | 4 | 煉虚 | 9.6 | 865 | 5.5/s | 36.8/s | 88 | 9.8 |
- * | 5 | 合体 | 10.4 | 938 | 6.0/s | 39.8/s | 97 | 11 |
- * | 6 | 大乘 | 11.5 | 1034 | 6.6/s | 44.1/s | 106 | 12.2 |
- *
- * The spread across the ladder is much narrower than the 115-to-1034 it used to be, and that is
- * not the ladder going soft: what a realm mostly buys you in here now is **exchanges** — nine over
- * a 筑基 run against twelve at 大乘 — so the difference moved into the build. The arrival column
- * only has to keep up with what a build of that depth can kill.
- *
- * ## Three versions of this table were wrong, and the fourth one is not a number
- *
- * The first two set the player's side ahead of the door (a ratio of 2.9, then 1.16) and argued it
- * from these columns. Both passed their checks while a real run, driven frame by frame, finished at
- * **full health with the body never moving** — because the attacks aim at the nearest 邪气, which is
- * optimal defence, so the moment the fire rate matches the arrival rate nothing crosses the last
- * two hundred pixels and standing still is the best play there is.
- *
- * The third fought a whole run, which at least caught that. Then the schools arrived, four slots
- * turned out to kill five to eight times what one talisman had, and out-scaling *that* with the
- * door needed about two thousand arrivals in ninety seconds, which is not a fight.
- *
- * So the guard is structural instead: **the draft pauses the run**, `through` counts only elapsed
- * seconds, and four cards are owed before the first arrival — an unattended run earns nothing, at
- * any build strength, with nothing tuned for it. These columns are tuned against the case in
- * between, somebody who drafts and then ignores the meter, and what closed that last gap was not a
- * column either: it was giving 邪气 six breeds instead of one (`menaces.ts`).
- */
-interface Rung {
-  /** Seconds between arrivals, at the start of a run and at the end of it. */
-  open: number;
-  close: number;
-  /** Pixels per second the 邪气 close in at. */
-  speed: number;
-  /** How much punishment the body absorbs before the run ends. */
-  vitality: number;
-}
-
-const LADDER: Rung[] = [
-  { open: 0.2484, close: 0.0373, speed: 52, vitality: 5 },
-  { open: 0.2288, close: 0.0343, speed: 61, vitality: 6.2 },
-  { open: 0.2121, close: 0.0318, speed: 70, vitality: 7.4 },
-  { open: 0.1976, close: 0.0296, speed: 79, vitality: 8.6 },
-  { open: 0.1812, close: 0.0272, speed: 88, vitality: 9.8 },
-  { open: 0.1672, close: 0.0251, speed: 97, vitality: 11 },
-  { open: 0.1512, close: 0.0227, speed: 106, vitality: 12.2 },
-];
-
-/** Arrivals a second, averaged across a run. What the door amounts to, for comparing realms. */
-export function arrivalRate(realm: number): number {
-  const { open, close } = LADDER[rung(realm)];
-  return 2 / (open + close);
-}
-
-/** How much punishment the body absorbs before the run ends. */
-export function vitality(realm: number): number {
-  return LADDER[rung(realm)].vitality;
-}
-
-/** Seconds between arrivals, tightening across a run. */
-export function spawnInterval(realm: number, through: number): number {
-  const { open, close } = LADDER[rung(realm)];
-  return open + (close - open) * Math.min(1, Math.max(0, through));
-}
-
-/** How fast 邪气 close in. */
-export function menaceSpeed(realm: number): number {
-  return LADDER[rung(realm)].speed;
-}
 /**
  * What touching the body costs, and how long the body is untouchable afterwards.
  *
@@ -175,8 +79,14 @@ export interface Menace {
   phase: number;
   /** Counts up from 0 as it arrives, so nothing pops into existence at full size. */
   arrival: number;
-  /** Hits left. Only 重煎 and 钉煎 have more than one, and both are drawn visibly bigger. */
+  /**
+   * Hits left. Among commons only 重煎 and 钉煎 start with more than one, and both are drawn
+   * visibly bigger; an elite or a boss is bigger still. Late in the tower `levels.toughness` raises
+   * every one of them.
+   */
   health: number;
+  /** Common, elite or boss. What it is drawn at and how much it takes — see `RANKS`. */
+  rank: Rank;
   /** Seconds this one has been alive, which is what every breed's own clock runs off. */
   age: number;
   /**
@@ -184,8 +94,8 @@ export interface Menace {
    *
    * 奔煎 counts down to its next rush, 缠魂 counts down to cutting in, 钉煎 counts down to its
    * next pulse. Sharing a field rather than giving each breed its own keeps `Menace` a flat record
-   * that a thousand of them can exist as without a second allocation each — there are a thousand
-   * arrivals in a 大乘 run.
+   * that a thousand of them can exist as without a second allocation each — there are close to a
+   * thousand arrivals in a level at the top of the tower.
    */
   timer: number;
   /** Which way 缠魂 is going round, and the heading 奔煎 committed to. */
@@ -203,6 +113,8 @@ export interface Menace {
   flingY: number;
   /** 缠木: seconds it is held where it stands. */
   rootLeft: number;
+  /** 钉煎 has put itself down, and is not going anywhere again. */
+  planted: boolean;
   /** 燎火: seconds it keeps burning, and the clock to its next tick of it. */
   burnLeft: number;
   burnNext: number;
@@ -233,31 +145,53 @@ const UndoSeconds = 0.42;
 /** The most that can be dispersing at once, for the same reason the sparks are capped. */
 const MaxUndoing = 60;
 
-export type Outcome = 'running' | 'survived' | 'overwhelmed';
+/**
+ * How a level stands. There is no third ending: no clock runs out on anybody.
+ */
+export type Outcome = 'running' | 'cleared' | 'overwhelmed';
 
 /**
- * What a run pays, in seconds of the pet working flat out.
+ * What a level is worth, in seconds of the pet working flat out, before the shares below.
  *
- * Paid for **time survived** rather than per kill, and the difference matters more than it looks.
- * A per-kill rate scales with the realm on both terms at once — 大乘 meets more 邪气 *and* shreds
- * them faster — so a run at the top came to twenty-five minutes of work for ninety seconds of play.
- * That quietly makes grinding a minigame the fastest way up a ladder whose whole premise is that it
+ * Ninety because that is what the old run lasted and what its payout was measured in, and nothing
+ * about a level made the scale want to move: a level takes a couple of minutes, so a cleared one
+ * still pays less than the time it took.
+ */
+export const PaySeconds = 90;
+
+/**
+ * What a level pays.
+ *
+ * Paid for **how far you got** rather than per kill, and the difference matters more than it
+ * looks. A per-kill rate scales with difficulty on both terms at once — a higher level sends more
+ * 邪气 *and* the build that can face it shreds them faster — so paying per kill makes the top of the
+ * tower a faster way up the realm ladder than the ladder itself, whose whole premise is that it
  * fills while you get on with something else.
  *
- * Time is bounded by the clock, so this pays the same at every realm and cannot be farmed faster
- * than real time. Kills still decide it — a badly fought run ends early — they simply are not
- * currency. And because the share is paid on progress rather than on arriving, being overwhelmed at
- * eighty seconds pays nearly what surviving does, instead of teaching people that trying and almost
+ * So this takes no level and no realm. Kills still decide it — a badly fought level ends early —
+ * they simply are not currency. And because the share is paid on progress, being overwhelmed at
+ * the boss pays nearly what beating it does, instead of teaching people that trying and almost
  * getting there was worth the same as never starting.
  */
 export const ThroughShare = 0.7;
-/** Paid on top for lasting the whole run, so finishing still means something. */
-export const SurvivalBonus = 0.6;
+/** Paid on top for bringing the boss down, so clearing still means something. */
+export const ClearBonus = 0.6;
 
 export function harvest(through: number, outcome: Outcome): number {
   const share = Math.max(0, Math.min(1, through)) * ThroughShare;
-  return RunSeconds * (share + (outcome === 'survived' ? SurvivalBonus : 0));
+  return PaySeconds * (share + (outcome === 'cleared' ? ClearBonus : 0));
 }
+
+/**
+ * How hard an elite or a boss is thrown back off the body after it lands a hit.
+ *
+ * A common is spent on contact — it touches, it does its damage, it is gone. An elite cannot be:
+ * the boss is the level, and a boss that walked into the body and vanished would end the level by
+ * *losing* it to a graze. So the big ones strike and recoil, about eighty pixels, and walk back in.
+ * What that reads as is a heavy thing slamming into the body and staggering off it, which is what
+ * a boss is supposed to look like.
+ */
+export const Recoil = 300;
 
 export interface Rect {
   x: number;
@@ -269,34 +203,52 @@ export interface Rect {
 export class Trial {
   private menaces: Menace[] = [];
   private undoing: Undoing[] = [];
-  private nextSpawn = 0;
-  private elapsed = 0;
+  private readonly waves = new Waves();
   private hurt = 0;
   private grace = 0;
   private kills = 0;
-  private realm = 1;
+  private stage = 1;
   outcome: Outcome = 'running';
 
-  start(realm: number): void {
+  start(level: number): void {
     this.menaces = [];
     this.undoing = [];
-    this.realm = realm;
-    this.elapsed = 0;
+    this.stage = clampLevel(level);
     this.hurt = 0;
     this.grace = 0;
     this.kills = 0;
     this.outcome = 'running';
-    // A beat of quiet before the first arrival, so entering the mode is not also being attacked.
-    this.nextSpawn = 1.2;
+    this.waves.start(this.stage);
   }
 
+  /** The level being fought. */
+  get level(): number {
+    return this.stage;
+  }
+
+  /** The wave in progress, counting from 0. */
+  get wave(): number {
+    return this.waves.wave;
+  }
+
+  /** How much of the wave in progress is gone, 0 to just under 1. */
+  get waveProgress(): number {
+    return this.waves.progress;
+  }
+
+  /**
+   * How far through the level, 0 to 1: `(waves cleared + this wave's progress) / 10`.
+   *
+   * Exactly 1 only once the boss is down. `Waves` stops just short of it on its own, so a level
+   * lost with the boss on its last hit is paid as nearly there rather than as there.
+   */
   get through(): number {
-    return Math.min(1, this.elapsed / RunSeconds);
+    return this.outcome === 'cleared' ? 1 : this.waves.through;
   }
 
-  /** 1 when untouched, 0 when the run is over. What the body's condition is drawn from. */
+  /** 1 when untouched, 0 when the level is lost. What the body's condition is drawn from. */
   get integrity(): number {
-    return Math.max(0, 1 - this.hurt / vitality(this.realm));
+    return Math.max(0, 1 - this.hurt / vitality(this.stage));
   }
 
   get killCount(): number {
@@ -307,7 +259,7 @@ export class Trial {
    * Gives back some 护体, for the card that does that.
    *
    * Clamped at whole, because a run cannot end up *better* defended than it started — the card is
-   * a way out of a bad patch, not a way to bank a bigger pool than the realm allows.
+   * a way out of a bad patch, not a way to bank a bigger pool than the level allows.
    */
   mend(points: number): void {
     this.hurt = Math.max(0, this.hurt - points);
@@ -370,13 +322,17 @@ export class Trial {
       const dx = m.x - x;
       const dy = m.y - y;
       const away = Math.hypot(dx, dy);
-      if (away > radius) continue;
+      if (away > radius + bulk(m)) continue;
       // Straight up out of the ground at the exact centre: a divide by zero would be a NaN
       // position, and one NaN 邪气 takes the whole fight with it.
       const angle = away < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
       // Hardest at the pillar, tailing off to nothing at the rim, so the edge of a blast nudges
       // rather than launching — and the shape of the ring is readable from how far things went.
-      const bite = 1 - (away / radius) * 0.65;
+      // Divided by the area it is drawn at, so a boss staggers where a common flies. Without this a
+      // boss — whose girth puts it inside every pillar of an eruption at once — was thrown fifteen
+      // hundred pixels off the screen and spent half a minute walking back, and a level-10 boss
+      // that should take twenty seconds took four minutes.
+      const bite = (1 - (Math.min(away, radius) / radius) * 0.65) / RANKS[m.rank].size ** 2;
       m.flingX += Math.cos(angle) * speed * bite;
       m.flingY += Math.sin(angle) * speed * bite;
     }
@@ -392,7 +348,7 @@ export class Trial {
    */
   root(x: number, y: number, radius: number, seconds: number): void {
     for (const m of this.menaces) {
-      if (Math.hypot(m.x - x, m.y - y) > radius) continue;
+      if (Math.hypot(m.x - x, m.y - y) > radius + bulk(m)) continue;
       m.rootLeft = Math.max(m.rootLeft, seconds);
     }
   }
@@ -400,7 +356,7 @@ export class Trial {
   /** 燎火. Alight for a while, and it travels with them. */
   burn(x: number, y: number, radius: number, seconds: number): void {
     for (const m of this.menaces) {
-      if (Math.hypot(m.x - x, m.y - y) > radius) continue;
+      if (Math.hypot(m.x - x, m.y - y) > radius + bulk(m)) continue;
       if (m.burnLeft <= 0) m.burnNext = BurnBeat;
       m.burnLeft = Math.max(m.burnLeft, seconds);
     }
@@ -410,8 +366,9 @@ export class Trial {
     if (most <= 0) return 0;
     const inside: { index: number; away: number }[] = [];
     for (let i = 0; i < this.menaces.length; i++) {
-      const away = Math.hypot(this.menaces[i].x - x, this.menaces[i].y - y);
-      if (away <= radius) inside.push({ index: i, away });
+      const m = this.menaces[i];
+      const away = Math.hypot(m.x - x, m.y - y);
+      if (away <= radius + bulk(m)) inside.push({ index: i, away });
     }
     if (inside.length === 0) return 0;
     inside.sort((a, b) => a.away - b.away);
@@ -424,8 +381,7 @@ export class Trial {
       m.health -= 1;
       if (m.health > 0) continue;
       dead.add(index);
-      this.kills += 1;
-      this.undo(m);
+      this.fall(m);
       // 裂魄 comes apart. Spawned here rather than in `update` so that a crowd cleared in one
       // sweep is immediately replaced by what the sweep should have left behind — the whole point
       // of the breed is that clearing a press all at once is the wrong move.
@@ -433,12 +389,13 @@ export class Trial {
         for (let i = 0; i < SplitInto; i++) {
           const away = (i / SplitInto) * Math.PI * 2 + m.phase;
           spawned.push(
-            born('dart', m.x + Math.cos(away) * 18, m.y + Math.sin(away) * 18, {
+            born('dart', m.x + Math.cos(away) * 18, m.y + Math.sin(away) * 18, this.hits('dart', 'common'), {
               arrival: 1,
               timer: DartWindSeconds * 0.4,
             }),
           );
         }
+        this.waves.swell(SplitInto);
       }
     }
     if (dead.size > 0) this.menaces = this.menaces.filter((_, i) => !dead.has(i));
@@ -480,7 +437,6 @@ export class Trial {
     },
   ): void {
     if (this.outcome !== 'running') return;
-    this.elapsed += dt;
     this.grace = Math.max(0, this.grace - dt);
 
     const dispersing: Undoing[] = [];
@@ -490,15 +446,11 @@ export class Trial {
     }
     this.undoing = dispersing;
 
-    this.nextSpawn -= dt;
-    if (this.nextSpawn <= 0) {
-      this.nextSpawn = spawnInterval(this.realm, this.through);
-      this.spawn(width, height);
-    }
+    for (const arrival of this.waves.tick(dt, this.menaces.length)) this.spawn(arrival, width, height);
 
-    // A quarter faster by the end of a run. Deliberately small — speed is the cheapest difficulty
+    // A quarter faster by the end of a level. Deliberately small — speed is the cheapest difficulty
     // curve there is, and the roster is supposed to be doing the work.
-    const speed = menaceSpeed(this.realm) * pacing(this.through);
+    const speed = menaceSpeed(this.stage) * pacing(this.through);
     const fields = guard?.fields() ?? [];
     const survivors: Menace[] = [];
     for (const m of this.menaces) {
@@ -535,8 +487,7 @@ export class Trial {
           m.burnNext = BurnBeat;
           m.health -= 1;
           if (m.health <= 0) {
-            this.kills += 1;
-            this.undo(m);
+            this.fall(m);
             m.burnLeft = 0;
             continue;
           }
@@ -588,9 +539,19 @@ export class Trial {
           grip = 4;
         }
       } else if (m.kind === 'root') {
-        // Travels for a moment, then plants itself for good and starts pulsing. It cannot be
-        // kited, so it has to be killed — and it takes the ground you were standing on.
-        if (m.age >= RootTravelSeconds) {
+        // Walks in until its pulse can reach the body, then plants itself for good. It cannot be
+        // kited, so it has to be killed.
+        //
+        // It used to plant on a timer — a moment after arriving, wherever it was — which was right
+        // while the body moved: it took the ground you had been standing on. With the body holding
+        // the middle that ground is the border, and a wave is only over when everything in it is
+        // dead, so a 钉煎 that planted out of reach of every weapon stalled the level for ever.
+        if (!m.planted && m.age >= RootTravelSeconds && away <= RootPlantReach + body.radius) {
+          m.planted = true;
+          // A whole beat before the first pulse, so it is seen planting before it is felt.
+          m.timer = RootPulseSeconds;
+        }
+        if (m.planted) {
           want = 0;
           m.vx = 0;
           m.vy = 0;
@@ -623,23 +584,48 @@ export class Trial {
       m.x += m.vx * dt;
       m.y += m.vy * dt;
 
-      if (away <= body.radius + breed.size) {
+      if (away <= body.radius + girth(m)) {
         // 山岳 first. A shell that only works after the wound is not a shell.
         if (this.grace <= 0 && !guard?.absorb()) {
           this.hurt += ContactDamage;
           this.grace = GraceSeconds;
         }
-        // 钉煎 is the exception: it stays. It does its damage from where it stands, so being
-        // walked into cannot be what removes it — otherwise the breed that cannot be kited would
-        // be cleared by kiting into it once.
-        if (m.kind !== 'root') continue;
+        if (m.rank !== 'common') {
+          // Struck, and thrown back off the body. See `Recoil`.
+          m.flingX -= (dx / away) * Recoil;
+          m.flingY -= (dy / away) * Recoil;
+        } else if (m.kind !== 'root') {
+          // Spent on the body. 钉煎 is the exception: it stays. It does its damage from where it
+          // stands, so being walked into cannot be what removes it — otherwise the breed that
+          // cannot be kited would be cleared by kiting into it once.
+          this.waves.resolve(1);
+          continue;
+        }
       }
       survivors.push(m);
     }
     this.menaces = survivors;
 
-    if (this.integrity <= 0) this.outcome = 'overwhelmed';
-    else if (this.elapsed >= RunSeconds) this.outcome = 'survived';
+    if (this.outcome === 'running' && this.integrity <= 0) this.outcome = 'overwhelmed';
+  }
+
+  /**
+   * One of them is dead: counted, dispersed, and crossed off its wave.
+   *
+   * And if it was the boss, that is the level. Everything else still on the field stops where it
+   * is — the escort is not owed a fight once the thing it was escorting has fallen, and a level
+   * that made you mop up after its own ending would have a second, smaller ending nobody asked for.
+   */
+  private fall(m: Menace): void {
+    this.kills += 1;
+    this.undo(m);
+    this.waves.resolve(1);
+    if (m.rank === 'boss' && this.outcome === 'running') this.outcome = 'cleared';
+  }
+
+  /** How many hits a new one of these takes, at this level. */
+  private hits(kind: Kind, rank: Rank): number {
+    return Math.max(1, Math.round(BY_KIND[kind].health * RANKS[rank].health * toughness(this.stage)));
   }
 
   /**
@@ -651,8 +637,7 @@ export class Trial {
    */
   private undo(m: Menace): void {
     if (this.undoing.length >= MaxUndoing) return;
-    const breed = BY_KIND[m.kind];
-    const pieces = m.kind === 'heavy' ? 9 : 6;
+    const pieces = m.kind === 'heavy' || m.rank !== 'common' ? 9 : 6;
     const shards: { vx: number; vy: number; spin: number }[] = [];
     for (let i = 0; i < pieces; i++) {
       const angle = (i / pieces) * Math.PI * 2 + Math.random() * 0.5;
@@ -663,11 +648,11 @@ export class Trial {
         spin: (Math.random() - 0.5) * 12,
       });
     }
-    this.undoing.push({ x: m.x, y: m.y, size: breed.size, age: 0, shards });
+    this.undoing.push({ x: m.x, y: m.y, size: girth(m), age: 0, shards });
   }
 
   /** Arrives from a random point on the border, just outside it, as whatever is due. */
-  private spawn(width: number, height: number): void {
+  private spawn(arrival: Arrival, width: number, height: number): void {
     const side = Math.floor(Math.random() * 4);
     const along = Math.random();
     const out = 30;
@@ -679,8 +664,11 @@ export class Trial {
           : side === 2
             ? { x: along * width, y: height + out }
             : { x: -out, y: along * height };
-    const breed = rollBreed(rung(this.realm), this.through, Math.random);
-    this.menaces.push(born(breed.kind, at.x, at.y, {}));
+    const point = schedule(this.stage, this.through);
+    const kind =
+      arrival.kind ??
+      (arrival.rank === 'common' ? rollBreed(point, Math.random) : rollChampion(point, Math.random)).kind;
+    this.menaces.push(born(kind, at.x, at.y, this.hits(kind, arrival.rank), { rank: arrival.rank }));
   }
 
   bounds(): Rect | null {
@@ -693,8 +681,7 @@ export class Trial {
       // Per breed, because they are no longer one size. 重煞's halo alone reaches sixty-two pixels
       // and 钉煞 draws a ring at ninety-six — a flat thirty would have clipped both, and a clipped
       // dirty rect leaves a smear on the desktop rather than a missing sprite.
-      const pad =
-        m.kind === 'root' ? RootPulseReach + 8 : BY_KIND[m.kind].size * 2.6 + 6;
+      const pad = m.kind === 'root' ? RootPulseReach + 8 : girth(m) * 2.6 + 6;
       left = Math.min(left, m.x - pad);
       top = Math.min(top, m.y - pad);
       right = Math.max(right, m.x + pad);
@@ -777,13 +764,12 @@ export class Trial {
    * standing on the same ground. See `standing`.
    */
   drawMenace(context: CanvasRenderingContext2D, m: Menace): void {
-    const breed = BY_KIND[m.kind];
-    const size = breed.size * (0.4 + 0.6 * m.arrival);
+    const size = girth(m) * (0.4 + 0.6 * m.arrival);
     context.save();
     context.translate(m.x, m.y);
 
     // 钉煎 tells you before it pulses, so standing in it is a choice rather than an ambush.
-    if (m.kind === 'root' && m.age >= RootTravelSeconds) {
+    if (m.kind === 'root' && m.planted) {
       const due = m.timer;
       if (due <= RootTellSeconds) {
         const swell = 1 - due / RootTellSeconds;
@@ -946,11 +932,12 @@ function born(
   kind: Kind,
   x: number,
   y: number,
-  extra: { arrival?: number; timer?: number },
+  health: number,
+  extra: { arrival?: number; timer?: number; rank?: Rank },
 ): Menace {
-  const breed = BY_KIND[kind];
   return {
     kind,
+    rank: extra.rank ?? 'common',
     x,
     y,
     vx: 0,
@@ -958,14 +945,31 @@ function born(
     flingX: 0,
     flingY: 0,
     rootLeft: 0,
+    planted: false,
     burnLeft: 0,
     burnNext: 0,
     phase: Math.random() * Math.PI * 2,
     arrival: extra.arrival ?? 0,
-    health: breed.health,
+    health,
     age: 0,
     timer: extra.timer ?? (kind === 'root' ? RootPulseSeconds : DartWindSeconds),
     // 缠魂 uses this as which way round it goes; 奔煎 overwrites it with a heading.
     bearing: Math.random() < 0.5 ? -1 : 1,
   };
+}
+
+/** How wide one is drawn and touches at: its breed's size, scaled by its rank. */
+function girth(m: Menace): number {
+  return BY_KIND[m.kind].size * RANKS[m.rank].size;
+}
+
+/**
+ * How much wider than an ordinary one of its breed it is. Zero for every common.
+ *
+ * Added to every radius that asks "is it inside", so a boss two and a half times the width is hit
+ * by what passes over its edge rather than only by what passes over its middle. Without it the
+ * biggest thing on the screen would be the hardest to hit, which is the wrong way round.
+ */
+function bulk(m: Menace): number {
+  return girth(m) - BY_KIND[m.kind].size;
 }

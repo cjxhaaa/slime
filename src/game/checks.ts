@@ -51,20 +51,27 @@ import {
   odds,
 } from './charms.js';
 import {
+  ClearBonus,
   ContactDamage,
   GraceSeconds,
-  RunSeconds,
-  SurvivalBonus,
+  PaySeconds,
   ThroughShare,
   FlingTau,
   Trial,
-  arrivalRate,
   harvest,
-  menaceSpeed,
-  rung,
-  spawnInterval,
-  vitality,
 } from './Trial.js';
+import {
+  TopLevel,
+  arrivalRate,
+  clampLevel,
+  haste,
+  menaceSpeed,
+  schedule,
+  toughness,
+  vitality,
+  waveSize,
+} from './levels.js';
+import { BossWave, EliteWaves, WaveRest, Waves, WavesPerLevel, bossOf, elitesAt, lineup, rankOf } from './Waves.js';
 import { Attacks } from './Attacks.js';
 import type { Battlefield } from './Attacks.js';
 import { GuardBite, PillarShove, QuakeTell, SlashSpeed, SlashWidth } from './Attacks.js';
@@ -94,7 +101,7 @@ import {
   swing,
 } from './kit.js';
 import { BurnBeat } from './Trial.js';
-import { BREEDS, pacing, rollBreed, schedule, weightAt } from './menaces.js';
+import { BREEDS, RANKS, pacing, rollBreed, rollChampion, weightAt } from './menaces.js';
 import {
   Ascended,
   StagesPerRealm,
@@ -718,57 +725,145 @@ check('asking for five when two are spare throws two', thin.takeSpare(0, 5), 2);
 checkTrue('and never digs below certainty', thin.shortfallAt(0) === 0);
 
 // ---------------------------------------------------------------------------------------------
-// 历练. The mode's claim is that a realm changes what the fight *is* rather than how easy it is,
-// and that claim lives entirely in the shape of five curves.
+// 历练 — 关卡与波次. The level is the door now, and the claim is that every level is a harder door
+// than the one below it, on every curve, with nothing allowed to dip.
 
-check('筑基 is the first rung', rung(1), 0);
-check('大乘 is the last', rung(Ascended - 1), 6);
-check('练气 cannot sit below the bottom', rung(0), 0);
-check('and nothing past 飞升 climbs further', rung(Ascended + 4), 6);
+check('below the bottom is level one', clampLevel(0), 1);
+check('past the top is the top', clampLevel(TopLevel + 40), TopLevel);
+check('a broken number is level one', clampLevel(Number.NaN), 1);
+check('and a fraction is the level it is in', clampLevel(7.9), 7);
 
-// The door gets harder at every realm. The hand is a drafted build now, so there is no column here
-// to compare it against — the comparison happens further down, by fighting a whole run.
-let bothHarder = true;
-for (let realm = 2; realm <= Ascended - 1; realm++) {
-  if (arrivalRate(realm) <= arrivalRate(realm - 1)) bothHarder = false;
-  if (menaceSpeed(realm) <= menaceSpeed(realm - 1)) bothHarder = false;
-  if (vitality(realm) <= vitality(realm - 1)) bothHarder = false;
+{
+  // Never easier, at any step, on any curve. Per wave for the count, because a level whose fourth
+  // wave shrank while its total grew would be a dip nobody could see in a sum.
+  const dips: string[] = [];
+  for (let level = 2; level <= TopLevel; level++) {
+    for (let wave = 0; wave < WavesPerLevel; wave++) {
+      if (waveSize(level, wave) < waveSize(level - 1, wave)) dips.push(`size ${level}/${wave}`);
+      if (arrivalRate(level, wave) <= arrivalRate(level - 1, wave)) dips.push(`rate ${level}/${wave}`);
+    }
+    if (menaceSpeed(level) <= menaceSpeed(level - 1)) dips.push(`speed ${level}`);
+    if (toughness(level) <= toughness(level - 1)) dips.push(`toughness ${level}`);
+    if (haste(level) <= haste(level - 1)) dips.push(`haste ${level}`);
+  }
+  check(`every curve climbs at every level${dips.length ? ': ' + dips.slice(0, 6).join(', ') : ''}`, dips.length, 0);
+
+  // And inside a level, the waves press harder as they go — the shape the ninety-second run had.
+  let shrinking = 0;
+  for (let level = 1; level <= TopLevel; level++) {
+    for (let wave = 1; wave < WavesPerLevel; wave++) {
+      if (waveSize(level, wave) < waveSize(level, wave - 1)) shrinking++;
+      if (arrivalRate(level, wave) <= arrivalRate(level, wave - 1)) shrinking++;
+    }
+  }
+  check('and every wave of a level sends at least as many as the one before, faster', shrinking, 0);
 }
-checkTrue('every realm arrives faster, closes faster and hits harder', bothHarder);
-// The door is now set against what a *build* kills rather than against one talisman a second, so
-// the spread across the ladder is much narrower than it used to be: seven a second at 筑基 against
-// eleven and a half at 大乘. That is not a softer ladder, it is the ladder moving to where the
-// content went — what a realm mostly buys you in here is **exchanges**, six at the bottom and
-// eleven at the top, and a build twice as deep is the difference you feel.
-checkTrue('筑基 faces about seven a second', Math.abs(arrivalRate(1) - 7) < 0.5);
-checkTrue('大乘 faces about eleven and a half', Math.abs(arrivalRate(Ascended - 1) - 11.5) < 0.6);
 
-// Arrivals quicken across a run and then stop, rather than compounding off the end of it —
-// `through` is a fraction, and a caller holding a stale one should not tighten the screw.
-checkTrue('a run starts slower than it ends', spawnInterval(1, 0) > spawnInterval(1, 1));
-check('and the pace is flat past the finish', spawnInterval(1, 2), spawnInterval(1, 1));
+// What "level 50 is clearly harder" means in numbers, before anything is fought.
+const sentIn = (level: number) => {
+  let all = 0;
+  for (let wave = 0; wave < WavesPerLevel; wave++) all += lineup(level, wave).length;
+  return all;
+};
+checkTrue(`level 50 sends half again what level 1 does: ${sentIn(50)} against ${sentIn(1)}`, sentIn(50) > sentIn(1) * 1.5);
+checkTrue(`and closes a third faster: ${menaceSpeed(50).toFixed(0)} against ${menaceSpeed(1).toFixed(0)}`, menaceSpeed(50) > menaceSpeed(1) * 1.3);
+checkTrue('and takes more to kill', toughness(50) >= toughness(1) * 1.5);
+checkTrue(`the top of the tower sends ${sentIn(TopLevel)}`, sentIn(TopLevel) > sentIn(50));
+
+// 波次. Ten, the fourth and the eighth bring elites, the tenth a boss.
+check('ten waves to a level', WavesPerLevel, 10);
+checkTrue(
+  'waves 4 and 8 are elite, 10 is the boss, the rest are common',
+  Array.from({ length: WavesPerLevel }, (_, w) => rankOf(w)).join() ===
+    'common,common,common,elite,common,common,common,elite,common,boss',
+);
+{
+  let wrong = 0;
+  for (let level = 1; level <= TopLevel; level++) {
+    const boss = lineup(level, BossWave);
+    if (boss[0].rank !== 'boss' || boss.filter((a) => a.rank === 'boss').length !== 1) wrong++;
+    for (const wave of EliteWaves) {
+      const elites = lineup(level, wave).filter((a) => a.rank === 'elite').length;
+      if (elites !== elitesAt(level)) wrong++;
+      // Not at the front: an elite is picked out of a crowd, not met alone.
+      if (lineup(level, wave)[0].rank === 'elite') wrong++;
+    }
+    for (let wave = 0; wave < WavesPerLevel; wave++) {
+      if (rankOf(wave) === 'common' && lineup(level, wave).some((a) => a.rank !== 'common')) wrong++;
+    }
+  }
+  check('every level has one boss leading its last wave, and its elites where they belong', wrong, 0);
+}
+check('one elite at the bottom of the tower', elitesAt(1), 1);
+check('three at the top', elitesAt(TopLevel), 3);
+
+// Elites and bosses are the six, bigger. Three numbers apiece, and they are the ones TOWER.md set.
+check('an elite is drawn at 1.7', RANKS.elite.size, 1.7);
+check('and takes eight times the hits', RANKS.elite.health, 8);
+check('a boss is drawn at 2.6', RANKS.boss.size, 2.6);
+check('and takes forty times', RANKS.boss.health, 40);
+check('a common is neither', RANKS.common.size * RANKS.common.health, 1);
+{
+  // Never 钉煞: it plants on the border, and a boss that never arrives is a level won by waiting.
+  let seed = 20261013;
+  const roll = (): number => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  let rooted = 0;
+  for (let i = 0; i < 4000; i++) if (rollChampion(roll(), roll).kind === 'root') rooted++;
+  for (let level = 1; level <= TopLevel; level++) if (bossOf(level) === 'root') rooted++;
+  check('no elite and no boss is ever a 钉煞', rooted, 0);
+  check('and the first boss anybody meets is the breed they have met most of', bossOf(1) === 'drift' ? 1 : 0, 1);
+}
+
+{
+  // A wave is cleared, not timed out. Once its queue is spent, it holds for as long as anything
+  // of it is still alive — here, for a minute.
+  const waves = new Waves();
+  waves.start(1);
+  let sentOut = 0;
+  for (let i = 0; i < 60 * 30; i++) sentOut += waves.tick(1 / 60, 1).length;
+  check('the whole first wave is sent', sentOut, lineup(1, 0).length);
+  check('and a minute later, with one left standing, it is still the first wave', waves.wave, 0);
+  waves.tick(1 / 60, 0);
+  check('the moment the field is empty, the next one opens', waves.wave, 1);
+  checkTrue('after a breath', waves.resting);
+  check('with nothing on the way during it', waves.tick(WaveRest / 2, 0).length, 0);
+
+  // Progress never goes backwards, even when a kill adds to the wave.
+  const counted = new Waves();
+  counted.start(1);
+  const size = lineup(1, 0).length;
+  counted.resolve(Math.floor(size / 2));
+  const half = counted.progress;
+  counted.swell(4);
+  checkTrue(`a 裂魄 coming apart does not move the dot back (${half.toFixed(2)})`, counted.progress >= half);
+  counted.resolve(size + 10);
+  checkTrue('and a wave never reads as finished on its own', counted.progress < 1);
+}
 
 // A beat of quiet on entry: choosing the mode must not also be the first hit.
 const opening = new Trial();
 opening.start(1);
 opening.update(0.5, { x: 400, y: 300, radius: 40 }, 800, 600);
-checkTrue('nothing arrives the instant a run begins', opening.bounds() === null);
+checkTrue('nothing arrives the instant a level begins', opening.bounds() === null);
 checkTrue('and leaving at once is worth nothing', harvest(opening.through, opening.outcome) < 1);
 
 // With the random stub pinned at 0.5 every 邪气 arrives at the same point on the bottom edge, which
-// is what makes the two runs below reproducible: one stands in the doorway, one shoots it.
+// is what makes the two levels below reproducible: one stands in the doorway, one shoots it.
 
 // 1. Swarmed. However many pile onto the body, hits cannot outpace the grace window — without it a
 //    crowd arriving together is not a hard moment, it is instant death.
 const swarm = new Trial();
-swarm.start(Ascended - 1);
+swarm.start(TopLevel);
 let previous = swarm.integrity;
 let afterOne = 1;
 let swarmClock = 0;
 let lastHit = -Infinity;
 let hits = 0;
 let tooSoon = false;
-while (swarm.outcome === 'running' && swarmClock < 200) {
+while (swarm.outcome === 'running' && swarmClock < 300) {
   swarm.update(0.05, { x: 400, y: 600, radius: 40 }, 800, 600);
   swarmClock += 0.05;
   if (swarm.integrity < previous - 1e-9) {
@@ -780,42 +875,57 @@ while (swarm.outcome === 'running' && swarmClock < 200) {
   }
 }
 checkTrue('standing in the doorway does get the body swarmed', hits > 1);
-check('the first contact costs one', afterOne, 1 - ContactDamage / vitality(Ascended - 1), 1e-9);
+check('the first contact costs one', afterOne, 1 - ContactDamage / vitality(TopLevel), 1e-9);
 checkTrue('and no two hits land inside the grace window', !tooSoon);
-checkTrue('so a swarm is what ends the run, not the clock', swarm.outcome === 'overwhelmed');
-checkTrue('an ended run pays less than a finished one', harvest(swarm.through, swarm.outcome) < harvest(1, 'survived'));
+checkTrue('so the body falls, and that is a lost level', swarm.outcome === 'overwhelmed');
+checkTrue('one that never saw its boss', swarm.wave < BossWave);
+checkTrue('and it pays less than a cleared one', harvest(swarm.through, swarm.outcome) < harvest(1, 'cleared'));
 
-// 2. Answered. Every arrival is struck down where it lands, so nothing reaches the body and the
-//    swarmClock is the only thing left that can end it.
+// 2. Answered. Every arrival is struck down where it lands, so nothing reaches the body, and the
+//    only way left for the level to end is the boss going down.
 const clean = new Trial();
 clean.start(1);
 let ticks = 0;
-while (clean.outcome === 'running' && ticks < 4000) {
+let wavesSeen = 0;
+let throughBack = false;
+let lastThrough = 0;
+let bossMet = false;
+while (clean.outcome === 'running' && ticks < 20000) {
   clean.update(0.05, { x: 400, y: 300, radius: 40 }, 800, 600);
   ticks++;
-  // Twice over: one talisman is a wound, two is a kill.
-  clean.strike(400, 624);
-  clean.strike(400, 624);
+  // Several times over: the elites take eight and the boss forty.
+  for (let i = 0; i < 6; i++) clean.strike(400, 624);
+  wavesSeen = Math.max(wavesSeen, clean.wave + 1);
+  if (clean.through < lastThrough - 1e-9) throughBack = true;
+  lastThrough = clean.through;
+  if (clean.wave === BossWave && clean.targets().length > 0) bossMet = true;
 }
 check('nothing reached the body', clean.integrity, 1);
-checkTrue('so the clock is what ended it', clean.outcome === 'survived');
-checkTrue('and the kills were counted', clean.killCount > 0);
-check('a survived run pays its whole share', harvest(clean.through, clean.outcome), RunSeconds * (ThroughShare + SurvivalBonus), 1e-9);
+checkTrue('all ten waves came', wavesSeen === WavesPerLevel && bossMet);
+checkTrue('and the boss falling is what ended it', clean.outcome === 'cleared');
+check('which is all the way through', clean.through, 1);
+checkTrue('and the dots never went backwards on the way', !throughBack);
+checkTrue('and the kills were counted', clean.killCount > sentIn(1) * 0.8);
+check('a cleared level pays its whole share', harvest(clean.through, clean.outcome), PaySeconds * (ThroughShare + ClearBonus), 1e-9);
+checkTrue(
+  `and even struck down on arrival, a level is a minute of fighting: ${(ticks * 0.05).toFixed(0)}s`,
+  ticks * 0.05 >= 45 && ticks * 0.05 < 150,
+);
 
 // The ceiling, which is the whole reason the payout stopped counting kills. `harvest` takes no
-// realm at all — that is the structural half of the guarantee — and what it can pay is capped near
-// the time the run actually took, so grinding the minigame cannot become the fastest way up a
-// ladder whose premise is that it fills while you are busy with something else.
-const best = harvest(1, 'survived');
-checkTrue('a run cannot outrun its own ninety seconds by much', best <= RunSeconds * 1.5);
+// level and no realm — that is the structural half of the guarantee — and what it can pay is capped
+// below the time a level actually takes, so grinding the minigame cannot become the fastest way up
+// a ladder whose premise is that it fills while you are busy with something else.
+const best = harvest(1, 'cleared');
+checkTrue('a level cannot outrun the time it took by much', best <= PaySeconds * 1.5);
 // And it is worth strictly less than a 机缘, which arrives for free every couple of hours: the
 // thing you play for should not out-earn the thing you are handed.
 checkTrue('nor out-earn a 机缘', best < MostSeconds);
 
-// Being overwhelmed near the end has to be worth nearly finishing, or the lesson is not to try.
+// Being overwhelmed at the boss has to be worth nearly clearing, or the lesson is not to try.
 checkTrue(
-  'dying at eighty seconds still pays most of the share',
-  harvest(80 / RunSeconds, 'overwhelmed') > RunSeconds * ThroughShare * 0.8,
+  'falling at the boss still pays most of the share',
+  harvest((BossWave + 0.5) / WavesPerLevel, 'overwhelmed') > PaySeconds * ThroughShare * 0.8,
 );
 check('and walking straight back out pays nothing', harvest(0, 'overwhelmed'), 0);
 
@@ -1030,15 +1140,15 @@ const tough = BREEDS.filter((b) => b.health > 1);
 check('two breeds take more than one hit', tough.length, 2);
 checkTrue('and both are drawn bigger than anything else', tough.every((b) => b.size >= 16));
 
-// Everything is in play before a run ends, at every realm — a breed nobody meets is content that
+// Everything is in play before a level ends, at every level — a breed nobody meets is content that
 // does not exist.
 let allArrive = true;
-for (let rung = 0; rung <= 6; rung++) {
+for (let level = 1; level <= TopLevel; level++) {
   for (const breed of BREEDS) {
-    if (weightAt(breed, schedule(rung, 1)) <= 0) allArrive = false;
+    if (weightAt(breed, schedule(level, 1)) <= 0) allArrive = false;
   }
 }
-checkTrue('every breed is in play by the end of a run, at every realm', allArrive);
+checkTrue('every breed is in play by the end of a level, at every level', allArrive);
 
 // The composition changes, which is the whole point. Early on it is the baseline and nothing else;
 // late on the baseline is a minority of what arrives.
@@ -1063,15 +1173,15 @@ for (let t = 0.1; t <= 1.0001; t += 0.1) {
 }
 checkTrue('the baseline never regains ground', thinning);
 
-const availableAt = (rung: number, t: number) =>
-  BREEDS.filter((b) => weightAt(b, schedule(rung, t)) > 0).length;
-checkTrue('a tenth of the way in, most of the roster is still unseen', availableAt(0, 0.1) <= 2);
-check('by the end, all of it', availableAt(0, 1), 6);
+const availableAt = (level: number, t: number) =>
+  BREEDS.filter((b) => weightAt(b, schedule(level, t)) > 0).length;
+checkTrue('a tenth of the way in, most of the roster is still unseen', availableAt(1, 0.1) <= 2);
+check('by the end, all of it', availableAt(1, 1), 6);
 
-// A high realm reads the same schedule faster rather than having a different one.
-checkTrue('大乘 is further along the roster at the same moment', schedule(6, 0.3) > schedule(0, 0.3));
-checkTrue('and has met everything by 38% of the way in', availableAt(6, 0.38) === 6);
-checkTrue('where 筑基 is still two breeds short', availableAt(0, 0.38) <= 4);
+// A high level reads the same schedule faster rather than having a different one.
+checkTrue('the top of the tower is further along the roster at the same moment', schedule(TopLevel, 0.3) > schedule(1, 0.3));
+checkTrue('and has met everything by wave four', availableAt(TopLevel, 0.38) === 6);
+checkTrue('where level one is still two breeds short', availableAt(1, 0.38) <= 4);
 
 // Nothing arrives before it is due, however the dice fall.
 //
@@ -1085,8 +1195,8 @@ const rng = (): number => {
 };
 let early = 0;
 for (let i = 0; i < 5000; i++) {
-  const breed = rollBreed(0, 0.1, rng);
-  if (breed.from > schedule(0, 0.1)) early++;
+  const breed = rollBreed(schedule(1, 0.1), rng);
+  if (breed.from > schedule(1, 0.1)) early++;
 }
 check('nothing arrives ahead of its schedule', early, 0);
 
@@ -1097,28 +1207,31 @@ check('and a quarter faster by the end', pacing(1), 1.25);
 check('clamped past the end', pacing(4), 1.25);
 
 // ---------------------------------------------------------------------------------------------
-// The AFK guard. Fourth version, and the first one that is not arithmetic.
+// The AFK guard. Fifth version, and the second that is not arithmetic.
 //
-// The first two compared two columns of `LADDER`, and both passed while a real run driven frame by
-// frame finished at full health with the body never moving. The third fought a whole run, which at
-// least caught that — and then the schools arrived and a four-slot build turned out to kill five
-// to eight times what one talisman did. Chasing it with the door took about **two thousand
-// arrivals in ninety seconds**, which is not a fight, it is a screensaver with a body in it.
+// The first two compared two columns of the realm ladder, and both passed while a real run driven
+// frame by frame finished at full health with the body never moving. The third fought a whole run,
+// which at least caught that — and then the schools arrived and a four-slot build turned out to
+// kill five to eight times what one talisman did. Chasing it with the door took about **two
+// thousand arrivals in ninety seconds**, which is not a fight, it is a screensaver with a body in
+// it.
 //
-// The thing that actually stops a run being farmed is structural and was sitting there all along:
-// **the draft pauses the run.** Nothing moves, the clock does not advance, and `through` — which
-// is the entire payout — only counts seconds that elapsed. So a run nobody is clicking earns
-// nothing, however strong the build is, and that holds without a single number being tuned for it.
-// The first assertion below is that structural fact, and it is the load-bearing one.
+// The thing that actually stops a level being farmed is structural and was sitting there all
+// along: **the draft pauses the fight.** Nothing moves, no wave advances, and `through` — which is
+// the entire payout — only moves when something dies. So a level nobody is clicking earns nothing,
+// however strong the build is, and that holds without a single number being tuned for it. The
+// first assertion below is that structural fact, and it is the load-bearing one.
 //
 // What is left to tune is the case in between: somebody who takes the four opening cards, starts
-// the fight, and then never spends the meter again. That build stays at level one for ninety
-// seconds, and it has to lose — otherwise the exchanges are decoration.
+// the fight, and then never spends the meter again. That build stays at its opening grade for the
+// whole level, and past the first few levels it has to lose — otherwise the exchanges are
+// decoration. Stage six of TOWER.md restates this for merging (a build that never merges does not
+// get past wave ten); until merging is the way a build grows, the meter is.
 
 // Pinned for the whole block below. Arrivals pick their edge with `Math.random`, and so do half a
-// dozen flourishes inside the schools, so an unpinned run is a different fight every time — which
-// for an assertion that sits right on a balance line means a check that fails one time in five and
-// teaches everybody to re-run it. It flaked exactly once before this went in.
+// dozen flourishes inside the attacks, so an unpinned level is a different fight every time —
+// which for an assertion that sits right on a balance line means a check that fails one time in
+// five and teaches everybody to re-run it.
 // Its own stream rather than the shared `rng`. These fights are long and every draw moves them,
 // so reading from the shared one means that *adding an assertion anywhere above* silently changes
 // the outcome of a balance guard — which happened, and cost a while to see.
@@ -1132,6 +1245,8 @@ Math.random = fightRandom;
 
 interface Standing {
   outcome: string;
+  /** The wave it ended on, counted from 1. */
+  wave: number;
   kills: number;
   seconds: number;
   integrity: number;
@@ -1139,19 +1254,24 @@ interface Standing {
   paid: number;
 }
 
+/**
+ * One whole level, fought frame by frame, with the body standing in the middle as it does now.
+ *
+ * `realm` only moves the grade of what the draft deals (`dropTier`); the door is the level's.
+ */
 function fight(
-  realm: number,
-  nudge: number,
+  level: number,
   random: () => number,
   build?: { weapon: Weapon; ways: Way[] },
   spend = true,
+  realm = 1,
 ): Standing {
   const arena = { width: 1200, height: 800 };
   const trial = new Trial();
   const bag = new Pack();
   const kit = new Arsenal(bag);
   const arts = new Attacks();
-  trial.start(realm);
+  trial.start(level);
   kit.start();
   arts.reset();
 
@@ -1159,7 +1279,7 @@ function fight(
   // somebody could walk away from, not whatever cards a seed happened to deal.
   //
   // At the grade the opening actually deals, not at the top of the ladder: the question this
-  // answers is whether a run you walk away from loses, and somebody walking away at ten seconds
+  // answers is whether a level you walk away from loses, and somebody walking away at ten seconds
   // is carrying 浅绿.
   if (build) {
     kit.take({ kind: 'arm', weapon: build.weapon, tier: 1 });
@@ -1176,25 +1296,7 @@ function fight(
   let seconds = 0;
   let seen = 0;
   const dt = 1 / 60;
-  while (trial.outcome === 'running' && seconds < RunSeconds * 2) {
-    if (nudge > 0) {
-      // A crude hand: away from the crowd, weighted by nearness, with a pull to the middle.
-      let ax = 0;
-      let ay = 0;
-      for (const m of trial.targets()) {
-        const dx = body.x - m.x;
-        const dy = body.y - m.y;
-        const d = Math.hypot(dx, dy) || 1;
-        ax += dx / (d * d);
-        ay += dy / (d * d);
-      }
-      ax += (arena.width / 2 - body.x) * 4e-4;
-      ay += (arena.height / 2 - body.y) * 4e-4;
-      const len = Math.hypot(ax, ay) || 1;
-      body.x = Math.max(50, Math.min(arena.width - 50, body.x + (ax / len) * nudge * dt));
-      body.y = Math.max(50, Math.min(arena.height - 50, body.y + (ay / len) * nudge * dt));
-    }
-
+  while (trial.outcome === 'running' && seconds < 900) {
     trial.update(dt, body, arena.width, arena.height, arts);
     arts.update(dt, body, trial);
 
@@ -1213,6 +1315,7 @@ function fight(
   }
   return {
     outcome: trial.outcome,
+    wave: trial.wave + 1,
     kills: trial.killCount,
     seconds: Math.round(seconds * 10) / 10,
     integrity: Math.round(trial.integrity * 100) / 100,
@@ -1221,69 +1324,93 @@ function fight(
   };
 }
 
-// 1. The structural half. A run whose draft is never answered never starts — four cards are owed
-//    before the first 邪气 arrives — so no time passes and nothing is earned. This is what makes
+const say = (what: string, at: number, s: Standing) =>
+  console.log(
+    `NOTE  level ${at} ${what}: ${s.outcome} on wave ${s.wave} at ${s.seconds}s, ${s.kills} killed, ${s.exchanges} exchanges, integrity ${s.integrity}, paid ${s.paid}`,
+  );
+
+// 1. The structural half. A level whose draft is never answered never starts — four cards are owed
+//    before the first 邪气 arrives — so nothing dies and nothing is earned. This is what makes
 //    walking away worthless, and it does not depend on a single tuned number.
 const abandoned = new Arsenal(new Pack());
 abandoned.start();
 const waiting = new Trial();
-waiting.start(Ascended - 1);
-checkTrue('four cards are owed before a run can begin', abandoned.due && abandoned.openingLeft === 4);
-check('so an unanswered run has run for no time', waiting.through, 0);
+waiting.start(TopLevel);
+checkTrue('four cards are owed before a level can begin', abandoned.due && abandoned.openingLeft === 4);
+check('so an unanswered level has gone nowhere', waiting.through, 0);
 check('and is worth nothing', harvest(waiting.through, waiting.outcome), 0);
 
-// 2. The tuned half. 符雷火冰 is a chain of three pairings and the highest kill rate measured of
-//    anything tried — 6 a second at level one, 23 at level five, 33 evolved. Drafted and then
-//    neglected, it stays at six, and six has to lose at every realm.
-//
-//    筑基 used to be exempt here, because a level-one build could ride out a run of nothing but
-//    游魂. The roster closed that on its own — 钉煎 cannot be kited and 裂魄 replaces itself — so
-//    neglect now loses at every realm, and earlier the higher you go. Nothing was retuned for it;
-//    six breeds did what two thousand arrivals a minute could not.
-// The strongest thing measured: a bow that pierces, chains and bursts — every hit
-// reaching three targets and going off on each.
+// The strongest thing measured: a bow that pierces, chains and bursts — every hit reaching three
+// targets and going off on each.
 const Strongest = { weapon: '弓' as Weapon, ways: ['金锐', '水流', '火爆'] as Way[] };
-let neglectedSurvivals = 0;
+
+// Every fight below has to end — cleared or overwhelmed — inside the harness's fifteen minutes. A
+// wave is over only when all of it is dead, so a 邪气 nothing can reach is a level that never ends;
+// the first cut of this had exactly that, a 钉煞 planted on the border of every level past five.
+const fought: Standing[] = [];
+
+// 2. The tuned half. 弓 with 金锐水流火爆, drafted and then neglected, stays at its opening grade
+//    for the whole level. From level 25 up that has to lose. It clears the first few levels, and
+//    that is reported rather than hidden: the bottom of the tower is supposed to be clearable by a
+//    build somebody picked well, and stage six restates the guard for merging anyway.
 const neglectedPay: number[] = [];
-for (let realm = 1; realm <= Ascended - 1; realm++) {
-  const idle = fight(realm, 0, fightRandom, Strongest, false);
-  if (idle.outcome === 'survived') neglectedSurvivals++;
-  neglectedPay.push(idle.paid);
-  console.log(
-    `NOTE  realm ${realm} drafted and then neglected: ${idle.outcome} at ${idle.seconds}s, ${idle.kills} killed, paid ${idle.paid}`,
-  );
+let neglectedClears = 0;
+for (const level of [1, 10, 25, 50, 75, TopLevel]) {
+  const idle = fight(level, fightRandom, Strongest, false);
+  fought.push(idle);
+  say('drafted and then neglected', level, idle);
+  if (level >= 25) {
+    if (idle.outcome === 'cleared') neglectedClears++;
+    neglectedPay.push(idle.paid);
+  }
 }
-check('a build nobody deepens loses at every realm', neglectedSurvivals, 0);
-// Over the span rather than step by step. 筑基 and 金丹 are eight percent apart in arrival rate,
-// so which of the two dies first is noise, and a strict ordering across seven stochastic runs is a
-// check that fails one time in five and teaches everybody to re-run it.
-const lowThree = (neglectedPay[0] + neglectedPay[1] + neglectedPay[2]) / 3;
-const highThree =
-  (neglectedPay[4] + neglectedPay[5] + neglectedPay[6]) / 3;
+check('a build nobody deepens clears nothing from level 25 up', neglectedClears, 0);
 checkTrue(
-  `neglect costs more the higher you go: ${lowThree.toFixed(0)} paid at the bottom against ${highThree.toFixed(0)} at the top`,
-  highThree < lowThree * 0.8,
+  `and neglect costs more the higher you go: paid ${neglectedPay[0]} at 25 against ${neglectedPay[neglectedPay.length - 1]} at the top`,
+  neglectedPay[neglectedPay.length - 1] < neglectedPay[0],
 );
 
-// 3. And the same build with its exchanges taken, which is the reward for playing: it should do
-//    markedly better. Reported at both ends rather than asserted as a survival, because whether a
-//    *person* survives is not something a potential-field bot can tell me.
-for (const realm of [1, Ascended - 1]) {
-  const spent = fight(realm, 0, fightRandom, Strongest, true);
-  console.log(
-    `NOTE  realm ${realm} with the meter spent: ${spent.outcome} at ${spent.seconds}s, ${spent.kills} killed, ${spent.exchanges} exchanges, integrity ${spent.integrity}, paid ${spent.paid}`,
-  );
+// 3. The landing standard for 关卡与波次: level 1 is fought through all ten waves and its boss goes
+//    down; level 50, with the same build and the same hand on the meter, is clearly harder.
+//
+//    Three of each rather than one. A single fight at level 50 sits right on the line — the same
+//    build cleared it on one seed and fell on wave six on the next — and a guard that flips with
+//    the seed teaches everybody to re-run it. What is asserted is the average.
+const thrice = (level: number): Standing[] => {
+  const runs = [0, 1, 2].map(() => fight(level, fightRandom, Strongest, true));
+  for (const run of runs) {
+    fought.push(run);
+    say('with the meter spent', level, run);
+  }
+  return runs;
+};
+const mean = (runs: Standing[], of: (s: Standing) => number) => runs.reduce((sum, r) => sum + of(r), 0) / runs.length;
+const atOne = thrice(1);
+checkTrue('level 1 is fought through ten waves and cleared, every time', atOne.every((r) => r.outcome === 'cleared'));
+checkTrue(
+  `in about two minutes — the first level is the short one: ${mean(atOne, (r) => r.seconds).toFixed(0)}s`,
+  mean(atOne, (r) => r.seconds) >= 60 && mean(atOne, (r) => r.seconds) <= 150,
+);
+const atFifty = thrice(50);
+const keptAtOne = mean(atOne, (r) => r.integrity);
+const keptAtFifty = mean(atFifty, (r) => r.integrity);
+checkTrue(
+  `level 50 is clearly harder: the same play keeps ${(keptAtFifty * 100).toFixed(0)}% of 护体 against ${(keptAtOne * 100).toFixed(0)}%`,
+  keptAtFifty < keptAtOne - 0.3,
+);
+// The rest of the road, reported. Whether a level past the middle can be cleared is stage six's
+// question, against a build that merges; this one only spends a meter.
+for (const level of [10, 25, TopLevel]) {
+  const spent = fight(level, fightRandom, Strongest, true);
+  fought.push(spent);
+  say('with the meter spent', level, spent);
 }
-
-// And the same fight with a hand on it, reported rather than asserted. A potential-field bot is a
-// bad player — it corners itself, and at 700 px/s it still died to things moving at 52 — so
-// "the bot survived" is worth knowing and "the bot died" proves nothing about a person.
-for (const realm of [1, 4, Ascended - 1]) {
-  const moved = fight(realm, 260, fightRandom, Strongest);
-  console.log(
-    `NOTE  realm ${realm} with a crude hand: ${moved.outcome} at ${moved.seconds}s, ${moved.kills} killed, integrity ${moved.integrity}, paid ${moved.paid}`,
-  );
-}
+check('and every level fought here ended, one way or the other', fought.filter((f) => f.outcome === 'running').length, 0);
+// And a cleared one is two or three minutes, not five. This caught a 重煞 boss being thrown off
+// the screen by 山崩 over and over: level ten took four minutes, three of them spent waiting for
+// the boss to walk back.
+const slowest = Math.max(...fought.filter((f) => f.outcome === 'cleared').map((f) => f.seconds));
+checkTrue(`no cleared level took longer than three minutes: the slowest was ${slowest}s`, slowest <= 180);
 
 Math.random = wildRandom;
 
@@ -2227,8 +2354,10 @@ checkTrue(
     return shoveSeed / 0x7fffffff;
   };
 
+  // Level ten for fourteen seconds: the first wave is a front rather than a stream now, and this
+  // is the first point at which it has closed into a press around the body.
   const run = new Trial();
-  run.start(3);
+  run.start(10);
   const body = { x: 600, y: 400, radius: 46 };
   const dt = 1 / 120;
   const Ring = 150;
@@ -2241,7 +2370,7 @@ checkTrue(
   const nearest = () =>
     run.targets().reduce((best, m) => Math.min(best, Math.hypot(m.x - body.x, m.y - body.y)), Infinity);
 
-  for (let i = 0; i < 120 * 10; i++) run.update(dt, body, 1200, 800, undefined);
+  for (let i = 0; i < 120 * 14; i++) run.update(dt, body, 1200, 800, undefined);
   const before = nearest();
   checkTrue(`something is on top of the body: nearest at ${before.toFixed(0)}px`, before < Ring);
 
@@ -2275,6 +2404,12 @@ checkTrue(
   checkTrue(
     `which is about three body widths — a reprieve, not a stun: ${Math.round(speed * FlingTau)}px`,
     speed * FlingTau > 140 && speed * FlingTau < 260,
+  );
+  // Divided by the area it is drawn at. A boss inside every pillar of an eruption at once was
+  // thrown off the screen and spent half a minute walking back; now it staggers.
+  checkTrue(
+    `a boss is staggered rather than thrown: ${Math.round((speed * FlingTau) / RANKS.boss.size ** 2)}px`,
+    (speed * FlingTau) / RANKS.boss.size ** 2 < 46,
   );
   // And it ends. A throw still pushing after a second would read as a knockdown, which is a much
   // stronger move than this one is paid for.
