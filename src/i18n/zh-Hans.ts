@@ -13,13 +13,15 @@ export const zhHans: Dictionary = {
   realmStage: '{realm}{stage}层',
   fullness: ['修为初凝', '修为渐盈', '修为将满', '可突破'],
 
-  breeds: {
-    drift: '游魂',
-    dart: '奔煞',
-    weave: '缠魂',
-    split: '裂魄',
-    heavy: '重煞',
-    root: '钉煞',
+  creatures: {
+    goblin: ['哥布林', '精英哥布林', '哥布林王'],
+    zombie: ['丧尸', '精英丧尸', '丧尸王'],
+    spider: ['蜘蛛', '精英蜘蛛', '蜘蛛皇后'],
+    boar: ['野猪', '精英野猪', '野猪王'],
+    bat: ['小蝙蝠', '蝙蝠精英', '蝙蝠王'],
+    drake: ['小恶龙', '精英恶龙', '恶龙王'],
+    gunner: ['炮手哥布林', '精英炮手哥布林', '炮手哥布林王'],
+    mage: ['法师', '精英法师', '法师王'],
   },
 
   finds: [

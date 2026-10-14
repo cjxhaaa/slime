@@ -15,9 +15,14 @@
  *
  * ## Why the price climbs
  *
- * The same 18% the exchange meter grew by. A flat price either starves the opening or, late in a
- * level, buys a row of everything — and a row of everything is a build with no merges left to
- * make, which is the part that is supposed to be interesting.
+ * By its own hundreds: below 100 each purchase costs 10 more than the last, from 100 to 200 it is
+ * 20 more, from 200 to 300 it is 30 — and past a thousand the same rule, so 1000 to 1100 climbs by
+ * 110 a time. Ten purchases bring it from 10 to 100; the next ten take it past 300.
+ *
+ * Steep on purpose. A flat price either starves the opening or, late in a level, buys a row of
+ * everything — and a row of everything is a build with no merges left to make, which is the part
+ * that is supposed to be interesting. Each new thing being harder to buy than the last is what
+ * pushes a level from buying into merging.
  *
  * ## Why slots grow
  *
@@ -32,12 +37,17 @@ import { type Pack, Slots } from './Pack.js';
 
 /** What the first purchase of a level costs. */
 export const FirstPrice = 10;
-/** How much dearer each one after it is. The exchange meter's curve, kept. */
-export const PriceGrowth = 1.18;
+
+/** How much dearer the next purchase is than one costing `current`: 10 per hundred it has reached, plus 10. */
+export function priceStep(current: number): number {
+  return 10 * (Math.floor(Math.max(0, current) / 100) + 1);
+}
 
 /** What the purchase after `bought` of them costs. */
 export function price(bought: number): number {
-  return Math.round(FirstPrice * PriceGrowth ** Math.max(0, bought));
+  let current = FirstPrice;
+  for (let i = 0; i < bought; i++) current += priceStep(current);
+  return current;
 }
 
 /** Silver for the purchases from the first to the `n`th, together. */

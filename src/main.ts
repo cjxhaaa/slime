@@ -16,12 +16,12 @@ import { Motes, StageSpread } from './game/Motes';
 import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
+import type { Kind, Rank } from './game/menaces';
 import { TopLevel, clampLevel } from './game/levels';
 import { drawWaveRow, waveRowBounds } from './ui/WaveRow';
 import { Pack } from './game/Pack';
 import { Purse } from './game/purse';
-import { canMerge } from './game/gear';
-import { type Loadout, fuseOnBar, readLoadout } from './game/loadout';
+import { type Loadout, readLoadout } from './game/loadout';
 import { type Armed, type Walked, Ways } from './game/kit';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
@@ -763,7 +763,7 @@ function enterTrial(width: number, height: number): void {
   // level that never started, which is what the opening draft used to guarantee.
   pack.start();
   purse.start(cultivation.realm);
-  bar.select(null);
+  bar.reset();
   attacks.reset();
   equipFromPack();
   silverSeen = 0;
@@ -826,27 +826,12 @@ function buyOne(): void {
   fullRepaint = true;
 }
 
-/**
- * A click on a slot: pick it, put it down, or merge it into the one already picked.
- *
- * The result lands in the slot clicked **second** — you pick a thing up and put it onto the thing
- * it should become part of, so that is where the hand ends and where the new one belongs.
- */
+/** A click on a slot. Picking and merging are the bar's — see `Bar.press`. */
 function pressSlot(index: number): void {
-  const item = pack.worn[index] ?? null;
-  const picked = bar.selected;
-  const first = picked !== null ? pack.worn[picked] : null;
-  if (picked === index) {
-    bar.select(null);
-  } else if (scope && first && item && canMerge(first, item)) {
-    if (fuseOnBar(pack, item, first, scope, Math.random)) {
-      equipFromPack();
-      if (pack.ways.length >= Ways) achieve('fullSet');
-    }
-    bar.select(null);
-  } else {
-    // Something that cannot be merged with it is a change of mind, not a mistake.
-    bar.select(item ? index : null);
+  if (!scope) return;
+  if (bar.press(index, pack, scope, Math.random)) {
+    equipFromPack();
+    if (pack.ways.length >= Ways) achieve('fullSet');
   }
   fullRepaint = true;
 }
@@ -1421,6 +1406,7 @@ function frame(now: number): void {
   // frame is tested against where things are now rather than where they were before they moved.
   pause.advance(elapsed);
   picker.advance(elapsed);
+  bar.advance(elapsed);
   // A paused level goes nowhere: `through` moves only when the fight is given time, and a panel
   // that is up is time it was not given.
   if (inTrial && !pause.isOpen) {
@@ -1727,6 +1713,8 @@ function frame(now: number): void {
       // slide behind things it is in front of.
       depth.add(slime.y, paintSlime, 0);
       depth.paint(context);
+      // Shots and dodges are in the air, over everything standing.
+      if (arena === null) trial.drawAir(context);
       attacks.draw(context);
       // Last, and in screen space: it is an instrument reading the yard, not a thing standing in
       // it. See `Dummies.drawReadout`.
@@ -2192,6 +2180,12 @@ async function main(): Promise<void> {
     debugHooks.__ascend = () => slime.ascend();
     // Straight into a level, any level, without climbing to it. For looking at what the curves in
     // `levels.ts` actually put on the screen — the checks can say a level is harder, not how it looks.
+    // Drops one creature on the field of the level in progress, for looking at a kind and rank on
+    // purpose — the kings otherwise only come once a level, at the end of it.
+    debugHooks.__hurl = (kind = 'gunner', rank = 'common', x?: number, y?: number) => {
+      if (!inTrial || arena !== null) return;
+      trial.hurl(kind as Kind, rank as Rank, x ?? canvas.width * 0.8, y ?? canvas.height * 0.3);
+    };
     debugHooks.__trial = (level = towerLevel) => {
       if (inTrial) leaveTrial();
       towerLevel = clampLevel(level);

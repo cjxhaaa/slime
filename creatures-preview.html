@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>creatures</title>
+    <style>
+      body { margin: 0; color: #2a2a36; font: 13px system-ui, sans-serif; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <script type="module">
+      // Every kind at every rank, animated, on a light half and a dark half of the sheet — the
+      // pet lives on somebody's wallpaper, so the creatures have to read on both.
+      import { drawCreature } from '/src/ui/creatures.ts';
+      import { BREEDS, RANKS } from '/src/game/menaces.ts';
+
+      const names = {
+        goblin: ['哥布林', '精英哥布林', '哥布林王'],
+        zombie: ['丧尸', '精英丧尸', '丧尸王'],
+        spider: ['蜘蛛', '精英蜘蛛', '蜘蛛皇后'],
+        boar: ['野猪', '精英野猪', '野猪王'],
+        bat: ['小蝙蝠', '蝙蝠精英', '蝙蝠王'],
+        drake: ['小恶龙', '精英恶龙', '恶龙王'],
+        gunner: ['炮手哥布林', '精英炮手哥布林', '炮手哥布林王'],
+        mage: ['法师', '精英法师', '法师王'],
+      };
+      const ranks = ['common', 'elite', 'boss'];
+      const W = 1200;
+      const H = 760;
+      const dpr = window.devicePixelRatio || 1;
+      const c = document.getElementById('c');
+      c.width = W * dpr;
+      c.height = H * dpr;
+      c.style.width = '100%';
+      c.style.maxWidth = W + 'px';
+      c.style.height = 'auto';
+      const x = c.getContext('2d');
+      x.scale(dpr, dpr);
+      // ?scale=2 draws everything twice as big, for looking closely; ?kind=goblin shows just the one
+      // kind, its three ranks side by side, big.
+      const query = new URLSearchParams(location.search);
+      const zoom = Number(query.get('scale') || 1);
+      const only = query.get('kind');
+
+      function frame(now) {
+        const t = now / 1000;
+        x.clearRect(0, 0, W, H);
+        x.fillStyle = '#eef0e6';
+        x.fillRect(0, 0, W / 2, H);
+        x.fillStyle = '#1e2433';
+        x.fillRect(W / 2, 0, W / 2, H);
+        if (only) {
+          const breed = BREEDS.find((b) => b.kind === only);
+          ranks.forEach((rank, col) => {
+            for (const half of [0, 1]) {
+              const cycle = t % 4;
+              x.save();
+              x.translate(half * (W / 2) + 100 + col * 190, 200 + col * 160);
+              drawCreature(x, {
+                kind: breed.kind, rank, size: 20 * RANKS[rank].size * zoom, facing: 1, t, stride: 1,
+                aim: breed.order === 'ranged' || breed.kind === 'boar' ? Math.max(0, Math.min(1, (cycle - 2.4) / 0.6)) : 0,
+                rush: breed.kind === 'boar' && cycle > 3 && cycle < 3.8,
+                fired: breed.order === 'ranged' ? (cycle >= 3 ? cycle - 3 : 9) : 9,
+              });
+              x.restore();
+            }
+          });
+          requestAnimationFrame(frame);
+          return;
+        }
+        BREEDS.forEach((breed, row) => {
+          ranks.forEach((rank, col) => {
+            for (const half of [0, 1]) {
+              const cx = half * (W / 2) + 70 + col * 190;
+              const cy = 60 + row * 88;
+              const size = Math.min(34, breed.size * (rank === 'common' ? 1.6 : rank === 'elite' ? 1.25 : 1) * RANKS[rank].size * 0.62) * zoom;
+              const cycle = (t + row * 0.3) % 4;
+              x.save();
+              x.translate(cx, cy);
+              drawCreature(x, {
+                kind: breed.kind,
+                rank,
+                size,
+                facing: 1,
+                t: t + row * 0.37 + col,
+                stride: 1,
+                aim: breed.order === 'ranged' || breed.kind === 'boar' ? Math.max(0, Math.min(1, (cycle - 2.4) / 0.6)) : 0,
+                rush: breed.kind === 'boar' && cycle > 3 && cycle < 3.8,
+                fired: breed.order === 'ranged' ? (cycle >= 3 ? cycle - 3 : 9) : 9,
+              });
+              x.restore();
+              if (half === 0) {
+                x.fillStyle = '#2a2a36';
+                x.fillText(names[breed.kind][col], cx + 40, cy + 4);
+              }
+            }
+          });
+        });
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>

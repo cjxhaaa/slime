@@ -102,16 +102,16 @@ import {
   BuysPerSlot,
   FirstPrice,
   MostSlots,
-  PriceGrowth,
   OpeningBuys,
   Purse,
   costOf,
   price,
+  priceStep,
   slotsAfter,
   startingSilver,
   stock,
 } from './purse.js';
-import { type Item, Tiers, canMerge, dropTier, forge } from './gear.js';
+import { type Item, Tiers, canMerge, dropTier, forge, tintOf } from './gear.js';
 import { type Loadout, complete, fuseOnBar, mergeOf, readLoadout, within } from './loadout.js';
 import { LoadoutPanel, Pitch, togglePick } from '../ui/Loadout.js';
 import {
@@ -125,7 +125,7 @@ import {
   swing,
 } from './kit.js';
 import { BurnBeat } from './Trial.js';
-import { BREEDS, RANKS, pacing, rollBreed, rollChampion, weightAt } from './menaces.js';
+import { BREEDS, BY_KIND, RANKS, pacing, rollBreed, rollChampion, weightAt } from './menaces.js';
 import {
   Ascended,
   StagesPerRealm,
@@ -137,7 +137,7 @@ import {
 import { DICTIONARIES, LOCALES, fill, isLocale, locale, localeFor, setLocale } from '../i18n/index.js';
 import { fit, wrap } from '../ui/text.js';
 import { drawWayIcon, drawWeaponIcon } from '../ui/icons.js';
-import { ButtonWidth } from '../ui/Bar.js';
+import { Bar, ButtonWidth, GrowSeconds, SlotRun } from '../ui/Bar.js';
 import {
   HiddenUntil,
   crawl,
@@ -829,17 +829,23 @@ check('a boss is drawn at 2.6', RANKS.boss.size, 2.6);
 check('and takes forty times', RANKS.boss.health, 40);
 check('a common is neither', RANKS.common.size * RANKS.common.health, 1);
 {
-  // Never 钉煞: it plants on the border, and a boss that never arrives is a level won by waiting.
+  // Every kind has a king, and the kings take turns: eight levels in a row meet all eight.
+  const kings = new Set<string>();
+  for (let level = 1; level <= 8; level++) kings.add(bossOf(level));
+  check('eight levels in a row meet all eight kings', kings.size, 8);
+  check('and the first king anybody meets is the goblins\', the kind they have met most of', bossOf(1) === 'goblin' ? 1 : 0, 1);
+  // An elite is one of the kinds the moment is sending — never ahead of the schedule.
   let seed = 20261013;
   const roll = (): number => {
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
     return seed / 0x7fffffff;
   };
-  let rooted = 0;
-  for (let i = 0; i < 4000; i++) if (rollChampion(roll(), roll).kind === 'root') rooted++;
-  for (let level = 1; level <= TopLevel; level++) if (bossOf(level) === 'root') rooted++;
-  check('no elite and no boss is ever a 钉煞', rooted, 0);
-  check('and the first boss anybody meets is the breed they have met most of', bossOf(1) === 'drift' ? 1 : 0, 1);
+  let early = 0;
+  for (let i = 0; i < 4000; i++) {
+    const point = roll();
+    if (rollChampion(point, roll).from > point) early++;
+  }
+  check('no elite arrives as a kind not yet due', early, 0);
 }
 
 {
@@ -897,9 +903,7 @@ check('a common is neither', RANKS.common.size * RANKS.common.health, 1);
   const size = lineup(1, 0).length;
   checkTrue('the first opens when its wave does', counted.marks()[0] === 0 && counted.marks()[1] === -1);
   counted.resolve(0, Math.floor(size / 2));
-  const half = counted.marks()[0];
-  counted.swell(0, 4);
-  checkTrue(`a 裂魄 coming apart does not move the dot back (${half.toFixed(2)})`, counted.marks()[0] >= half);
+  checkTrue(`it fills as its wave dies (${counted.marks()[0].toFixed(2)})`, counted.marks()[0] > 0.4);
   counted.resolve(0, size + 10);
   checkTrue('and a wave still walking in never reads as finished', counted.marks()[0] < 1);
   for (let i = 0; i < 60 * 20; i++) counted.tick(1 / 60, 1);
@@ -1125,12 +1129,16 @@ const nameOf = (item: Item): string => (item.sort.sort === 'arm' ? item.sort.wea
 {
   // 5. **The purse.** What things cost, and what the bar grows to.
   check('the first purchase costs ten', price(0), FirstPrice);
+  // By its own hundreds: +10 below a hundred, +20 from 100, +30 from 200 — and +110 from 1000.
+  check('the second costs twenty', price(1), 20);
+  check('ten steps of ten bring it to a hundred', price(9), 100);
+  check('then it climbs by twenty', price(10) - price(9), 20);
+  check('from two hundred, by thirty', priceStep(200), 30);
+  check('and from a thousand, by a hundred and ten', priceStep(1000), 110);
+  check('just under a thousand it is still a hundred', priceStep(999), 100);
   let steady = true;
-  for (let n = 1; n < 40; n++) {
-    if (price(n) < price(n - 1)) steady = false;
-    if (Math.abs(price(n) / price(n - 1) - PriceGrowth) > 0.12) steady = false;
-  }
-  checkTrue('and each one after it is about 18% dearer', steady);
+  for (let n = 1; n < 60; n++) if (price(n) - price(n - 1) !== priceStep(price(n - 1))) steady = false;
+  checkTrue('and every step is the step its price says', steady);
   check('six slots to begin with', slotsAfter(0), Slots);
   check('still six after four purchases', slotsAfter(BuysPerSlot - 1), Slots);
   check('seven after five', slotsAfter(BuysPerSlot), Slots + 1);
@@ -1295,23 +1303,121 @@ const nameOf = (item: Item): string => (item.sort.sort === 'arm' ? item.sort.wea
 }
 
 // ---------------------------------------------------------------------------------------------
-// 邪气: the roster, and whether a run actually gets worse.
-//
-// It used to be one breed that homed in, and the only thing that escalated across ninety seconds
-// was the arrival rate — so the last thirty seconds were the first thirty with the tap opened.
-// These pin the three things that move now: how many, **what**, and how fast.
+// 装备栏: the bar itself. Where things are, what a click lands on, and what it draws.
 
-check('six breeds', BREEDS.length, 6);
-check('six distinct kinds', new Set(BREEDS.map((b) => b.kind)).size, 6);
+{
+  // **Growing without moving.** The bar is the same width with six slots or twelve, the slots share
+  // it, and the button and the purse do not move when one is added.
+  const bar = new Bar();
+  bar.layout(1280, 720, 6);
+  const six = { ...bar.bounds };
+  const buyAt = bar.buttonCentre();
+  bar.layout(1280, 720, 7);
+  checkTrue('a seventh slot does not make the bar any wider', bar.bounds.width === six.width && bar.bounds.x === six.x);
+  checkTrue('and the button does not move', bar.buttonCentre().x === buyAt.x && bar.buttonCentre().y === buyAt.y);
 
-// Only the two that are drawn conspicuously bigger take more than one hit. Everything a player
-// sees most of still dies to one talisman, which is the rule the roster is allowed to bend and
-// not to break.
-const tough = BREEDS.filter((b) => b.health > 1);
-check('two breeds take more than one hit', tough.length, 2);
-checkTrue('and both are drawn bigger than anything else', tough.every((b) => b.size >= 16));
+  // Halfway through the narrowing, every slot — the arriving one included — is inside the strip.
+  bar.advance(GrowSeconds / 2);
+  const left = six.x + 10;
+  let spilt = 0;
+  for (let i = 0; i < 7; i++) {
+    const c = bar.slotCentre(i);
+    if (c.x < left || c.x > left + SlotRun) spilt++;
+  }
+  check('mid-tween, nothing pokes out of the strip', spilt, 0);
+  checkTrue('and the slots are part-way narrowed', bar.pitch < SlotRun / 6 && bar.pitch > SlotRun / 7);
+  bar.advance(GrowSeconds);
+  check(`after ${GrowSeconds}s they are all the same width`, bar.pitch, SlotRun / 7, 1e-9);
 
-// Everything is in play before a level ends, at every level — a breed nobody meets is content that
+  // A click at a slot's centre lands on that slot; at the button's, on the button.
+  let missed = 0;
+  for (let i = 0; i < 7; i++) {
+    const c = bar.slotCentre(i);
+    const hit = bar.click(c.x, c.y);
+    if (!hit || hit.kind !== 'slot' || hit.index !== i) missed++;
+  }
+  check('every slot answers a click on its middle', missed, 0);
+  checkTrue('and the button answers its own', bar.click(buyAt.x, buyAt.y)?.kind === 'buy');
+  checkTrue('and nothing off the bar is the bar', bar.click(10, 10) === null);
+}
+
+{
+  // **What it draws.** A recording canvas: every stroke, with the alpha and width it was drawn at.
+  const strokes: { style: unknown; alpha: number; width: number }[] = [];
+  const held: Record<string | symbol, unknown> = { globalAlpha: 1, lineWidth: 1 };
+  const gradient = { addColorStop: () => {} };
+  // With a state stack, like the real thing: the icon art sets its own alpha inside a save, and a
+  // recorder that ignored `restore` reported the rings at whatever the art left behind.
+  const stack: Record<string | symbol, unknown>[] = [];
+  const context = new Proxy(held, {
+    get(obj, key) {
+      if (key === 'save') return () => stack.push({ ...obj });
+      if (key === 'restore') return () => Object.assign(obj, stack.pop() ?? {});
+      if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => gradient;
+      if (key === 'measureText') return () => ({ width: 10 });
+      if (key === 'stroke') {
+        return () => strokes.push({ style: obj.strokeStyle, alpha: obj.globalAlpha as number, width: obj.lineWidth as number });
+      }
+      if (key in obj) return obj[key];
+      return () => {};
+    },
+    set(obj, key, value) {
+      obj[key] = value;
+      return true;
+    },
+  }) as unknown as CanvasRenderingContext2D;
+
+  const bag = new Pack();
+  bag.accept(forge({ sort: 'arm', weapon: '刀' }, 1));
+  bag.accept(forge({ sort: 'way', way: '火爆' }, 1));
+  bag.accept(forge({ sort: 'arm', weapon: '弓' }, 2));
+  const purse = new Purse();
+  purse.start(1);
+  const bar = new Bar();
+  bar.layout(1280, 720, bag.size);
+
+  const rings = () => strokes.filter((s) => s.width === 3);
+  bar.draw(context, bag, purse, 0);
+  check('one grade ring per thing carried', rings().length, 3);
+  checkTrue(
+    'each in its own grade',
+    rings()[0].style === tintOf(1) && rings()[1].style === tintOf(1) && rings()[2].style === tintOf(2),
+  );
+  checkTrue('and nothing faded while nothing is picked', rings().every((r) => r.alpha === 1));
+
+  // Pick the 浅绿刀: the 浅绿火爆 can merge with it, the 蓝弓 cannot, and that is visible.
+  strokes.length = 0;
+  bar.select(0);
+  bar.draw(context, bag, purse, 0);
+  const [picked, partner, other] = rings();
+  checkTrue('the one picked stays bright', picked.alpha === 1);
+  checkTrue('what it can merge with stays bright', partner.alpha === 1);
+  checkTrue(`what it cannot fades back (${other.alpha})`, other.alpha < 0.5);
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// 邪物: the roster — eight kinds in three orders — and whether a level actually gets worse.
+
+check('eight kinds', BREEDS.length, 8);
+check('eight distinct kinds', new Set(BREEDS.map((b) => b.kind)).size, 8);
+{
+  const orders = (order: string) => BREEDS.filter((b) => b.order === order).map((b) => b.kind).sort().join();
+  checkTrue(`four walk in: ${orders('melee')}`, orders('melee') === 'boar,goblin,spider,zombie');
+  checkTrue(`two fly: ${orders('flying')}`, orders('flying') === 'bat,drake');
+  checkTrue(`two shoot: ${orders('ranged')}`, orders('ranged') === 'gunner,mage');
+
+  // The orders are what they say. The flying are the fastest and the only ones that dodge; the
+  // ranged are the slowest and the only ones with a range; the melee sit in between.
+  const pace = (order: string) => BREEDS.filter((b) => b.order === order).map((b) => b.pace);
+  checkTrue('every flyer is faster than every ranged one', Math.min(...pace('flying')) > Math.max(...pace('ranged')));
+  checkTrue('and the ranged are slower than anything that walks in', Math.max(...pace('ranged')) < Math.min(...pace('melee')));
+  checkTrue('only the flying dodge', BREEDS.every((b) => (b.miss > 0) === (b.order === 'flying')));
+  checkTrue('only the ranged have a range', BREEDS.every((b) => (b.range > 0) === (b.order === 'ranged')));
+  checkTrue('and every dodge is a minority of hits', BREEDS.every((b) => b.miss < 0.5));
+}
+
+// Everything is in play before a level ends, at every level — a kind nobody meets is content that
 // does not exist.
 let allArrive = true;
 for (let level = 1; level <= TopLevel; level++) {
@@ -1319,10 +1425,10 @@ for (let level = 1; level <= TopLevel; level++) {
     if (weightAt(breed, schedule(level, 1)) <= 0) allArrive = false;
   }
 }
-checkTrue('every breed is in play by the end of a level, at every level', allArrive);
+checkTrue('every kind is in play by the end of a level, at every level', allArrive);
 
-// The composition changes, which is the whole point. Early on it is the baseline and nothing else;
-// late on the baseline is a minority of what arrives.
+// The composition changes, which is the whole point. Early on it is goblins and nothing else;
+// late on goblins are a minority of what arrives.
 const shareOf = (kind: string, point: number) => {
   let total = 0;
   let mine = 0;
@@ -1333,32 +1439,23 @@ const shareOf = (kind: string, point: number) => {
   }
   return total > 0 ? mine / total : 0;
 };
-check('a run opens as nothing but 游魂', shareOf('drift', 0), 1);
-checkTrue(
-  `and 游魂 is a minority by the end: ${(shareOf('drift', 1) * 100).toFixed(0)}%`,
-  shareOf('drift', 1) < 0.35,
-);
+check('a level opens as nothing but goblins', shareOf('goblin', 0), 1);
+checkTrue(`and goblins are a minority by the end: ${(shareOf('goblin', 1) * 100).toFixed(0)}%`, shareOf('goblin', 1) < 0.2);
 let thinning = true;
 for (let t = 0.1; t <= 1.0001; t += 0.1) {
-  if (shareOf('drift', t) > shareOf('drift', t - 0.1) + 1e-9) thinning = false;
+  if (shareOf('goblin', t) > shareOf('goblin', t - 0.1) + 1e-9) thinning = false;
 }
 checkTrue('the baseline never regains ground', thinning);
 
 const availableAt = (level: number, t: number) =>
   BREEDS.filter((b) => weightAt(b, schedule(level, t)) > 0).length;
 checkTrue('a tenth of the way in, most of the roster is still unseen', availableAt(1, 0.1) <= 2);
-check('by the end, all of it', availableAt(1, 1), 6);
-
-// A high level reads the same schedule faster rather than having a different one.
+check('by the end, all of it', availableAt(1, 1), 8);
 checkTrue('the top of the tower is further along the roster at the same moment', schedule(TopLevel, 0.3) > schedule(1, 0.3));
-checkTrue('and has met everything by wave four', availableAt(TopLevel, 0.38) === 6);
-checkTrue('where level one is still two breeds short', availableAt(1, 0.38) <= 4);
+checkTrue('and has met everything by wave four', availableAt(TopLevel, 0.38) === 8);
+checkTrue('where level one is still most of the way short', availableAt(1, 0.38) <= 5);
 
-// Nothing arrives before it is due, however the dice fall.
-//
-// On a seed of its own. It used to borrow one declared up in the draft checks, which went
-// with them — and a shared generator also means adding an assertion anywhere above silently
-// changes what this one rolls.
+// Nothing arrives before it is due, however the dice fall. On a seed of its own.
 let seed = 20260922;
 const rng = (): number => {
   seed = (seed * 1103515245 + 12345) & 0x7fffffff;
@@ -1371,11 +1468,101 @@ for (let i = 0; i < 5000; i++) {
 }
 check('nothing arrives ahead of its schedule', early, 0);
 
-// Speed rises too, and only a little: it is the cheapest difficulty curve there is, and making the
-// same fight faster is not the same as making it a different fight.
+// Speed rises too, and only a little: it is the cheapest difficulty curve there is.
 check('everything closes at its own pace to begin with', pacing(0), 1);
 check('and a quarter faster by the end', pacing(1), 1.25);
 check('clamped past the end', pacing(4), 1.25);
+
+{
+  // **Flying: some hits go through.** Strike a bat a thousand times at a point; about three in ten
+  // leave it untouched. A field of one, refilled after each kill, so it is always the same test.
+  let dodgeSeed = 4242;
+  const loaded = Math.random;
+  Math.random = () => {
+    dodgeSeed = (dodgeSeed * 1103515245 + 12345) & 0x7fffffff;
+    return dodgeSeed / 0x7fffffff;
+  };
+  const run = new Trial();
+  run.start(1, true);
+  let tries = 0;
+  let killed = 0;
+  // `hurl` puts one where it is told, through the same factory the border uses.
+  for (let i = 0; i < 1000; i++) {
+    run.hurl('bat', 'common', 300, 300);
+    const before = run.killCount;
+    run.strike(300, 300);
+    tries++;
+    if (run.killCount > before) killed++;
+    run.clearField();
+  }
+  const missed = 1 - killed / tries;
+  checkTrue(`a bat dodges about three hits in ten: ${(missed * 100).toFixed(0)}%`, Math.abs(missed - BY_KIND.bat.miss) < 0.05);
+  // And a goblin never does.
+  let goblinsLeft = 0;
+  for (let i = 0; i < 300; i++) {
+    run.hurl('goblin', 'common', 300, 300);
+    run.strike(300, 300);
+    goblinsLeft += run.targets().length;
+    run.clearField();
+  }
+  check('a goblin is never missed', goblinsLeft, 0);
+  Math.random = loaded;
+}
+
+{
+  // **Ranged: it hurts the body from range.** One gunner, put down well outside its range and left
+  // to walk: the body is hurt before anything has touched it.
+  const run = new Trial();
+  run.start(1, true);
+  const body = { x: 600, y: 400, radius: 46 };
+  run.hurl('gunner', 'common', 600 + 46 + 15 + BY_KIND.gunner.range + 120, 400);
+  let firstHurtAt = -1;
+  let nearest = Infinity;
+  for (let i = 0; i < 60 * 20 && firstHurtAt < 0; i++) {
+    run.update(1 / 60, body, 1600, 800);
+    const t = run.targets()[0];
+    if (t) nearest = Math.min(nearest, Math.hypot(t.x - body.x, t.y - body.y));
+    if (run.integrity < 1) firstHurtAt = i / 60;
+  }
+  checkTrue(`a gunner hurts the body without reaching it (${firstHurtAt.toFixed(1)}s in, never nearer than ${nearest.toFixed(0)}px)`, firstHurtAt > 0 && nearest > 46 + 30);
+  checkTrue('and it does so from about its range', nearest > BY_KIND.gunner.range * 0.6);
+  // Not before it has walked into range: the first stretch is quiet.
+  checkTrue('after walking into range first', firstHurtAt > 1);
+
+  // **And it keeps coming.** Left alone it creeps all the way in, so nothing that shoots can hold a
+  // level open out of reach of a short weapon.
+  //    Against a shell that eats every hit, or a lone mage simply wins first — five 护体 and a bolt
+  //    every three seconds is a level lost in twenty, and a lost level stops moving.
+  const creep = new Trial();
+  creep.start(1, true);
+  creep.hurl('mage', 'common', 600 + BY_KIND.mage.range, 400);
+  const shell = { armed: true, absorb: () => true, fields: () => [] };
+  for (let i = 0; i < 60 * 90; i++) creep.update(1 / 60, body, 1600, 800, shell);
+  checkTrue('a mage left alone walks in until it is spent on the body', creep.targets().length === 0);
+}
+
+{
+  // **野猪: it charges.** Trotting it is slow; inside its reach it stops, lowers its head, and then
+  // covers ground at nearly three times the pace.
+  const run = new Trial();
+  run.start(1, true);
+  const body = { x: 600, y: 400, radius: 46 };
+  run.hurl('boar', 'common', 600 + 46 + 400, 400);
+  let trot = 0;
+  let fastest = 0;
+  let last = run.targets()[0].x;
+  for (let i = 0; i < 60 * 8; i++) {
+    run.update(1 / 60, body, 1600, 800);
+    const now = run.targets()[0];
+    if (!now) break;
+    const speed = Math.abs(last - now.x) * 60;
+    if (i === 60) trot = speed;
+    fastest = Math.max(fastest, speed);
+    last = now.x;
+  }
+  checkTrue(`a boar charges at over twice its trot (${trot.toFixed(0)} → ${fastest.toFixed(0)} px/s)`, fastest > trot * 2);
+}
+
 
 // ---------------------------------------------------------------------------------------------
 // The AFK guard, now that a build is bought rather than drafted.
@@ -1609,6 +1796,54 @@ for (const level of [50]) run(level, 'player');
 // "player" and "buyer" are supposed to come apart.
 for (const level of [10, 25]) run(level, 'buyer');
 for (const level of [10, 25]) run(level, 'player');
+
+// 5. The landing standard for 装备栏: **a whole level, played through the bar and nothing else.**
+//    Every action is a click at the coordinates the bar says its slots and button are at, handed
+//    to `bar.click`, and only what that answers is acted on — buy on the button, `bar.press` on a
+//    slot. If the bar could not be played on its own, this could not clear a level.
+{
+  const level = 1;
+  const trial = new Trial();
+  const bag = new Pack();
+  const purse = new Purse();
+  const arts = new Attacks();
+  const bar = new Bar();
+  trial.start(level);
+  purse.start(1);
+  arts.reset();
+  const body = { x: 600, y: 400, radius: 46 };
+  let banked = 0;
+  let clicks = 0;
+  let merges = 0;
+  const tap = (at: { x: number; y: number }): void => {
+    clicks++;
+    const hit = bar.click(at.x, at.y);
+    if (hit?.kind === 'buy') purse.buy(bag, Five, fightRandom, trial.through, 1);
+    else if (hit?.kind === 'slot' && bar.press(hit.index, bag, Five, fightRandom)) merges++;
+    arts.equip(bag.arms, bag.ways);
+  };
+  let seconds = 0;
+  while (trial.outcome === 'running' && seconds < 900) {
+    bar.layout(1200, 800, bag.size);
+    bar.advance(1 / 60);
+    purse.earn(trial.silver - banked);
+    banked = trial.silver;
+    if (purse.canBuy(bag)) tap(bar.buttonCentre());
+    else if (bag.full && purse.silver >= purse.price) {
+      const pair = bag.pairs()[0] ?? bag.pairs(true)[0];
+      if (pair) {
+        tap(bar.slotCentre(bag.slotOf(pair.a.id)));
+        tap(bar.slotCentre(bag.slotOf(pair.b.id)));
+      }
+    }
+    trial.update(1 / 60, body, 1200, 800, arts);
+    arts.update(1 / 60, body, trial);
+    seconds += 1 / 60;
+  }
+  console.log(`NOTE  level 1 through the bar alone: ${trial.outcome} at ${seconds.toFixed(1)}s, ${clicks} clicks, ${purse.bought} bought, ${merges} merged`);
+  checkTrue('a whole level is played through the bar alone', trial.outcome === 'cleared');
+  checkTrue('buying and merging both, by clicking', purse.bought > 4 && merges > 0);
+}
 
 // Other fives, so the scope check below is not about one loadout.
 const Others: Loadout[] = [

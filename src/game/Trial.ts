@@ -24,23 +24,23 @@
  * build nobody deepens does not get through.
  */
 import { clear } from '../slime/colour.js';
+import { drawCreature } from '../ui/creatures.js';
 import type { Depth, Painter } from './depth.js';
 import { clampLevel, menaceSpeed, schedule, toughness, vitality } from './levels.js';
 import {
+  AimSeconds,
   BY_KIND,
-  DartRushSeconds,
-  DartWindSeconds,
+  BallSpeed,
+  BoltSpeed,
+  ChargeBurst,
+  ChargeReach,
+  ChargeRest,
+  ChargeRushSeconds,
+  ChargeWindSeconds,
+  InRangeCreep,
   type Kind,
   RANKS,
   type Rank,
-  RootPulseReach,
-  RootPlantReach,
-  RootPulseSeconds,
-  RootTellSeconds,
-  RootTravelSeconds,
-  SplitInto,
-  WeaveRadius,
-  WeaveSeconds,
   pacing,
   rollBreed,
   rollChampion,
@@ -81,28 +81,34 @@ export interface Menace {
   /** Counts up from 0 as it arrives, so nothing pops into existence at full size. */
   arrival: number;
   /**
-   * Hits left. Among commons only 重煎 and 钉煎 start with more than one, and both are drawn
-   * visibly bigger; an elite or a boss is bigger still. Late in the tower `levels.toughness` raises
-   * every one of them.
+   * Hits left. Among commons only the bigger kinds and the two that shoot start with more than
+   * one; an elite or a king is bigger still. Late in the tower `levels.toughness` raises every one
+   * of them.
    */
   health: number;
   /** Common, elite or boss. What it is drawn at and how much it takes — see `RANKS`. */
   rank: Rank;
-  /** The wave it came with, from 0. Its 裂魄 pieces inherit it. */
+  /** The wave it came with, from 0. */
   wave: number;
   /** Seconds this one has been alive, which is what every breed's own clock runs off. */
   age: number;
   /**
-   * The one number a breed gets to itself.
+   * The one clock a kind gets to itself.
    *
-   * 奔煎 counts down to its next rush, 缠魂 counts down to cutting in, 钉煎 counts down to its
-   * next pulse. Sharing a field rather than giving each breed its own keeps `Menace` a flat record
-   * that a thousand of them can exist as without a second allocation each — there are close to a
-   * thousand arrivals in a level at the top of the tower.
+   * A boar counts through its charge with it; the two that shoot count down to the next shot.
+   * Sharing a field rather than giving each kind its own keeps `Menace` a flat record that a
+   * thousand of them can exist as without a second allocation each — there are close to a thousand
+   * arrivals in a level at the top of the tower.
    */
   timer: number;
-  /** Which way 缠魂 is going round, and the heading 奔煎 committed to. */
+  /** The heading a charging boar committed to. */
   bearing: number;
+  /** 野猪: 0 trotting, 1 lowering its head, 2 charging, 3 getting its breath back. */
+  mode: number;
+  /** Seconds since a ranged one last fired, for the recoil and the smoke. */
+  fired: number;
+  /** Which way it faces, 1 or -1. Turned with some reluctance, so a crowd does not flicker. */
+  facing: number;
   /**
    * 山崩: thrown outward, decaying on its own clock.
    *
@@ -116,8 +122,6 @@ export interface Menace {
   flingY: number;
   /** 缠木: seconds it is held where it stands. */
   rootLeft: number;
-  /** 钉煎 has put itself down, and is not going anywhere again. */
-  planted: boolean;
   /** 燎火: seconds it keeps burning, and the clock to its next tick of it. */
   burnLeft: number;
   burnNext: number;
@@ -142,6 +146,38 @@ interface Undoing {
   /** Where the pieces went, fixed at death so they do not crawl between frames. */
   shards: { vx: number; vy: number; spin: number }[];
 }
+
+/**
+ * A cannonball or a bolt, in the air. Nothing the pet does can stop one; it lands on the body or it
+ * flies off and is gone.
+ */
+interface Shot {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  kind: 'ball' | 'bolt';
+  /** How big, in pixels — an elite's and a king's are heavier. */
+  size: number;
+  age: number;
+}
+
+/** How long a shot can fly before it is given up on. Longer than any can take to reach the body. */
+const ShotSeconds = 4;
+
+/**
+ * A hit that went through a flying one: an afterimage left where it was, sliding the way it went.
+ * No word, no number — the shape of the dodge says it.
+ */
+interface Dodge {
+  x: number;
+  y: number;
+  size: number;
+  age: number;
+  side: number;
+}
+
+const DodgeSeconds = 0.35;
 
 /** How long one takes to disperse. Short: at eight kills a second these overlap constantly. */
 const UndoSeconds = 0.42;
@@ -206,7 +242,11 @@ export interface Rect {
 export class Trial {
   private menaces: Menace[] = [];
   private undoing: Undoing[] = [];
+  private shots: Shot[] = [];
+  private dodges: Dodge[] = [];
   private readonly waves = new Waves();
+  /** No waves at all: only what `hurl` puts down. See `start`. */
+  private quiet = false;
   private hurt = 0;
   private grace = 0;
   private kills = 0;
@@ -214,9 +254,16 @@ export class Trial {
   private stage = 1;
   outcome: Outcome = 'running';
 
-  start(level: number): void {
+  /**
+   * A fresh level. `quiet` is for the checks: a field with nothing arriving, so what is under test
+   * is only what they put on it with `hurl`.
+   */
+  start(level: number, quiet = false): void {
+    this.quiet = quiet;
     this.menaces = [];
     this.undoing = [];
+    this.shots = [];
+    this.dodges = [];
     this.stage = clampLevel(level);
     this.hurt = 0;
     this.grace = 0;
@@ -406,33 +453,28 @@ export class Trial {
 
     const struck = inside.slice(0, most);
     const dead = new Set<number>();
-    const spawned: Menace[] = [];
     for (const { index } of struck) {
       const m = this.menaces[index];
+      // The flying ones: some of what is thrown at them goes through. It still counts as landed —
+      // whatever was thrown is spent — it just did nothing.
+      if (this.dodged(m)) continue;
       m.health -= 1;
       if (m.health > 0) continue;
       dead.add(index);
       this.fall(m);
-      // 裂魄 comes apart. Spawned here rather than in `update` so that a crowd cleared in one
-      // sweep is immediately replaced by what the sweep should have left behind — the whole point
-      // of the breed is that clearing a press all at once is the wrong move.
-      if (m.kind === 'split') {
-        for (let i = 0; i < SplitInto; i++) {
-          const away = (i / SplitInto) * Math.PI * 2 + m.phase;
-          spawned.push(
-            born('dart', m.x + Math.cos(away) * 18, m.y + Math.sin(away) * 18, this.hits('dart', 'common'), {
-              arrival: 1,
-              timer: DartWindSeconds * 0.4,
-              wave: m.wave,
-            }),
-          );
-        }
-        this.waves.swell(m.wave, SplitInto);
-      }
     }
     if (dead.size > 0) this.menaces = this.menaces.filter((_, i) => !dead.has(i));
-    if (spawned.length > 0) this.menaces = this.menaces.concat(spawned);
     return struck.length;
+  }
+
+  /** Whether a hit passes through this one, and if so, the afterimage that says so. */
+  private dodged(m: Menace): boolean {
+    const miss = BY_KIND[m.kind].miss;
+    if (miss <= 0 || Math.random() >= miss) return false;
+    if (this.dodges.length < 40) {
+      this.dodges.push({ x: m.x, y: m.y, size: girth(m), age: 0, side: Math.random() < 0.5 ? -1 : 1 });
+    }
+    return true;
   }
 
   /**
@@ -484,8 +526,11 @@ export class Trial {
       if (u.age < UndoSeconds) dispersing.push(u);
     }
     this.undoing = dispersing;
+    for (const d of this.dodges) d.age += dt;
+    this.dodges = this.dodges.filter((d) => d.age < DodgeSeconds);
+    this.flyShots(dt, body, width, height, guard);
 
-    for (const arrival of this.waves.tick(dt, this.menaces.length)) this.spawn(arrival, width, height);
+    if (!this.quiet) for (const arrival of this.waves.tick(dt, this.menaces.length)) this.spawn(arrival, width, height);
 
     // A quarter faster by the end of a level. Deliberately small — speed is the cheapest difficulty
     // curve there is, and the roster is supposed to be doing the work.
@@ -524,7 +569,7 @@ export class Trial {
         m.burnNext -= dt;
         if (m.burnNext <= 0) {
           m.burnNext = BurnBeat;
-          m.health -= 1;
+          if (!this.dodged(m)) m.health -= 1;
           if (m.health <= 0) {
             this.fall(m);
             m.burnLeft = 0;
@@ -534,73 +579,80 @@ export class Trial {
       }
 
       const pace = speed * breed.pace * drag;
-      // How hard it corrects toward where it wants to be. Low is heavy, high is nimble; the
-      // difference between 重煎 and 奔煎 is mostly this number.
+      // How hard it corrects toward where it wants to be. Low is heavy, high is nimble.
       let grip = 2.6;
       let goalX = dx / away;
       let goalY = dy / away;
       let want = pace;
+      // Off the line by an angle: the weavers and skitterers steer at a heading turned off the
+      // straight line, which is what makes them harder to pick off than the ones that walk in.
+      const veer = (angle: number): void => {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const gx = goalX * cos - goalY * sin;
+        goalY = goalX * sin + goalY * cos;
+        goalX = gx;
+      };
+      const edge = away - body.radius - girth(m);
+      m.fired += dt;
 
-      if (m.kind === 'heavy') {
-        // Slow and hard to turn: it commits to a line and you go round it.
-        grip = 0.8;
-      } else if (m.kind === 'dart') {
-        // Gathers, then rushes along a heading it picked when it started. It cannot correct
-        // mid-rush, which is the whole point — a straight-line kite gets caught, a sidestep does
-        // not.
-        if (m.timer <= 0) {
-          const rushing = m.age % (DartWindSeconds + DartRushSeconds) >= DartWindSeconds;
-          m.timer = rushing ? DartRushSeconds : DartWindSeconds;
-          if (!rushing) m.bearing = Math.atan2(dy, dx);
+      if (m.kind === 'zombie') {
+        // Hops: it covers its ground in bursts, feet together, and stands between them.
+        want = pace * 2 * Math.max(0, Math.sin(m.age * 4.2 + m.phase));
+        grip = 6;
+      } else if (m.kind === 'spider') {
+        // Skitters: quick, uneven, zig-zagging in.
+        want = pace * (0.55 + 0.9 * Math.abs(Math.sin(m.age * 7 + m.phase)));
+        veer(Math.sin(m.age * 4 + m.phase) * 0.55);
+        grip = 5;
+      } else if (m.kind === 'bat') {
+        // Erratic: it lurches from side to side all the way in.
+        veer(Math.sin(m.age * 3.1 + m.phase) * 0.95);
+        grip = 3.4;
+      } else if (m.kind === 'drake') {
+        // Swoops: long lazy curves rather than a line.
+        veer(Math.sin(m.age * 1.3 + m.phase) * 0.5);
+        grip = 1.6;
+      } else if (m.kind === 'boar') {
+        // Trots in, and inside its reach lowers its head and charges along the line it picked.
+        // It cannot turn mid-charge; it gets its breath back after.
+        if (m.mode === 0 && edge <= ChargeReach && m.timer <= 0) {
+          m.mode = 1;
+          m.timer = ChargeWindSeconds;
+          m.bearing = Math.atan2(dy, dx);
+        } else if (m.mode === 1 && m.timer <= 0) {
+          m.mode = 2;
+          m.timer = ChargeRushSeconds;
+        } else if (m.mode === 2 && m.timer <= 0) {
+          m.mode = 3;
+          m.timer = ChargeRest;
+        } else if (m.mode === 3 && m.timer <= 0) {
+          m.mode = 0;
         }
-        const rushing = m.age % (DartWindSeconds + DartRushSeconds) >= DartWindSeconds;
-        if (rushing) {
+        if (m.mode === 1) {
+          want = 0;
+          grip = 8;
+        } else if (m.mode === 2) {
           goalX = Math.cos(m.bearing);
           goalY = Math.sin(m.bearing);
-          want = pace * 2.1;
-          grip = 5;
-        } else {
-          want = pace * 0.12;
-          grip = 3.5;
+          want = pace * ChargeBurst;
+          grip = 6;
+        } else if (m.mode === 3) {
+          want = pace * 0.6;
         }
-      } else if (m.kind === 'weave') {
-        // Circles at a distance and then cuts in. Until it commits it is steering at a point
-        // tangential to you, so it builds up on the edges of the screen while you watch the middle.
-        if (m.age < WeaveSeconds) {
-          const around = Math.atan2(-dy, -dx) + m.bearing * 0.9;
-          const ring = { x: body.x + Math.cos(around) * WeaveRadius, y: body.y + Math.sin(around) * WeaveRadius };
-          const to = Math.hypot(ring.x - m.x, ring.y - m.y) || 1;
-          goalX = (ring.x - m.x) / to;
-          goalY = (ring.y - m.y) / to;
-          grip = 1.8;
-        } else {
-          want = pace * 1.7;
-          grip = 4;
-        }
-      } else if (m.kind === 'root') {
-        // Walks in until its pulse can reach the body, then plants itself for good. It cannot be
-        // kited, so it has to be killed.
-        //
-        // It used to plant on a timer — a moment after arriving, wherever it was — which was right
-        // while the body moved: it took the ground you had been standing on. With the body holding
-        // the middle that ground is the border, and a level is only cleared once everything in it
-        // is dead, so a 钉煎 that planted out of reach of every weapon stalled the level for ever.
-        if (!m.planted && m.age >= RootTravelSeconds && away <= RootPlantReach + body.radius) {
-          m.planted = true;
-          // A whole beat before the first pulse, so it is seen planting before it is felt.
-          m.timer = RootPulseSeconds;
-        }
-        if (m.planted) {
-          want = 0;
-          m.vx = 0;
-          m.vy = 0;
+      } else if (breed.order === 'ranged') {
+        // Walks in slowly, and once the body is in range fires on a beat — and keeps creeping in
+        // while it does. See `menaces.ts` for why it never stops.
+        const reach = breed.range * (m.rank === 'common' ? 1 : 1.15);
+        if (edge <= reach) {
+          want = pace * InRangeCreep;
           if (m.timer <= 0) {
-            m.timer = RootPulseSeconds;
-            if (away <= RootPulseReach + body.radius && this.grace <= 0 && !guard?.absorb()) {
-              this.hurt += ContactDamage;
-              this.grace = GraceSeconds;
-            }
+            m.timer = breed.reload * (m.rank === 'boss' ? 0.8 : 1);
+            this.fire(m, body);
           }
+        } else if (m.timer < AimSeconds) {
+          // Out of range, the tell does not run: it holds its fire until it has something to aim at.
+          m.timer = AimSeconds;
         }
       }
 
@@ -609,8 +661,7 @@ export class Trial {
       m.vx += (goalX * want - m.vx) * Math.min(1, dt * grip);
       m.vy += (goalY * want - m.vy) * Math.min(1, dt * grip);
 
-      // 山崩's throw, on top of whatever it was doing. 钉煎 is not exempt: it plants itself and
-      // cannot be kited, and being able to shift one is most of the reason to carry 土 at all.
+      // 山崩's throw, on top of whatever it was doing.
       if (m.flingX !== 0 || m.flingY !== 0) {
         const keep = Math.exp(-dt / FlingTau);
         m.x += m.flingX * dt;
@@ -622,6 +673,11 @@ export class Trial {
       }
       m.x += m.vx * dt;
       m.y += m.vy * dt;
+      // Faces where it is going, with some reluctance — a crowd milling at the body would otherwise
+      // flicker left and right every frame.
+      if (m.kind === 'boar' && m.mode !== 0) m.facing = Math.cos(m.bearing) >= 0 ? 1 : -1;
+      else if (m.vx > 6) m.facing = 1;
+      else if (m.vx < -6) m.facing = -1;
 
       if (away <= body.radius + girth(m)) {
         // 山岳 first. A shell that only works after the wound is not a shell.
@@ -633,10 +689,13 @@ export class Trial {
           // Struck, and thrown back off the body. See `Recoil`.
           m.flingX -= (dx / away) * Recoil;
           m.flingY -= (dy / away) * Recoil;
-        } else if (m.kind !== 'root') {
-          // Spent on the body. 钉煎 is the exception: it stays. It does its damage from where it
-          // stands, so being walked into cannot be what removes it — otherwise the breed that
-          // cannot be kited would be cleared by kiting into it once.
+          // A charging boar's charge ends where it lands.
+          if (m.mode === 2) {
+            m.mode = 3;
+            m.timer = ChargeRest;
+          }
+        } else {
+          // Spent on the body.
           this.waves.resolve(m.wave, 1);
           continue;
         }
@@ -650,6 +709,64 @@ export class Trial {
     // Cleared: all ten have come and nothing is left of any of them. Not "the boss is down" — the
     // escort, and whatever is still walking in from wave eight, are part of the level too.
     else if (this.waves.allOut && this.menaces.length === 0) this.outcome = 'cleared';
+  }
+
+  /**
+   * A shot, aimed at where the body is now. A king fires three in a fan; an elite's is heavier.
+   */
+  private fire(m: Menace, body: { x: number; y: number }): void {
+    const kind = m.kind === 'gunner' ? 'ball' : 'bolt';
+    const speed = kind === 'ball' ? BallSpeed : BoltSpeed;
+    const aim = Math.atan2(body.y - m.y, body.x - m.x);
+    const spread = m.rank === 'boss' ? [-0.18, 0, 0.18] : [0];
+    const size = (kind === 'ball' ? 4.5 : 4) * (m.rank === 'common' ? 1 : m.rank === 'elite' ? 1.4 : 1.8);
+    // From the muzzle or the orb rather than the feet, so the shot leaves what fired it.
+    const fromX = m.x + m.facing * girth(m) * 0.9;
+    const fromY = m.y - girth(m) * 0.6;
+    for (const off of spread) {
+      if (this.shots.length >= 80) break;
+      this.shots.push({
+        x: fromX,
+        y: fromY,
+        vx: Math.cos(aim + off) * speed,
+        vy: Math.sin(aim + off) * speed,
+        kind,
+        size,
+        age: 0,
+      });
+    }
+    m.fired = 0;
+  }
+
+  /**
+   * Moves every shot, and lands the ones that reach the body.
+   *
+   * A shot that lands is a contact like any other: it is what the grace window and 固土's shell
+   * are for, and it costs the same.
+   */
+  private flyShots(
+    dt: number,
+    body: { x: number; y: number; radius: number },
+    width: number,
+    height: number,
+    guard?: { absorb(): boolean },
+  ): void {
+    const flying: Shot[] = [];
+    for (const shot of this.shots) {
+      shot.age += dt;
+      shot.x += shot.vx * dt;
+      shot.y += shot.vy * dt;
+      if (Math.hypot(shot.x - body.x, shot.y - body.y) <= body.radius + shot.size) {
+        if (this.grace <= 0 && !guard?.absorb()) {
+          this.hurt += ContactDamage;
+          this.grace = GraceSeconds;
+        }
+        continue;
+      }
+      const off = shot.x < -60 || shot.y < -60 || shot.x > width + 60 || shot.y > height + 60;
+      if (shot.age < ShotSeconds && !off) flying.push(shot);
+    }
+    this.shots = flying;
   }
 
   /** One of them is dead: counted, paid for, dispersed, and crossed off its wave. */
@@ -683,7 +800,7 @@ export class Trial {
    */
   private undo(m: Menace): void {
     if (this.undoing.length >= MaxUndoing) return;
-    const pieces = m.kind === 'heavy' || m.rank !== 'common' ? 9 : 6;
+    const pieces = m.rank !== 'common' ? 9 : 6;
     const shards: { vx: number; vy: number; spin: number }[] = [];
     for (let i = 0; i < pieces; i++) {
       const angle = (i / pieces) * Math.PI * 2 + Math.random() * 0.5;
@@ -695,6 +812,19 @@ export class Trial {
       });
     }
     this.undoing.push({ x: m.x, y: m.y, size: girth(m), age: 0, shards });
+  }
+
+  /**
+   * Puts one down where it is told, already arrived, through the same factory the border uses. For
+   * the checks and for looking at one kind on purpose; a level never calls it.
+   */
+  hurl(kind: Kind, rank: Rank, x: number, y: number): void {
+    this.menaces.push(born(kind, x, y, this.hits(kind, rank), { rank, arrival: 1, wave: 0 }));
+  }
+
+  /** Takes everything off the field without counting any of it. For the checks. */
+  clearField(): void {
+    this.menaces = [];
   }
 
   /** Arrives from a random point on the border, just outside it, as whatever is due. */
@@ -720,20 +850,29 @@ export class Trial {
   }
 
   bounds(): Rect | null {
-    if (this.menaces.length === 0 && this.undoing.length === 0) return null;
+    if (this.menaces.length === 0 && this.undoing.length === 0 && this.shots.length === 0 && this.dodges.length === 0) {
+      return null;
+    }
     let left = Infinity;
     let top = Infinity;
     let right = -Infinity;
     let bottom = -Infinity;
     for (const m of this.menaces) {
-      // Per breed, because they are no longer one size. 重煞's halo alone reaches sixty-two pixels
-      // and 钉煞 draws a ring at ninety-six — a flat thirty would have clipped both, and a clipped
-      // dirty rect leaves a smear on the desktop rather than a missing sprite.
-      const pad = m.kind === 'root' ? RootPulseReach + 8 : girth(m) * 2.6 + 6;
+      // Per kind and rank, because they are not one size: a king's aura reaches a radius and a
+      // half, a drake's wings and the height it flies at more. A clipped dirty rect leaves a smear
+      // on the desktop rather than a missing sprite.
+      const pad = girth(m) * 2.2 + 10;
       left = Math.min(left, m.x - pad);
       top = Math.min(top, m.y - pad);
       right = Math.max(right, m.x + pad);
       bottom = Math.max(bottom, m.y + pad);
+    }
+    for (const shot of [...this.shots, ...this.dodges]) {
+      const reach = ('kind' in shot ? shot.size * 4 : shot.size * 3) + 10;
+      left = Math.min(left, shot.x - reach);
+      top = Math.min(top, shot.y - reach);
+      right = Math.max(right, shot.x + reach);
+      bottom = Math.max(bottom, shot.y + reach);
     }
     for (const u of this.undoing) {
       const reach = u.size + 150 * UndoSeconds + 8;
@@ -747,20 +886,8 @@ export class Trial {
   }
 
   /**
-   * 邪气: a dark ragged blot with a soft halo.
-   *
-   * Dark on purpose, and it is the one thing in this app that is. Everything the pet produces is
-   * light — dust, talismans, the cocoon, the blast — so the thing that is coming for it reads at a
-   * glance by being the opposite, on any wallpaper, without needing a colour anybody has to learn.
-   */
-  /**
-   * 邪气, six ways.
-   *
-   * All of them dark, and they are still the only dark things in this app — everything the pet
-   * makes is light, so the things coming for it read at a glance on any wallpaper. What separates
-   * the breeds is **silhouette**, not colour: the same red eyes on six shapes, one of them twice
-   * the size of the rest and one of them all angles. A player has to be able to tell a 奔煎 from a
-   * 游魂 while looking at something else, which rules out telling them apart by hue.
+   * What is on the ground under everything else: the ones coming apart. Each creature is drawn in
+   * depth order by `collect`; shots and dodges are in the air and drawn last, by `drawAir`.
    */
   draw(context: CanvasRenderingContext2D): void {
     context.save();
@@ -812,138 +939,91 @@ export class Trial {
    * standing on the same ground. See `standing`.
    */
   drawMenace(context: CanvasRenderingContext2D, m: Menace): void {
-    const size = girth(m) * (0.4 + 0.6 * m.arrival);
+    const breed = BY_KIND[m.kind];
     context.save();
     context.translate(m.x, m.y);
-
-    // 钉煎 tells you before it pulses, so standing in it is a choice rather than an ambush.
-    if (m.kind === 'root' && m.planted) {
-      const due = m.timer;
-      if (due <= RootTellSeconds) {
-        const swell = 1 - due / RootTellSeconds;
-        context.globalAlpha = 0.5 * swell;
-        context.strokeStyle = 'rgba(228, 88, 88, 0.9)';
-        context.lineWidth = 2 + swell * 2;
-        context.beginPath();
-        context.arc(0, 0, RootPulseReach * (0.55 + 0.45 * swell), 0, Math.PI * 2);
-        context.stroke();
-      }
-      context.globalAlpha = 0.16;
-      context.strokeStyle = 'rgba(210, 120, 120, 0.7)';
-      context.lineWidth = 1;
-      context.beginPath();
-      context.arc(0, 0, RootPulseReach, 0, Math.PI * 2);
-      context.stroke();
-    }
-
-    const halo = context.createRadialGradient(0, 0, 0, 0, 0, size * 2.6);
-    halo.addColorStop(0, 'rgba(24, 14, 34, 0.5)');
-    halo.addColorStop(1, clear('#180e22'));
-    context.globalAlpha = 0.85 * m.arrival;
-    context.fillStyle = halo;
-    context.beginPath();
-    context.arc(0, 0, size * 2.6, 0, Math.PI * 2);
-    context.fill();
-
-    const look = Math.atan2(m.vy, m.vx);
     context.globalAlpha = m.arrival;
-    context.fillStyle = m.kind === 'heavy' ? '#140c1e' : '#1b1226';
+    const reach = breed.range * (m.rank === 'common' ? 1 : 1.15);
+    drawCreature(context, {
+      kind: m.kind,
+      rank: m.rank,
+      size: girth(m) * (0.4 + 0.6 * m.arrival),
+      facing: m.facing,
+      t: m.age + m.phase,
+      stride: Math.min(1, Math.hypot(m.vx, m.vy) / 40),
+      aim:
+        m.kind === 'boar'
+          ? m.mode === 1
+            ? 1 - m.timer / ChargeWindSeconds
+            : 0
+          : reach > 0 && m.timer < AimSeconds
+            ? 1 - m.timer / AimSeconds
+            : 0,
+      rush: m.kind === 'boar' && m.mode === 2,
+      fired: m.fired,
+    });
+    context.restore();
+  }
 
-    if (m.kind === 'root') {
-      // All angles, and it does not point anywhere, because it is not going anywhere.
-      context.beginPath();
-      for (let i = 0; i <= 12; i++) {
-        const angle = (i / 12) * Math.PI * 2;
-        const reach = size * (i % 2 === 0 ? 1.15 : 0.6);
-        const px = Math.cos(angle + m.phase * 0.2) * reach;
-        const py = Math.sin(angle + m.phase * 0.2) * reach;
-        if (i === 0) context.moveTo(px, py);
-        else context.lineTo(px, py);
-      }
-      context.closePath();
-      context.fill();
-    } else {
-      // A ragged ring rather than a circle: a smooth blob reads as a bubble, and this is supposed
-      // to read as something with an intent. 奔煎 is stretched along its heading, which is the
-      // one silhouette cue that survives at ten pixels.
-      context.save();
-      context.rotate(look);
-      // 奔煎 is drawn long, with a wake behind it, because at ten pixels across a silhouette is
-      // the only cue that survives — and it is the breed you most need to recognise early.
-      if (m.kind === 'dart') {
-        context.globalAlpha = 0.34 * m.arrival;
+  /**
+   * What is in the air: cannonballs, bolts, and the afterimages of dodges. Drawn after everything
+   * standing on the ground, because nothing standing is in front of something flying over it.
+   */
+  drawAir(context: CanvasRenderingContext2D): void {
+    context.save();
+    for (const shot of this.shots) {
+      if (shot.kind === 'ball') {
+        // Iron, with a fuse still burning and a little smoke behind.
+        context.fillStyle = 'rgba(200, 196, 186, 0.35)';
         context.beginPath();
-        context.moveTo(-size * 1.6, -size * 0.42);
-        context.lineTo(-size * 4.4, 0);
-        context.lineTo(-size * 1.6, size * 0.42);
-        context.closePath();
+        context.arc(shot.x - shot.vx * 0.04, shot.y - shot.vy * 0.04, shot.size * 0.9, 0, Math.PI * 2);
         context.fill();
-        context.globalAlpha = m.arrival;
+        context.fillStyle = '#2a2a34';
+        context.strokeStyle = '#120e1a';
+        context.lineWidth = 1.2;
+        context.beginPath();
+        context.arc(shot.x, shot.y, shot.size, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+        context.fillStyle = 'rgba(255, 255, 255, 0.35)';
+        context.beginPath();
+        context.arc(shot.x - shot.size * 0.35, shot.y - shot.size * 0.35, shot.size * 0.3, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = Math.sin(shot.age * 40) > 0 ? '#ffd24a' : '#ff7a2a';
+        context.beginPath();
+        context.arc(shot.x + shot.size * 0.6, shot.y - shot.size * 0.8, shot.size * 0.28, 0, Math.PI * 2);
+        context.fill();
+      } else {
+        // A bolt of dark qi: a glowing core and a tail of sparks.
+        const glow = context.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, shot.size * 2.6);
+        glow.addColorStop(0, 'rgba(230, 200, 255, 0.95)');
+        glow.addColorStop(0.4, 'rgba(160, 90, 240, 0.6)');
+        glow.addColorStop(1, clear('#a05af0'));
+        context.fillStyle = glow;
+        context.beginPath();
+        context.arc(shot.x, shot.y, shot.size * 2.6, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = 'rgba(200, 150, 255, 0.5)';
+        for (let i = 1; i <= 3; i++) {
+          context.beginPath();
+          context.arc(shot.x - shot.vx * 0.02 * i, shot.y - shot.vy * 0.02 * i, shot.size * (0.7 - i * 0.15), 0, Math.PI * 2);
+          context.fill();
+        }
       }
-      // Mass, not spikes. 重煎 gets two shallow lobes so it reads as something heavy; 钉煎 is
-      // the angular one, and the first version gave them both five deep ones, which made the two
-      // of them the same silhouette at a glance.
-      const stretch = m.kind === 'dart' ? 2.1 : 1;
-      const lobes = m.kind === 'heavy' ? 2 : 3;
-      const ripple = m.kind === 'heavy' ? 0.1 : 0.3;
-      context.beginPath();
-      for (let i = 0; i <= 15; i++) {
-        const angle = (i / 15) * Math.PI * 2;
-        const reach = size * (0.9 + ripple * Math.sin(angle * lobes + m.phase));
-        const px = Math.cos(angle) * reach * stretch;
-        const py = Math.sin(angle) * reach;
-        if (i === 0) context.moveTo(px, py);
-        else context.lineTo(px, py);
-      }
-      context.closePath();
-      context.fill();
-      context.restore();
     }
-
-    // 裂魄 carries the seam it is going to come apart along. The tell is the whole reason the
-    // breed is fair: clearing a press all at once is a mistake you can see coming.
-    if (m.kind === 'split') {
-      context.globalAlpha = 0.75 * m.arrival;
-      context.strokeStyle = 'rgba(226, 120, 120, 0.85)';
+    for (const d of this.dodges) {
+      // The afterimage: two pale arcs where it was, sliding off to the side it went.
+      const t = d.age / DodgeSeconds;
+      context.globalAlpha = (1 - t) * 0.7;
+      context.strokeStyle = '#ffffff';
       context.lineWidth = 2;
+      const x = d.x + d.side * t * d.size * 1.6;
       context.beginPath();
-      context.moveTo(Math.cos(m.phase * 0.3) * size, Math.sin(m.phase * 0.3) * size);
-      context.lineTo(-Math.cos(m.phase * 0.3) * size, -Math.sin(m.phase * 0.3) * size);
+      context.arc(x, d.y, d.size * 0.9, -0.9, 0.9);
       context.stroke();
-    }
-
-    // 缠魂 wears the ring it is circling on, so a screen edge filling up with them is legible
-    // as a thing that is happening rather than as clutter.
-    if (m.kind === 'weave' && m.age < WeaveSeconds) {
-      context.globalAlpha = 0.85 * m.arrival;
-      context.strokeStyle = 'rgba(232, 140, 166, 0.95)';
-      context.lineWidth = 2.6;
       context.beginPath();
-      context.arc(0, 0, size * 1.75, look + 0.5, look + 2.7);
+      context.arc(x - d.side * d.size * 0.5, d.y, d.size * 0.7, -0.8, 0.8);
       context.stroke();
-    }
-
-    // Eyes: an enemy the player is meant to read as aimed at them needs a front. 重煎 has four,
-    // which is the cheapest way to say "this one is more than the others".
-    context.globalAlpha = 0.9 * m.arrival;
-    context.fillStyle = 'rgba(232, 96, 96, 0.95)';
-    if (m.kind === 'root') {
-      context.beginPath();
-      context.arc(0, 0, size * 0.3, 0, Math.PI * 2);
-      context.fill();
-    } else {
-      const sides = m.kind === 'heavy' ? [-0.62, -0.2, 0.2, 0.62] : [-0.42, 0.42];
-      for (const side of sides) {
-        context.beginPath();
-        context.arc(
-          Math.cos(look + side) * size * 0.4,
-          Math.sin(look + side) * size * 0.4,
-          size * (m.kind === 'heavy' ? 0.11 : 0.15),
-          0,
-          Math.PI * 2,
-        );
-        context.fill();
-      }
     }
     context.restore();
   }
@@ -971,9 +1051,8 @@ export class Trial {
 /**
  * One of them, ready to go.
  *
- * A factory rather than an object literal at each call site, because there are two of those — the
- * border spawner and 裂魄 coming apart — and a `Menace` gained four fields when the roster did.
- * Two literals drifting apart on a record this hot is the kind of bug that shows up as one breed
+ * A factory rather than an object literal at the call site, because a `Menace` grows a field every
+ * time the roster does, and a literal that missed one is the kind of bug that shows up as one kind
  * behaving oddly and nothing else.
  */
 function born(
@@ -994,16 +1073,19 @@ function born(
     flingX: 0,
     flingY: 0,
     rootLeft: 0,
-    planted: false,
     burnLeft: 0,
     burnNext: 0,
     phase: Math.random() * Math.PI * 2,
     arrival: extra.arrival ?? 0,
     health,
     age: 0,
-    timer: extra.timer ?? (kind === 'root' ? RootPulseSeconds : DartWindSeconds),
-    // 缠魂 uses this as which way round it goes; 奔煎 overwrites it with a heading.
-    bearing: Math.random() < 0.5 ? -1 : 1,
+    // The ranged ones arrive with most of a reload to go, so a crowd of them does not open fire in
+    // the same instant.
+    timer: extra.timer ?? BY_KIND[kind].reload * (0.4 + Math.random() * 0.6),
+    bearing: 0,
+    mode: 0,
+    fired: 99,
+    facing: x < 0 ? 1 : -1,
   };
 }
 

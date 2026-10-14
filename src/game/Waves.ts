@@ -161,9 +161,9 @@ export class Waves {
   /**
    * The highest share of each wave that has been gone.
    *
-   * Held as a high-water mark because 裂魄 comes apart into two: a kill that adds two to the wave
-   * would otherwise move the dot *backwards*, and progress that retreats when you do well is the
-   * one thing a progress display must never do.
+   * A high-water mark, so a dot can only ever fill. Nothing in the roster adds to a wave mid-fight
+   * today — the 裂魄 that came apart into two is gone — but progress that retreats when you do
+   * well is the one thing a progress display must never do, and this is what guarantees it.
    */
   private best: number[] = [];
 
@@ -238,11 +238,6 @@ export class Waves {
       this.gap += 1 / arrivalRate(this.level, next.wave ?? 0);
     }
     return out;
-  }
-
-  /** `count` more have joined a wave mid-fight — 裂魄 coming apart. */
-  swell(wave: number, count: number): void {
-    this.size[wave] += count;
   }
 
   /** `count` of a wave are gone, killed or spent on the body. */

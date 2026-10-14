@@ -67,7 +67,12 @@ export interface Dictionary {
    */
   fullness: [string, string, string, string];
 
-  breeds: Record<Kind, string>;
+  /**
+   * The eight kinds, each as its common, elite and king — 哥布林, 精英哥布林, 哥布林王. Not drawn
+   * on screen during a level (§6.4); the preview sheet and anything that ever names one read them
+   * from here.
+   */
+  creatures: Record<Kind, [string, string, string]>;
 
   /** The twenty lines a 机缘 can say. */
   finds: string[];

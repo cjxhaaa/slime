@@ -38,13 +38,15 @@ export const en: Dictionary = {
   realmStage: '{realm} Layer {stage}',
   fullness: ['Barely gathered', 'Gathering', 'Nearly full', 'Ready to break through'],
 
-  breeds: {
-    drift: 'Drifter',
-    dart: 'Charger',
-    weave: 'Circler',
-    split: 'Splitter',
-    heavy: 'Hulk',
-    root: 'Anchor',
+  creatures: {
+    goblin: ['Goblin', 'Goblin Elite', 'Goblin King'],
+    zombie: ['Zombie', 'Zombie Elite', 'Zombie King'],
+    spider: ['Spider', 'Spider Elite', 'Spider Queen'],
+    boar: ['Boar', 'Boar Elite', 'Boar King'],
+    bat: ['Bat', 'Bat Elite', 'Bat King'],
+    drake: ['Wyrmling', 'Drake Elite', 'Drake King'],
+    gunner: ['Goblin Gunner', 'Gunner Elite', 'Gunner King'],
+    mage: ['Mage', 'Mage Elite', 'Mage King'],
   },
 
   finds: [

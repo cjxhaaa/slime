@@ -25,13 +25,15 @@ export const ko: Dictionary = {
   realmStage: '{realm} {stage}층',
   fullness: ['공력 응결', '공력 점증', '돌파 임박', '돌파 가능'],
 
-  breeds: {
-    drift: '유혼',
-    dart: '분살',
-    weave: '전혼',
-    split: '열백',
-    heavy: '중살',
-    root: '정살',
+  creatures: {
+    goblin: ['고블린', '정예 고블린', '고블린 왕'],
+    zombie: ['좀비', '정예 좀비', '좀비 왕'],
+    spider: ['거미', '정예 거미', '거미 여왕'],
+    boar: ['멧돼지', '정예 멧돼지', '멧돼지 왕'],
+    bat: ['꼬마 박쥐', '정예 박쥐', '박쥐 왕'],
+    drake: ['꼬마 악룡', '정예 악룡', '악룡 왕'],
+    gunner: ['포수 고블린', '정예 포수 고블린', '포수 고블린 왕'],
+    mage: ['마법사', '정예 마법사', '마법사 왕'],
   },
 
   finds: [
