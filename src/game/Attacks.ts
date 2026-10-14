@@ -43,12 +43,16 @@ import {
   span as weaponSpan,
   swing,
 } from './kit.js';
+import { power } from './gear.js';
 
 /** What the fight has to be able to answer. Implemented by `Trial`. */
 export interface Battlefield {
   targets(): { x: number; y: number }[];
-  /** Kills up to `most` within `radius` of a point, nearest first. Returns how many died. */
-  cull(x: number, y: number, radius: number, most: number): number;
+  /**
+   * Hits up to `most` within `radius` of a point, nearest first, for `damage` each. Returns how
+   * many were hit.
+   */
+  cull(x: number, y: number, radius: number, most: number, damage?: number): number;
   /** The nearest 邪气 within `within`, or null. */
   closest(x: number, y: number, within: number): { x: number; y: number } | null;
   /**
@@ -118,6 +122,11 @@ interface Effect {
    */
   owner?: number;
   /**
+   * How hard each of this weapon's hits lands: `power` of the grade it was struck at. Absent on
+   * anything a 五行 spawned, which hits for one.
+   */
+  power?: number;
+  /**
    * Radians a second this bends its own heading by. Zero, and absent, for everything that flies
    * straight.
    *
@@ -171,6 +180,16 @@ const RootReach = 52;
 const RootSeconds = 0.4;
 /** 荣木: 护体 given back per hit, which is small on purpose. */
 const LeechGift = 0.06;
+/**
+ * 荣木: the most it can give back a second, per depth, and the most that can be banked.
+ *
+ * Per hit alone, the healing grew with the level: higher up everything takes more hits to kill,
+ * so a build carrying 木荣 healed more the harder the level was — measured, a level-99 clear that
+ * absorbed seventy-two damage on a body of thirteen, and levels 80 and 99 easier than 60. Capped
+ * by time instead, it is a steady trickle whatever the level asks of the weapons.
+ */
+const LeechPerSecond = 0.06;
+const LeechBank = 1;
 /** 寒水: how wide the patch is and how long it lasts. */
 const ChillReach = 74;
 const ChillSeconds = 2.6;
@@ -308,6 +327,13 @@ const ShellShove = 620;
 const ShellReach = 150;
 /** How close a thing has to be to count as touched by a persistent effect. */
 const Touch = 22;
+/** The star a hit leaves: how long it shows and how big it is at a 浅绿 hit. */
+const ImpactSeconds = 0.16;
+const ImpactReach = 11;
+/** Past this many things in the air, a hit goes without its star rather than adding to the pile. */
+const MaxLive = 320;
+/** The ink every weapon's projectile is edged in — the same dark line the creatures wear. */
+const Ink = '#1d1428';
 /**
  * How far from a 罡气 node something is still cut.
  *
@@ -388,6 +414,7 @@ export class Attacks {
     this.shellLeft = 0;
     this.shellLayers = 0;
     this.plateWay = 0;
+    this.leechRoom = LeechBank;
     this.shellBack = 0;
     this.shellBurst = 0;
     this.arena = null;
@@ -564,6 +591,19 @@ export class Attacks {
    * decides what goes out and where, a way decides what happens where it arrives.
    */
   private strike(battlefield: Battlefield, arm: { weapon: Weapon; depth: number }, owner: number): void {
+    // Everything this strike puts out carries the weight of the grade it was struck at.
+    this.forging = power(arm.depth);
+    try {
+      this.strikeAt(battlefield, arm, owner);
+    } finally {
+      this.forging = 1;
+    }
+  }
+
+  /** The power stamped on effects pushed during a strike. One outside of one. */
+  private forging = 1;
+
+  private strikeAt(battlefield: Battlefield, arm: { weapon: Weapon; depth: number }, owner: number): void {
     const reach = weaponSpan(arm.weapon, arm.depth);
 
     if (arm.weapon === '弓') {
@@ -685,7 +725,12 @@ export class Attacks {
    * Ways settle **in the order they are carried**, each doing its own thing, so two that both act
    * on the same hit compound rather than one winning.
    */
-  private land(x: number, y: number, battlefield: Battlefield, heading: number): void {
+  private land(x: number, y: number, battlefield: Battlefield, heading: number, power = 1): void {
+    // The hit itself, before anything a 五行 does with it: a star of white with an ink edge, sized
+    // by how hard it landed. Drawn solid rather than as light, so it reads on a white wallpaper too.
+    if (this.live.length < MaxLive) {
+      this.push('符', 'impact', x, y, 0, 0, heading + ((x * 0.37 + y * 0.11) % 0.8), ImpactSeconds, ImpactReach * (1 + Math.log(power) / Math.log(9)), 0);
+    }
     for (const held of this.ways) {
       const path = PATHS[held.way];
       const depth = Math.max(1, Math.min(MaxDepth, held.depth));
@@ -713,7 +758,9 @@ export class Attacks {
       } else if (path.on === 'leech') {
         // 荣木: a sliver of 护体 back per hit. Small, because a weapon that swings fast would
         // otherwise make the body unkillable rather than durable.
-        battlefield.mend(LeechGift * depth);
+        const gift = Math.min(LeechGift * depth, this.leechRoom);
+        this.leechRoom -= gift;
+        if (gift > 0) battlefield.mend(gift);
         this.spark(x, y, 3, '木', 120, -Math.PI / 2, 1.1);
       } else if (path.on === 'chill') {
         // 寒水: the ground stays cold. `fields()` reads these back, so the slow is the one the
@@ -800,6 +847,8 @@ export class Attacks {
     return true;
   }
 
+  /** 荣木's budget: what it can still give back before the trickle refills it. See `LeechPerSecond`. */
+  private leechRoom = LeechBank;
   private arena: Battlefield | null = null;
   private bodyX = 0;
   private bodyY = 0;
@@ -816,6 +865,7 @@ export class Attacks {
     // them *inside* a 大乘 slime, which reads as the pet being hit rather than as it casting.
     if (body.radius) this.bodyR = body.radius;
     this.clock += dt;
+    this.leechRoom = Math.min(LeechBank, this.leechRoom + dt * LeechPerSecond * this.depthOf('木荣'));
 
     this.shellBurst = Math.max(0, this.shellBurst - dt * 2);
     if (this.shellLeft <= 0 && this.shellLayers > 0) {
@@ -956,6 +1006,7 @@ export class Attacks {
     bite: number,
   ): Effect {
     const effect: Effect = { school, kind, x, y, vx, vy, angle, age: 0, life, reach, bite, cool: 0 };
+    if (this.forging > 1) effect.power = this.forging;
     this.live.push(effect);
     return effect;
   }
@@ -991,9 +1042,9 @@ export class Attacks {
         // to whatever is carried with it.
         e.x += e.vx * dt;
         e.y += e.vy * dt;
-        if (battlefield.cull(e.x, e.y, Touch, 1) > 0) {
+        if (battlefield.cull(e.x, e.y, Touch, 1, e.power) > 0) {
           const aim = Math.atan2(e.vy, e.vx);
-          this.land(e.x, e.y, battlefield, aim);
+          this.land(e.x, e.y, battlefield, aim, e.power);
           this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
           this.spark(e.x, e.y, 5, '符', 180, aim, 2.1);
           // 锐金 is why this is a count rather than a `continue`: without it the arrow is spent
@@ -1008,9 +1059,9 @@ export class Attacks {
         // on its centre line would read as a thrown stick.
         e.x += e.vx * dt;
         e.y += e.vy * dt;
-        if (e.bite > 0 && battlefield.cull(e.x, e.y, SlashWidth / 2, 1) > 0) {
+        if (e.bite > 0 && battlefield.cull(e.x, e.y, SlashWidth / 2, 1, e.power) > 0) {
           e.bite -= 1;
-          this.land(e.x, e.y, battlefield, e.angle);
+          this.land(e.x, e.y, battlefield, e.angle, e.power);
           this.spark(e.x, e.y, 4, '刀', 210, e.angle + Math.PI, 2.2);
         }
       } else if (e.kind === 'guard') {
@@ -1021,9 +1072,9 @@ export class Attacks {
         e.angle = at;
         e.x = this.bodyX + Math.cos(at) * e.reach;
         e.y = this.bodyY + Math.sin(at) * e.reach;
-        if (e.cool <= 0 && battlefield.cull(e.x, e.y, GuardBite, 1) > 0) {
+        if (e.cool <= 0 && battlefield.cull(e.x, e.y, GuardBite, 1, e.power) > 0) {
           e.cool = GuardCool;
-          this.land(e.x, e.y, battlefield, at + Math.PI / 2);
+          this.land(e.x, e.y, battlefield, at + Math.PI / 2, e.power);
           this.spark(e.x, e.y, 4, '盾', 180, at + Math.PI / 2, 1.5);
         }
       } else if (e.kind === 'charm') {
@@ -1042,8 +1093,8 @@ export class Attacks {
         }
         e.x += e.vx * dt;
         e.y += e.vy * dt;
-        if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch, 1) > 0) {
-          this.land(e.x, e.y, battlefield, e.angle);
+        if (e.cool <= 0 && battlefield.cull(e.x, e.y, Touch, 1, e.power) > 0) {
+          this.land(e.x, e.y, battlefield, e.angle, e.power);
           this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
           this.spark(e.x, e.y, 6, '符', 190, e.angle, 2.1);
           e.bite -= 1;
@@ -1058,8 +1109,8 @@ export class Attacks {
           if (e.cool <= 0) {
             e.hits = (e.hits ?? 0) - 1;
             e.angle += 1.9;
-            battlefield.cull(e.x, e.y, SwordBite, 1);
-            this.land(e.x, e.y, battlefield, e.angle);
+            battlefield.cull(e.x, e.y, SwordBite, 1, e.power);
+            this.land(e.x, e.y, battlefield, e.angle, e.power);
             this.spark(e.x, e.y, 3, '剑', 240, e.angle, 1.6);
             // `cool` is the beat between cuts while there are cuts left, and the rest after the
             // last one. One timer, two jobs, and which job it is doing is `hits`.
@@ -1371,6 +1422,32 @@ export class Attacks {
     const grown = e.life > 0 ? Math.min(1, e.age / Math.max(0.0001, e.life * 0.25)) : 1;
 
 
+    if (e.kind === 'impact') {
+      // A four-pointed star, out and gone: the frame a hit lands on.
+      const t = e.age / Math.max(0.01, e.life);
+      const r = e.reach * (t < 0.3 ? 0.5 + (t / 0.3) * 0.5 : 1 - (t - 0.3) * 0.9);
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 1 - t * t;
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const reach = i % 2 === 0 ? r : r * 0.32;
+        const a = (i / 8) * Math.PI * 2;
+        if (i === 0) context.moveTo(Math.cos(a) * reach, Math.sin(a) * reach);
+        else context.lineTo(Math.cos(a) * reach, Math.sin(a) * reach);
+      }
+      context.closePath();
+      context.fillStyle = '#fffbea';
+      context.fill();
+      context.lineWidth = 1.6;
+      context.strokeStyle = Ink;
+      context.stroke();
+      context.restore();
+      return;
+    }
+
     if (e.kind === 'pop' || e.kind === 'burst') {
       const swell = e.age / Math.max(0.01, e.life);
       const r = e.reach * (0.25 + 0.95 * swell);
@@ -1416,6 +1493,25 @@ export class Attacks {
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle);
+      // The solid crescent first, edged in ink, so the cut is there on any wallpaper; the light goes
+      // over it.
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 1 - run * run;
+      const crescent = (): void => {
+        context.beginPath();
+        context.moveTo(-10, -SlashWidth * 0.5 * thin);
+        context.quadraticCurveTo(10, 0, -10, SlashWidth * 0.5 * thin);
+      };
+      crescent();
+      context.strokeStyle = Ink;
+      context.lineWidth = 3.5 * thin + 3;
+      context.stroke();
+      crescent();
+      context.strokeStyle = hue.body;
+      context.lineWidth = 3.5 * thin;
+      context.stroke();
+      context.restore();
       context.globalAlpha = 0.85 * (1 - run * run);
       const edge = context.createLinearGradient(-SlashWidth * 0.5, 0, SlashWidth * 0.5, 0);
       edge.addColorStop(0, clear(hue.body));
@@ -1462,18 +1558,29 @@ export class Attacks {
       context.arc(this.bodyX, this.bodyY, e.reach, e.angle - 1.1, e.angle);
       context.stroke();
       this.bloom(context, e.x, e.y, 19, hue, 0.6);
+      // The node itself, solid and inked, over its light.
+      context.save();
+      context.globalCompositeOperation = 'source-over';
       context.globalAlpha = 1;
+      context.fillStyle = hue.body;
+      context.strokeStyle = Ink;
+      context.lineWidth = 1.8;
+      context.beginPath();
+      context.arc(e.x, e.y, 6.5, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
       context.fillStyle = hue.core;
       context.beginPath();
-      context.arc(e.x, e.y, 5.5, 0, Math.PI * 2);
+      context.arc(e.x - 1.6, e.y - 1.6, 2.4, 0, Math.PI * 2);
       context.fill();
+      context.restore();
       context.globalAlpha = 1;
       return;
     }
 
     if (e.kind === 'charm') {
       // The charm itself, turned to face where it is going, with a short wake. It is slow enough
-      // that the shape is actually seen, which is why this one is drawn and the arrow is a streak.
+      // that the shape is actually seen.
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle);
@@ -1484,12 +1591,28 @@ export class Attacks {
       context.moveTo(-22, 0);
       context.lineTo(-7, 0);
       context.stroke();
-      context.globalAlpha = 0.9;
+      // A paper talisman, solid and inked: yellow, a red rune down it, and the weapon's colour on
+      // its two edges.
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 1;
+      context.fillStyle = '#f6d65a';
+      context.strokeStyle = Ink;
+      context.lineWidth = 1.6;
+      context.beginPath();
+      context.rect(-8, -5.5, 16, 11);
+      context.fill();
+      context.stroke();
       context.fillStyle = hue.body;
-      context.fillRect(-7, -5, 14, 10);
-      context.fillStyle = hue.core;
-      context.fillRect(-7, -5, 14, 2);
-      context.fillRect(-7, 3, 14, 2);
+      context.fillRect(-8, -5.5, 16, 2);
+      context.fillRect(-8, 3.5, 16, 2);
+      context.strokeStyle = '#d02a2a';
+      context.lineWidth = 1.2;
+      context.beginPath();
+      context.moveTo(-4, 0);
+      context.lineTo(4, -1.5);
+      context.moveTo(-3, 1.6);
+      context.lineTo(3, 1.6);
+      context.stroke();
       context.restore();
       this.bloom(context, e.x, e.y, 16, hue, 0.4);
       context.globalAlpha = 1;
@@ -1517,22 +1640,48 @@ export class Attacks {
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle);
+      // A blade you can see on white: steel, inked, with a gold guard and the weapon's colour down
+      // its spine.
+      context.globalCompositeOperation = 'source-over';
       context.globalAlpha = 1;
-      context.fillStyle = hue.core;
+      context.fillStyle = '#eef3fb';
+      context.strokeStyle = Ink;
+      context.lineWidth = 1.6;
       context.beginPath();
-      context.moveTo(17, 0);
-      context.lineTo(-2, -3.5);
-      context.lineTo(-11, 0);
-      context.lineTo(-2, 3.5);
+      context.moveTo(19, 0);
+      context.lineTo(0, -3.6);
+      context.lineTo(-6, -3.6);
+      context.lineTo(-6, 3.6);
+      context.lineTo(0, 3.6);
       context.closePath();
       context.fill();
+      context.stroke();
+      context.strokeStyle = hue.body;
+      context.lineWidth = 1.1;
+      context.beginPath();
+      context.moveTo(-5, 0);
+      context.lineTo(14, 0);
+      context.stroke();
+      context.fillStyle = '#f2c14e';
+      context.strokeStyle = Ink;
+      context.lineWidth = 1.4;
+      context.beginPath();
+      context.rect(-8, -5.5, 2.6, 11);
+      context.fill();
+      context.stroke();
+      context.lineWidth = 2.6;
+      context.strokeStyle = Ink;
+      context.beginPath();
+      context.moveTo(-8, 0);
+      context.lineTo(-13, 0);
+      context.stroke();
       context.restore();
       return;
     }
 
     if (e.kind === 'arrow') {
-      // 弓. A streak along its own heading rather than a drawn arrow: at this speed the shape is
-      // never seen, only the line it leaves, and a shaft with fletchings on it reads as a smear.
+      // 弓. A streak along its own heading, with a small inked arrow at its head. The streak alone
+      // was light added to the wallpaper, and on a white one it was not there at all.
       const lit = Math.min(1, e.age * 14);
       const back = 26 + Math.min(16, e.age * 90);
       const tail = context.createLinearGradient(
@@ -1551,6 +1700,47 @@ export class Attacks {
       context.lineTo(e.x, e.y);
       context.stroke();
       this.bloom(context, e.x, e.y, 13, hue, 0.5 * lit);
+      // The arrow itself, solid and inked, over its streak — painted last, since the streak is
+      // added light and would wash out anything under it: a shaft, a head, two fletchings.
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.globalAlpha = Math.min(1, e.age * 30);
+      context.lineCap = 'round';
+      context.strokeStyle = Ink;
+      context.lineWidth = 4.2;
+      context.beginPath();
+      context.moveTo(-20, 0);
+      context.lineTo(2, 0);
+      context.stroke();
+      context.strokeStyle = '#c8995a';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(-20, 0);
+      context.lineTo(2, 0);
+      context.stroke();
+      context.fillStyle = '#e6edf5';
+      context.strokeStyle = Ink;
+      context.lineWidth = 1.5;
+      context.beginPath();
+      context.moveTo(9, 0);
+      context.lineTo(1, -4);
+      context.lineTo(1, 4);
+      context.closePath();
+      context.fill();
+      context.stroke();
+      context.fillStyle = hue.body;
+      for (const side of [-1, 1]) {
+        context.beginPath();
+        context.moveTo(-15, 0);
+        context.lineTo(-21, side * 4.2);
+        context.lineTo(-19, 0);
+        context.closePath();
+        context.fill();
+        context.stroke();
+      }
+      context.restore();
       context.globalAlpha = 1;
       return;
     }

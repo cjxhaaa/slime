@@ -1881,40 +1881,9 @@ export class Slime {
 
     if (this.grabbed || this.devour) return;
 
-    // Nothing in the idle life belongs in a trial: not dozing off, not wandering, not the little
-    // scheduled hops. The body is being steered, and a pet that decides to take a nap mid-fight is
-    // not a difficulty spike, it is a bug with an explanation.
-    if (this.planar) {
-      this.mood = 'idle';
-      this.moodUntil = this.clock;
-      this.hopsLeft = 0;
-      return;
-    }
-
-    // Keyed off the live alert rather than the current mood, so picking the slime up mid-alert
-    // interrupts the performance instead of cancelling it. The mood does change while it is held
-    // and for the startle right after, and without this the alert would never come back.
-    if (this.alertText) {
-      this.mood = this.alertAcknowledged ? 'nudge' : 'alert';
-      if (this.alertAcknowledged) {
-        // A slow breath in place. No hop, no travel — just enough motion that the pet still reads
-        // as holding something for you rather than as having forgotten it.
-        if (this.clock >= this.nextAlertBounceAt) {
-          this.blob.pulse(26);
-          this.nextAlertBounceAt = this.clock + NudgeBreathInterval;
-        }
-        return;
-      }
-      // Bounce on a beat rather than continuously: a steady pulse reads as insistent, whereas
-      // constant motion just reads as noise you learn to ignore.
-      if (this.clock >= this.nextAlertBounceAt && this.y >= ground - 1) {
-        this.vy = -HOP_SPEED * 0.72;
-        this.blob.squash(-0.18);
-        this.nextAlertBounceAt = this.clock + AlertBounceInterval;
-      }
-      return;
-    }
-
+    // The two long sequences run first, in or out of a level. They used to sit behind the trial's
+    // early return below, so one that started on the plane — a breakthrough taken by clicking the
+    // pet mid-level — froze where it was, cocoon up, for good.
     if (this.realmBreak) {
       const beat = this.realmBreak;
       const left = Math.max(0, beat.until - this.clock);
@@ -1955,7 +1924,9 @@ export class Slime {
           this.absorbFlash = 1;
           this.blob.squash(-0.42);
           this.blob.pulse(130);
-          this.vy = -HOP_SPEED * 0.8;
+          // No hop on the plane: there "up" is a direction on the screen, and the jolt carried the
+          // pet off the middle of a level it is supposed to be holding.
+          if (!this.planar) this.vy = -HOP_SPEED * 0.8;
         }
       } else if (beat.phase === 'kindling') {
         // The column coming up around it, to near-solid. By the end of this the body is inside.
@@ -2019,12 +1990,46 @@ export class Slime {
           // Outward, not inward: this is the body opening, not flinching.
           this.blob.pulse(230);
           this.blob.squash(-0.42);
-          this.vy = -HOP_SPEED * 1.15;
+          if (!this.planar) this.vy = -HOP_SPEED * 1.15;
         }
       } else if (this.clock >= ordeal.until) {
         this.ascension = null;
         this.mood = 'happy';
         this.moodUntil = this.clock + 2;
+      }
+      return;
+    }
+
+    // Nothing in the idle life belongs in a trial: not dozing off, not wandering, not the little
+    // scheduled hops. The body is being steered, and a pet that decides to take a nap mid-fight is
+    // not a difficulty spike, it is a bug with an explanation.
+    if (this.planar) {
+      this.mood = 'idle';
+      this.moodUntil = this.clock;
+      this.hopsLeft = 0;
+      return;
+    }
+
+    // Keyed off the live alert rather than the current mood, so picking the slime up mid-alert
+    // interrupts the performance instead of cancelling it. The mood does change while it is held
+    // and for the startle right after, and without this the alert would never come back.
+    if (this.alertText) {
+      this.mood = this.alertAcknowledged ? 'nudge' : 'alert';
+      if (this.alertAcknowledged) {
+        // A slow breath in place. No hop, no travel — just enough motion that the pet still reads
+        // as holding something for you rather than as having forgotten it.
+        if (this.clock >= this.nextAlertBounceAt) {
+          this.blob.pulse(26);
+          this.nextAlertBounceAt = this.clock + NudgeBreathInterval;
+        }
+        return;
+      }
+      // Bounce on a beat rather than continuously: a steady pulse reads as insistent, whereas
+      // constant motion just reads as noise you learn to ignore.
+      if (this.clock >= this.nextAlertBounceAt && this.y >= ground - 1) {
+        this.vy = -HOP_SPEED * 0.72;
+        this.blob.squash(-0.18);
+        this.nextAlertBounceAt = this.clock + AlertBounceInterval;
       }
       return;
     }

@@ -63,6 +63,23 @@ export function tintOf(tier: number): string {
   return GRADES[Math.max(0, Math.min(GRADES.length - 1, tier - 1))].tint;
 }
 
+/**
+ * What one item of this grade is worth, counted in 浅绿: **it doubles with every grade.**
+ *
+ * This is what makes a merge worth making. Two of a grade become one of the next, so with power
+ * doubling the merge keeps everything the two were worth and hands back a slot — and a weapon also
+ * swings a little faster a grade up (`kit.swing`), so merging two weapons comes out ahead outright.
+ * Before this a grade was one more point of depth, two 蓝刀 out-hit the 黄刀 they made, and a merge
+ * was a loss you took only for the slot — measured, a build that never merged did as well as one
+ * that did.
+ */
+export function power(tier: number): number {
+  return PowerPerGrade ** (Math.max(1, Math.min(Tiers, Math.round(tier))) - 1);
+}
+
+/** How many times over each grade is worth the one below it. */
+export const PowerPerGrade = 3;
+
 /** True for the top tier, which is drawn as a sweep through the ladder rather than one colour. */
 export function isPrism(tier: number): boolean {
   return tier >= Tiers;

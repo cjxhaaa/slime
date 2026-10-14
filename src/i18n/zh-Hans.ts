@@ -126,6 +126,7 @@ export const zhHans: Dictionary = {
   bar: {
     silver: '银 {silver}',
     buy: '买 {price}',
+    found: '+{silver} 银',
   },
 
   trial: {

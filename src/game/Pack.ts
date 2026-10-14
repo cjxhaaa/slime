@@ -25,11 +25,12 @@
  * - **Ways are summed.** Two 蓝火爆 are not two explosions, they are a bigger one — a way is how
  *   strongly something happens, and the only number it has is depth. Capped at `MaxDepth`.
  *
- * Which also puts a real decision on the merge. Two 蓝火爆 sum to depth 4; merged they are one
- * 黄火爆 at depth 3 **and a slot back**. The merge is not a free upgrade, it is a trade.
+ * Both are weighed by `gear.power`, which doubles with every grade — so a merge keeps everything
+ * the two things were worth and hands back a slot. Two 蓝火爆 are exactly one 黄火爆; two 蓝刀 hit
+ * as hard as one 黄刀, and the 黄刀 swings faster.
  */
 import { MaxDepth, type Way, type Weapon } from './kit.js';
-import { type Item, sameSort } from './gear.js';
+import { type Item, PowerPerGrade, power, sameSort } from './gear.js';
 
 /** How many slots a level opens with. `purse.slotsAfter` says how many it grows to. */
 export const Slots = 6;
@@ -77,6 +78,20 @@ export class Pack {
     const free = this.slots.indexOf(null);
     if (free < 0) return false;
     this.slots[free] = item;
+    return true;
+  }
+
+  /**
+   * Moves what is in one slot to another, swapping with whatever was there. Only the order on the
+   * bar changes; nothing is gained or lost. False when either slot does not exist, they are the
+   * same one, or there is nothing to move.
+   */
+  move(from: number, to: number): boolean {
+    if (from === to || from < 0 || to < 0 || from >= this.slots.length || to >= this.slots.length) return false;
+    const moving = this.slots[from];
+    if (!moving) return false;
+    this.slots[from] = this.slots[to];
+    this.slots[to] = moving;
     return true;
   }
 
@@ -141,15 +156,25 @@ export class Pack {
     return out;
   }
 
-  /** One entry per distinct worn way, tiers summed. Summed, not counted — see the note at the top. */
+  /**
+   * One entry per distinct worn way, its copies weighed together. Summed, not counted — see the
+   * note at the top.
+   *
+   * Weighed by `power` rather than by grade: each copy counts for what it is worth in 浅绿, and the
+   * depth is the grade that weight would be — `1 + log2(weight)`, capped at `MaxDepth`. So two 蓝
+   * of a way are exactly one 黄 of it, and merging them gives up nothing. Summing grades instead
+   * made two 蓝 a depth of four and the 黄 they merged into a three.
+   */
   get ways(): { way: Way; depth: number }[] {
-    const depths = new Map<Way, number>();
+    const weights = new Map<Way, number>();
     for (const slot of this.slots) {
       if (!slot || slot.sort.sort !== 'way') continue;
-      const way = slot.sort.way;
-      depths.set(way, Math.min(MaxDepth, (depths.get(way) ?? 0) + slot.tier));
+      weights.set(slot.sort.way, (weights.get(slot.sort.way) ?? 0) + power(slot.tier));
     }
-    return [...depths].map(([way, depth]) => ({ way, depth }));
+    return [...weights].map(([way, weight]) => ({
+      way,
+      depth: Math.min(MaxDepth, 1 + Math.log(weight) / Math.log(PowerPerGrade)),
+    }));
   }
 
   /** True while nothing that swings is being carried. The level does not begin until it is false. */

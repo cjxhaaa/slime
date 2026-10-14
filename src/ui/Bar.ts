@@ -1,10 +1,24 @@
 /**
  * 装备栏 — the slots along the bottom of a level, the purse, and the one button.
  *
- * Everything you do during a level happens here, by clicking: **买** spends silver on one random
- * thing from the level's five, and clicking one item and then another of the same grade merges
- * them. No drag, no panel to open, nothing that stops the fight. A whole level can be played with
- * this and nothing else — the checks do exactly that, through `click` and nothing behind it.
+ * Everything you do during a level happens here: **买** spends silver on one random thing from the
+ * level's five, and **dragging one item onto another of the same grade merges them**. Clicking one
+ * and then the other does the same, for anyone who would rather click — the checks play whole
+ * levels that way, through `click` and nothing behind it. Nothing opens a panel and nothing stops
+ * the fight.
+ *
+ * ## Dragging, because clicking was not discoverable
+ *
+ * Click-then-click is a rule you have to be told. Dragging one thing onto another is the gesture
+ * every merge game has taught already, and the bar answers it as it happens: the thing in hand
+ * follows the pointer, everything it could merge with lights up and everything it could not steps
+ * back, and over a partner a bubble shows **what the two will become** — the item one grade up when
+ * they are the same thing, a question mark one grade up when they are not and the result is rolled.
+ * Dropped on an empty slot or on something it cannot merge with, it moves there instead, so the
+ * bar can be arranged. Dropped anywhere else it goes back.
+ *
+ * Even before anything is picked up, a thing with a partner on the bar breathes a little, in its
+ * grade's colour: there is a merge here, and these are the two.
  *
  * ## Slots you can count, grades you can read
  *
@@ -34,7 +48,7 @@
 import type { Pack } from '../game/Pack.js';
 import type { Purse } from '../game/purse.js';
 import type { Rect } from '../game/Trial.js';
-import { GRADES, type Item, canMerge, isPrism, tintOf } from '../game/gear.js';
+import { GRADES, type Item, canMerge, isPrism, sameSort, tintOf } from '../game/gear.js';
 import { BuysPerSlot, MostSlots } from '../game/purse.js';
 import { type Loadout, fuseOnBar } from '../game/loadout.js';
 import { fill, words } from '../i18n/index.js';
@@ -59,6 +73,23 @@ const RingGap = 3;
 
 export type BarHit = { kind: 'buy' } | { kind: 'slot'; index: number } | { kind: 'plate' };
 
+/** What letting go of a held item did. */
+export type BarDrop =
+  /** It never left its slot far enough to count as a drag: treat the gesture as a click. */
+  | { kind: 'click'; index: number }
+  | { kind: 'merged'; item: Item }
+  | { kind: 'moved' }
+  /** Let go somewhere that is not a slot; it went back. */
+  | { kind: 'back' };
+
+/** How far the pointer has to travel before a press on an item becomes a drag. */
+const DragFrom = 6;
+/** How far above the bar a drop still finds the slot under it — a hand lets go a little high. */
+const DropSlack = 34;
+/** The bubble over a merge partner that shows what the two become: its size and its lift. */
+const PreviewIcon = 34;
+const PreviewLift = 52;
+
 export class Bar {
   private box: Rect = { x: 0, y: 0, width: 0, height: 0 };
   /** How many slots there are, and how many are drawn — the second tweens toward the first. */
@@ -66,6 +97,12 @@ export class Bar {
   private shown = 0;
   /** The slot picked first, waiting for the one it should merge into. */
   private picked: number | null = null;
+  /**
+   * An item held by the pointer: which slot it came from, where the pointer pressed, where it is
+   * now, and whether it has travelled far enough to be a drag rather than a click.
+   */
+  private held: { index: number; fromX: number; fromY: number; x: number; y: number; lifted: boolean } | null =
+    null;
 
   /**
    * Places the bar for a screen this size. Cheap; call every frame.
@@ -90,6 +127,99 @@ export class Bar {
   reset(): void {
     this.shown = 0;
     this.picked = null;
+    this.held = null;
+  }
+
+  /** Something is in the pointer's hand — pressed on, whether or not it has moved yet. */
+  get holding(): boolean {
+    return this.held !== null;
+  }
+
+  /** Something is being dragged: pressed on and carried past `DragFrom`. */
+  get dragging(): boolean {
+    return this.held?.lifted ?? false;
+  }
+
+  /**
+   * A press on the bar. Takes hold of the item under it, if there is one, and says whether it did.
+   * Nothing moves until the pointer does — a press and release in place is still a click.
+   */
+  grab(x: number, y: number, pack: Pack): boolean {
+    const hit = this.click(x, y);
+    if (!hit || hit.kind !== 'slot' || !pack.worn[hit.index]) return false;
+    this.held = { index: hit.index, fromX: x, fromY: y, x, y, lifted: false };
+    return true;
+  }
+
+  /** The pointer moved while holding something. */
+  drag(x: number, y: number): void {
+    const held = this.held;
+    if (!held) return;
+    held.x = x;
+    held.y = y;
+    if (!held.lifted && Math.hypot(x - held.fromX, y - held.fromY) >= DragFrom) {
+      held.lifted = true;
+      // Picking something up by dragging puts down whatever was picked by clicking.
+      this.picked = null;
+    }
+  }
+
+  /**
+   * Lets go. Over a partner of the same grade the two merge, and the result lands where it was
+   * dropped — the same rule as clicking one and then the other. Over an empty slot or something it
+   * cannot merge with, it moves there and whatever was there takes its place. Anywhere else it goes
+   * back where it came from.
+   */
+  drop(x: number, y: number, pack: Pack, loadout: Loadout, random: () => number): BarDrop {
+    const held = this.held;
+    this.held = null;
+    if (!held) return { kind: 'back' };
+    if (!held.lifted) return { kind: 'click', index: held.index };
+    const to = this.slotUnder(x, y);
+    const moving = pack.worn[held.index] ?? null;
+    if (to === null || to === held.index || !moving) return { kind: 'back' };
+    const there = pack.worn[to] ?? null;
+    if (there && canMerge(moving, there)) {
+      const made = fuseOnBar(pack, there, moving, loadout, random);
+      if (made) return { kind: 'merged', item: made };
+    }
+    return pack.move(held.index, to) ? { kind: 'moved' } : { kind: 'back' };
+  }
+
+  /** Puts down whatever is held without doing anything with it, for a gesture that was called off. */
+  letGo(): void {
+    this.held = null;
+  }
+
+  /** The slot a drop at this point lands on: the column under it, a little above the bar included. */
+  private slotUnder(x: number, y: number): number | null {
+    const b = this.box;
+    if (y < b.y - DropSlack || y > b.y + b.height) return null;
+    const along = x - b.x - Pad;
+    if (along < 0 || along >= SlotRun) return null;
+    const index = Math.floor(along / this.pitch);
+    return index < this.count ? index : null;
+  }
+
+  /**
+   * Everything the bar might paint this frame: the plate, the glow and the preview bubble over it,
+   * and while something is being dragged, the thing in hand wherever it has been carried.
+   */
+  get paintBounds(): Rect {
+    const b = this.box;
+    let left = b.x;
+    let top = b.y - PreviewLift - PreviewIcon;
+    let right = b.x + b.width;
+    let bottom = b.y + b.height;
+    const held = this.held;
+    if (held?.lifted) {
+      const reach = MostIcon;
+      left = Math.min(left, held.x - reach);
+      top = Math.min(top, held.y - reach);
+      right = Math.max(right, held.x + reach);
+      bottom = Math.max(bottom, held.y + reach);
+    }
+    return { x: left, y: top, width: right - left, height: bottom - top };
   }
 
   get bounds(): Rect {
@@ -182,8 +312,27 @@ export class Bar {
     const w = words().bar;
     const b = this.box;
     const worn = pack.worn;
-    const first = this.picked !== null ? (worn[this.picked] ?? null) : null;
+    const held = this.held?.lifted ? this.held : null;
+    const from = held ? held.index : this.picked;
+    const first = from !== null ? (worn[from] ?? null) : null;
+    const over = held ? this.slotUnder(held.x, held.y) : null;
     const pitch = this.pitch;
+    // Before anything is picked up: which things have a partner on the bar.
+    const partnered = new Set<number>();
+    if (first === null) {
+      for (let i = 0; i < worn.length; i++) {
+        const a = worn[i];
+        if (!a) continue;
+        for (let j = 0; j < worn.length; j++) {
+          const other = worn[j];
+          if (j !== i && other && canMerge(a, other)) {
+            partnered.add(i);
+            break;
+          }
+        }
+      }
+    }
+    const breathe = 0.5 + 0.5 * Math.sin(now / 320);
     const cell = Math.min(MostIcon + (Ring + RingGap) * 2, pitch - 6);
     const icon = Math.min(MostIcon, cell - (Ring + RingGap) * 2 - 2);
     context.save();
@@ -214,9 +363,25 @@ export class Bar {
       if (!item) continue;
 
       // Picked: everything that could not merge with it steps back. The cells stay; it is the
-      // things in them that fade.
-      const live = first === null || i === this.picked || canMerge(first, item);
-      context.globalAlpha = arriving * (live ? 1 : 0.28);
+      // things in them that fade. The one in hand leaves only a ghost of itself behind.
+      const live = first === null || i === from || canMerge(first, item);
+      const ghost = held !== null && i === held.index;
+      context.globalAlpha = arriving * (ghost ? 0.22 : live ? 1 : 0.28);
+
+      // A partner on the bar: breathing in its grade's colour before anything is picked up, and
+      // lit plainly while the thing it could merge with is in hand — brighter still under it.
+      const partner = (first === null && partnered.has(i)) || (first !== null && i !== from && live);
+      if (partner && !ghost) {
+        const under = held !== null && over === i;
+        context.save();
+        context.shadowColor = under ? 'rgba(255, 255, 255, 0.95)' : tintOf(item.tier);
+        context.shadowBlur = under ? 18 : first === null ? 6 + 8 * breathe : 12;
+        context.fillStyle = under ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.08)';
+        context.beginPath();
+        context.roundRect(centre.x - cell / 2 + 2, centre.y - cell / 2 + 2, cell - 4, cell - 4, 8);
+        context.fill();
+        context.restore();
+      }
 
       context.save();
       context.translate(centre.x, centre.y);
@@ -230,7 +395,7 @@ export class Bar {
       context.roundRect(centre.x - reach, centre.y - reach, reach * 2, reach * 2, 10);
       context.stroke();
 
-      if (i === this.picked) {
+      if (i === this.picked && held === null) {
         // Lifted off the bar: a white ring outside the grade, so the grade still shows.
         const lifted = reach + Ring + 1;
         context.strokeStyle = 'rgba(255, 255, 255, 0.95)';
@@ -241,6 +406,51 @@ export class Bar {
       }
     }
     context.globalAlpha = 1;
+
+    // Over a partner: what the two become, in a bubble over it. The item one grade up when they
+    // are the same thing; a question mark one grade up when the result is rolled.
+    if (held && over !== null && first && over !== held.index) {
+      const target = worn[over] ?? null;
+      if (target && canMerge(first, target)) {
+        const at = this.slotCentre(over);
+        const py = b.y - PreviewLift + 6;
+        const tier = target.tier + 1;
+        const r = PreviewIcon / 2 + 6;
+        context.save();
+        context.fillStyle = 'rgba(10, 12, 18, 0.78)';
+        context.beginPath();
+        context.roundRect(at.x - r, py - r, r * 2, r * 2, 10);
+        context.moveTo(at.x - 6, py + r);
+        context.lineTo(at.x, py + r + 7);
+        context.lineTo(at.x + 6, py + r);
+        context.fill();
+        if (sameSort(first, target)) {
+          context.translate(at.x, py);
+          drawItemIcon(context, target.sort, PreviewIcon, tintOf(tier));
+          context.translate(-at.x, -py);
+        } else {
+          context.fillStyle = tintOf(tier);
+          context.beginPath();
+          context.roundRect(at.x - PreviewIcon / 2, py - PreviewIcon / 2, PreviewIcon, PreviewIcon, 8);
+          context.fill();
+          context.fillStyle = '#ffffff';
+          context.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+          context.lineWidth = 3;
+          context.font = '800 22px system-ui, sans-serif';
+          context.textAlign = 'center';
+          context.textBaseline = 'middle';
+          context.strokeText('?', at.x, py + 1);
+          context.fillText('?', at.x, py + 1);
+        }
+        const ring = PreviewIcon / 2 + 2;
+        context.lineWidth = 2.5;
+        context.strokeStyle = isPrism(tier) ? prism(context, at.x, py, ring) : tintOf(tier);
+        context.beginPath();
+        context.roundRect(at.x - ring, py - ring, ring * 2, ring * 2, 8);
+        context.stroke();
+        context.restore();
+      }
+    }
 
     const button = this.button();
     const open = purse.canBuy(pack);
@@ -277,6 +487,24 @@ export class Bar {
         context.arc(button.x + button.width / 2 + (i - (BuysPerSlot - 1) / 2) * 11, b.y + Pad + 21, 3, 0, Math.PI * 2);
         context.fill();
       }
+    }
+
+    // The one in hand, over everything, a little bigger than it sits and with a shadow under it.
+    if (held && first) {
+      const size = icon * 1.12;
+      context.save();
+      context.translate(held.x, held.y);
+      context.shadowColor = 'rgba(0, 0, 0, 0.45)';
+      context.shadowBlur = 10;
+      context.shadowOffsetY = 5;
+      drawItemIcon(context, first.sort, size, tintOf(first.tier));
+      context.restore();
+      const reach = size / 2 + RingGap;
+      context.lineWidth = Ring;
+      context.strokeStyle = isPrism(first.tier) ? prism(context, held.x, held.y, reach) : tintOf(first.tier);
+      context.beginPath();
+      context.roundRect(held.x - reach, held.y - reach, reach * 2, reach * 2, 10);
+      context.stroke();
     }
     context.restore();
   }

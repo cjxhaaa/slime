@@ -134,6 +134,7 @@ export const zhHant: Dictionary = {
   bar: {
     silver: '銀 {silver}',
     buy: '買 {price}',
+    found: '+{silver} 銀',
   },
 
   trial: {

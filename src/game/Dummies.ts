@@ -255,7 +255,7 @@ export class Dummies {
 
   mend(): void {}
 
-  cull(x: number, y: number, radius: number, most: number): number {
+  cull(x: number, y: number, radius: number, most: number, damage = 1): number {
     if (most <= 0) return 0;
     const inside: { post: Post; away: number }[] = [];
     for (const post of this.posts) {
@@ -270,8 +270,9 @@ export class Dummies {
       post.down = NumbSeconds;
       post.shake = 1;
       post.lean = Math.random() < 0.5 ? -1 : 1;
-      this.felled += 1;
-      this.struck.push(this.clock);
+      // Counted by weight, so the readout says what a grade is worth rather than how often it swung.
+      this.felled += damage;
+      for (let i = 0; i < damage; i++) this.struck.push(this.clock);
     }
     return struck.length;
   }

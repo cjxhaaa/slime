@@ -151,6 +151,7 @@ export const en: Dictionary = {
   bar: {
     silver: 'Silver {silver}',
     buy: 'Buy {price}',
+    found: '+{silver} silver',
   },
 
   trial: {

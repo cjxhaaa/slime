@@ -139,6 +139,7 @@ export const ja: Dictionary = {
   bar: {
     silver: '銀 {silver}',
     buy: '買う {price}',
+    found: '+{silver} 銀',
   },
 
   trial: {

@@ -25,14 +25,17 @@
  */
 import { clear } from '../slime/colour.js';
 import { drawCreature } from '../ui/creatures.js';
+import { OpenSeconds, chestSize, drawChest, drawChestBurst } from '../ui/chest.js';
 import type { Depth, Painter } from './depth.js';
-import { clampLevel, menaceSpeed, schedule, toughness, vitality } from './levels.js';
+import { clampLevel, menaceSpeed, rankRamp, schedule, toughness, vitality } from './levels.js';
 import {
   AimSeconds,
   BY_KIND,
   BallSpeed,
   BoltSpeed,
   ChargeBurst,
+  ChestLeast,
+  ChestMost,
   ChargeReach,
   ChargeRest,
   ChargeRushSeconds,
@@ -41,6 +44,7 @@ import {
   type Kind,
   RANKS,
   type Rank,
+  SilverSpread,
   pacing,
   rollBreed,
   rollChampion,
@@ -69,6 +73,8 @@ export const ContactDamage = 1;
 export const GraceSeconds = 0.9;
 /** How close a talisman has to pass to count as a hit. */
 export const StrikeRadius = 26;
+/** How far past the point it landed a heavy hit's leftover weight can reach. See `cull`. */
+export const SpillReach = 70;
 
 export interface Menace {
   kind: Kind;
@@ -125,6 +131,14 @@ export interface Menace {
   /** 燎火: seconds it keeps burning, and the clock to its next tick of it. */
   burnLeft: number;
   burnNext: number;
+  /**
+   * Struck: 1 on the frame a hit lands, falling to 0 over `FlashSeconds`. It goes white, squashes,
+   * and is knocked back a few pixels along `joltX`/`joltY` — the frame that says the hit landed,
+   * on the thing it landed on.
+   */
+  flash: number;
+  joltX: number;
+  joltY: number;
 }
 
 /**
@@ -179,8 +193,26 @@ interface Dodge {
 
 const DodgeSeconds = 0.35;
 
+/**
+ * 宝箱, on the ground where an elite or a king fell. Shut until it is clicked; then it plays its
+ * opening for `OpenSeconds` and is gone.
+ */
+interface Chest {
+  x: number;
+  y: number;
+  boss: boolean;
+  age: number;
+  /** Seconds since it was opened, or -1 while it is still shut. */
+  opened: number;
+  /** What it held — rolled when it is opened, so a chest left shut is worth nothing. */
+  worth: number;
+}
+
 /** How long one takes to disperse. Short: at eight kills a second these overlap constantly. */
 const UndoSeconds = 0.42;
+/** How long a struck one stays white, and how far a hit knocks it, in pixels. */
+const FlashSeconds = 0.14;
+const JoltReach = 5;
 /** The most that can be dispersing at once, for the same reason the sparks are capped. */
 const MaxUndoing = 60;
 
@@ -244,6 +276,10 @@ export class Trial {
   private undoing: Undoing[] = [];
   private shots: Shot[] = [];
   private dodges: Dodge[] = [];
+  private chests: Chest[] = [];
+  /** The field's size at the last update, so a chest can be kept on the screen. */
+  private fieldWidth = 0;
+  private fieldHeight = 0;
   private readonly waves = new Waves();
   /** No waves at all: only what `hurl` puts down. See `start`. */
   private quiet = false;
@@ -264,6 +300,7 @@ export class Trial {
     this.undoing = [];
     this.shots = [];
     this.dodges = [];
+    this.chests = [];
     this.stage = clampLevel(level);
     this.hurt = 0;
     this.grace = 0;
@@ -315,6 +352,38 @@ export class Trial {
 
   get killCount(): number {
     return this.kills;
+  }
+
+  /**
+   * The chest under a point, or -1. Only shut ones answer — an opened one is already paid out.
+   * Generous, so a moving pointer does not have to be pixel-perfect on a thirty-pixel box.
+   */
+  chestAt(x: number, y: number): number {
+    for (let i = 0; i < this.chests.length; i++) {
+      const chest = this.chests[i];
+      if (chest.opened >= 0) continue;
+      const w = chestSize(chest.boss);
+      if (Math.abs(x - chest.x) <= w * 0.7 && y <= chest.y + 6 && y >= chest.y - w * 1.1) return i;
+    }
+    return -1;
+  }
+
+  /** Where the shut chests are, for anything that wants to go and click them. */
+  closedChests(): { x: number; y: number }[] {
+    return this.chests.filter((c) => c.opened < 0).map((c) => ({ x: c.x, y: c.y - chestSize(c.boss) * 0.3 }));
+  }
+
+  /**
+   * Opens one: rolls what it held, a hundred to a thousand, and pays it into the level's silver.
+   * Returns what it paid, or 0 when there was nothing shut there.
+   */
+  openChest(index: number): number {
+    const chest = this.chests[index];
+    if (!chest || chest.opened >= 0) return 0;
+    chest.opened = 0;
+    chest.worth = Math.round((ChestLeast + Math.random() * (ChestMost - ChestLeast)) / 10) * 10;
+    this.spoils += chest.worth;
+    return chest.worth;
   }
 
   /**
@@ -440,7 +509,7 @@ export class Trial {
     }
   }
 
-  cull(x: number, y: number, radius: number, most: number): number {
+  cull(x: number, y: number, radius: number, most: number, damage = 1): number {
     if (most <= 0) return 0;
     const inside: { index: number; away: number }[] = [];
     for (let i = 0; i < this.menaces.length; i++) {
@@ -453,15 +522,46 @@ export class Trial {
 
     const struck = inside.slice(0, most);
     const dead = new Set<number>();
+    let spare = 0;
     for (const { index } of struck) {
       const m = this.menaces[index];
       // The flying ones: some of what is thrown at them goes through. It still counts as landed —
       // whatever was thrown is spent — it just did nothing.
       if (this.dodged(m)) continue;
-      m.health -= 1;
+      struckBy(m, x, y);
+      spare += Math.max(0, damage - m.health);
+      m.health -= damage;
       if (m.health > 0) continue;
       dead.add(index);
       this.fall(m);
+    }
+    // **What a hit did not need spills onto the nearest others close by.** A grade is worth three
+    // of the grade below (`gear.power`), and against a crowd of things with one or two hits each a
+    // single heavy blow would otherwise be mostly wasted — measured, merging two weapons into one
+    // made a build *weaker*, because it traded two strikers for one that overkilled. Spilled, a
+    // heavy hit tears through a pack the way the weight says it should.
+    if (spare > 0) {
+      const hit = new Set(struck.map((s) => s.index));
+      const near: { index: number; away: number }[] = [];
+      for (let i = 0; i < this.menaces.length; i++) {
+        if (hit.has(i) || dead.has(i)) continue;
+        const m = this.menaces[i];
+        const away = Math.hypot(m.x - x, m.y - y);
+        if (away <= radius + SpillReach + bulk(m)) near.push({ index: i, away });
+      }
+      near.sort((a, b) => a.away - b.away);
+      for (const { index } of near) {
+        if (spare <= 0) break;
+        const m = this.menaces[index];
+        if (this.dodged(m)) continue;
+        struckBy(m, x, y);
+        const take = Math.min(spare, m.health);
+        spare -= take;
+        m.health -= take;
+        if (m.health > 0) continue;
+        dead.add(index);
+        this.fall(m);
+      }
     }
     if (dead.size > 0) this.menaces = this.menaces.filter((_, i) => !dead.has(i));
     return struck.length;
@@ -528,6 +628,13 @@ export class Trial {
     this.undoing = dispersing;
     for (const d of this.dodges) d.age += dt;
     this.dodges = this.dodges.filter((d) => d.age < DodgeSeconds);
+    this.fieldWidth = width;
+    this.fieldHeight = height;
+    for (const chest of this.chests) {
+      chest.age += dt;
+      if (chest.opened >= 0) chest.opened += dt;
+    }
+    this.chests = this.chests.filter((c) => c.opened < OpenSeconds);
     this.flyShots(dt, body, width, height, guard);
 
     if (!this.quiet) for (const arrival of this.waves.tick(dt, this.menaces.length)) this.spawn(arrival, width, height);
@@ -539,6 +646,7 @@ export class Trial {
     const survivors: Menace[] = [];
     for (const m of this.menaces) {
       m.arrival = Math.min(1, m.arrival + dt * 2.2);
+      m.flash = Math.max(0, m.flash - dt / FlashSeconds);
       m.phase += dt * 2.6;
       m.age += dt;
       m.timer -= dt;
@@ -769,12 +877,29 @@ export class Trial {
     this.shots = flying;
   }
 
-  /** One of them is dead: counted, paid for, dispersed, and crossed off its wave. */
+  /**
+   * One of them is dead: counted, paid for, dispersed, and crossed off its wave — and an elite or a
+   * king leaves a chest where it fell.
+   */
   private fall(m: Menace): void {
     this.kills += 1;
-    this.spoils += RANKS[m.rank].silver;
+    this.spoils += Math.round(RANKS[m.rank].silver * (1 - SilverSpread + 2 * SilverSpread * Math.random()));
     this.undo(m);
     this.waves.resolve(m.wave, 1);
+    if (m.rank !== 'common') {
+      // Kept on the screen and clear of the bar, so it can always be reached to be clicked.
+      const margin = 40;
+      const width = this.fieldWidth || m.x + margin;
+      const height = this.fieldHeight || m.y + margin;
+      this.chests.push({
+        x: Math.max(margin, Math.min(width - margin, m.x)),
+        y: Math.max(margin + 40, Math.min(height - 130, m.y)),
+        boss: m.rank === 'boss',
+        age: 0,
+        opened: -1,
+        worth: 0,
+      });
+    }
   }
 
   /**
@@ -788,7 +913,8 @@ export class Trial {
    */
   private hits(kind: Kind, rank: Rank): number {
     const own = rank === 'common' ? BY_KIND[kind].health : Math.sqrt(BY_KIND[kind].health);
-    return Math.max(1, Math.round(own * RANKS[rank].health * toughness(this.stage)));
+    const ramp = rank === 'common' ? 1 : rankRamp(this.stage);
+    return Math.max(1, Math.round(own * RANKS[rank].health * ramp * toughness(this.stage)));
   }
 
   /**
@@ -850,7 +976,13 @@ export class Trial {
   }
 
   bounds(): Rect | null {
-    if (this.menaces.length === 0 && this.undoing.length === 0 && this.shots.length === 0 && this.dodges.length === 0) {
+    if (
+      this.menaces.length === 0 &&
+      this.undoing.length === 0 &&
+      this.shots.length === 0 &&
+      this.dodges.length === 0 &&
+      this.chests.length === 0
+    ) {
       return null;
     }
     let left = Infinity;
@@ -866,6 +998,13 @@ export class Trial {
       top = Math.min(top, m.y - pad);
       right = Math.max(right, m.x + pad);
       bottom = Math.max(bottom, m.y + pad);
+    }
+    for (const chest of this.chests) {
+      const reach = chestSize(chest.boss) * 1.4 + 60;
+      left = Math.min(left, chest.x - reach);
+      top = Math.min(top, chest.y - reach - 60);
+      right = Math.max(right, chest.x + reach);
+      bottom = Math.max(bottom, chest.y + reach);
     }
     for (const shot of [...this.shots, ...this.dodges]) {
       const reach = ('kind' in shot ? shot.size * 4 : shot.size * 3) + 10;
@@ -908,6 +1047,26 @@ export class Trial {
         context.arc(u.x, u.y, u.size * 2.4 * (0.5 + 0.5 * (1 - flash)), 0, Math.PI * 2);
         context.fill();
       }
+      // A cartoon poof: a ring of white puffs edged in ink, out and gone in the first third. Solid
+      // rather than light, so a kill reads on a white wallpaper as well as a dark one.
+      if (t < 0.4) {
+        const p = t / 0.4;
+        context.globalAlpha = 1 - p * p;
+        context.fillStyle = '#fbf7ff';
+        context.strokeStyle = '#1b1226';
+        context.lineWidth = 1.5;
+        for (const shard of u.shards) {
+          const rush = Math.hypot(shard.vx, shard.vy) || 1;
+          const out = u.size * (0.5 + 0.9 * p);
+          const px = u.x + (shard.vx / rush) * out;
+          const py = u.y + (shard.vy / rush) * out * 0.8;
+          const r = u.size * (0.42 + 0.25 * Math.sin(p * Math.PI)) * (1 - p * 0.6);
+          context.beginPath();
+          context.arc(px, py, r, 0, Math.PI * 2);
+          context.fill();
+          context.stroke();
+        }
+      }
       // Then the pieces, thrown outward and turning, fading as they go.
       context.globalAlpha = fade * fade * 0.85;
       context.fillStyle = '#1b1226';
@@ -941,7 +1100,13 @@ export class Trial {
   drawMenace(context: CanvasRenderingContext2D, m: Menace): void {
     const breed = BY_KIND[m.kind];
     context.save();
-    context.translate(m.x, m.y);
+    // Struck: knocked back along the line of the hit, squashed by it, and white for a moment.
+    const f = m.flash;
+    context.translate(m.x + m.joltX * f, m.y + m.joltY * f);
+    if (f > 0) {
+      context.scale(1 + 0.18 * f, 1 - 0.14 * f);
+      context.filter = `brightness(${1 + 1.6 * f})`;
+    }
     context.globalAlpha = m.arrival;
     const reach = breed.range * (m.rank === 'common' ? 1 : 1.15);
     drawCreature(context, {
@@ -970,6 +1135,9 @@ export class Trial {
    * standing on the ground, because nothing standing is in front of something flying over it.
    */
   drawAir(context: CanvasRenderingContext2D): void {
+    for (const chest of this.chests) {
+      drawChestBurst(context, chest.x, chest.y, chest.boss, chest.opened, chest.worth, chest.x * 0.37 + chest.y);
+    }
     context.save();
     for (const shot of this.shots) {
       if (shot.kind === 'ball') {
@@ -1045,7 +1213,16 @@ export class Trial {
     for (let i = 0; i < this.menaces.length; i++) {
       depth.add(this.menaces[i].y, this.paintMenace, i);
     }
+    for (let i = 0; i < this.chests.length; i++) {
+      depth.add(this.chests[i].y, this.paintChest, i);
+    }
   }
+
+  /** Held once rather than made per frame, like `paintMenace`. */
+  private readonly paintChest: Painter = (context, index) => {
+    const chest = this.chests[index];
+    if (chest) drawChest(context, chest.x, chest.y, chest.boss, chest.age, chest.opened);
+  };
 }
 
 /**
@@ -1055,6 +1232,16 @@ export class Trial {
  * time the roster does, and a literal that missed one is the kind of bug that shows up as one kind
  * behaving oddly and nothing else.
  */
+/** Marks one as struck from a point: white, and knocked away from where the hit came in. */
+function struckBy(m: Menace, x: number, y: number): void {
+  const dx = m.x - x;
+  const dy = m.y - y;
+  const away = Math.hypot(dx, dy) || 1;
+  m.flash = 1;
+  m.joltX = (dx / away) * JoltReach;
+  m.joltY = (dy / away) * JoltReach;
+}
+
 function born(
   kind: Kind,
   x: number,
@@ -1075,6 +1262,9 @@ function born(
     rootLeft: 0,
     burnLeft: 0,
     burnNext: 0,
+    flash: 0,
+    joltX: 0,
+    joltY: 0,
     phase: Math.random() * Math.PI * 2,
     arrival: extra.arrival ?? 0,
     health,

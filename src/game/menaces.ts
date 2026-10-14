@@ -74,10 +74,10 @@ export const BREEDS: Breed[] = [
   { kind: 'bat', order: 'flying', from: 0.08, weight0: 0, weight1: 4, pace: 1.75, size: 11, health: 1, miss: 0.3, range: 0, reload: 0 },
   { kind: 'zombie', order: 'melee', from: 0.18, weight0: 0, weight1: 3.5, pace: 0.7, size: 16, health: 3, miss: 0, range: 0, reload: 0 },
   { kind: 'spider', order: 'melee', from: 0.28, weight0: 0, weight1: 4, pace: 1.3, size: 14, health: 1, miss: 0, range: 0, reload: 0 },
-  { kind: 'gunner', order: 'ranged', from: 0.38, weight0: 0, weight1: 2.5, pace: 0.5, size: 15, health: 2, miss: 0, range: 300, reload: 2.6 },
-  { kind: 'boar', order: 'melee', from: 0.48, weight0: 0, weight1: 3, pace: 0.85, size: 18, health: 3, miss: 0, range: 0, reload: 0 },
-  { kind: 'mage', order: 'ranged', from: 0.58, weight0: 0, weight1: 2, pace: 0.45, size: 15, health: 2, miss: 0, range: 340, reload: 3 },
-  { kind: 'drake', order: 'flying', from: 0.7, weight0: 0, weight1: 2, pace: 1.25, size: 17, health: 3, miss: 0.2, range: 0, reload: 0 },
+  { kind: 'gunner', order: 'ranged', from: 0.45, weight0: 0, weight1: 2.5, pace: 0.5, size: 15, health: 2, miss: 0, range: 300, reload: 2.6 },
+  { kind: 'boar', order: 'melee', from: 0.52, weight0: 0, weight1: 3, pace: 0.85, size: 18, health: 3, miss: 0, range: 0, reload: 0 },
+  { kind: 'mage', order: 'ranged', from: 0.62, weight0: 0, weight1: 2, pace: 0.45, size: 15, health: 2, miss: 0, range: 340, reload: 3 },
+  { kind: 'drake', order: 'flying', from: 0.72, weight0: 0, weight1: 2, pace: 1.25, size: 17, health: 3, miss: 0.2, range: 0, reload: 0 },
 ];
 
 export const BY_KIND: Record<Kind, Breed> = BREEDS.reduce(
@@ -131,10 +131,24 @@ export interface Standing {
  * armour and the crown say the rest.
  */
 export const RANKS: Record<Rank, Standing> = {
-  common: { size: 1, health: 1, silver: 1 },
-  elite: { size: 1.7, health: 8, silver: 12 },
-  boss: { size: 2.6, health: 40, silver: 60 },
+  common: { size: 1, health: 1, silver: 20 },
+  elite: { size: 1.7, health: 8, silver: 50 },
+  boss: { size: 2.6, health: 40, silver: 150 },
 };
+
+/**
+ * How far either side of its rank's silver a kill pays: a goblin is worth sixteen to twenty-four.
+ * A little spread so the purse ticks up unevenly — a counter that climbs by exactly twenty every
+ * time reads as a meter rather than as loot.
+ */
+export const SilverSpread = 0.2;
+
+/**
+ * 宝箱: what an elite or a king leaves where it fell, and what clicking it open pays — anywhere from
+ * a hundred to a thousand. The silver a level runs on is mostly kills; the chests are the swings.
+ */
+export const ChestLeast = 100;
+export const ChestMost = 1000;
 
 /** Every kind can come as an elite or a king. Listed in the order the kings take their turn. */
 export const Champions: Kind[] = ['goblin', 'bat', 'zombie', 'spider', 'gunner', 'boar', 'mage', 'drake'];

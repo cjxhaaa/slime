@@ -55,6 +55,8 @@ import {
   ContactDamage,
   GraceSeconds,
   PaySeconds,
+  SpillReach,
+  StrikeRadius,
   ThroughShare,
   FlingTau,
   Trial,
@@ -111,7 +113,7 @@ import {
   startingSilver,
   stock,
 } from './purse.js';
-import { type Item, Tiers, canMerge, dropTier, forge, tintOf } from './gear.js';
+import { type Item, PowerPerGrade, Tiers, canMerge, dropTier, forge, power, tintOf } from './gear.js';
 import { type Loadout, complete, fuseOnBar, mergeOf, readLoadout, within } from './loadout.js';
 import { LoadoutPanel, Pitch, togglePick } from '../ui/Loadout.js';
 import {
@@ -125,7 +127,7 @@ import {
   swing,
 } from './kit.js';
 import { BurnBeat } from './Trial.js';
-import { BREEDS, BY_KIND, RANKS, pacing, rollBreed, rollChampion, weightAt } from './menaces.js';
+import { BREEDS, BY_KIND, ChestLeast, ChestMost, RANKS, pacing, rollBreed, rollChampion, weightAt } from './menaces.js';
 import {
   Ascended,
   StagesPerRealm,
@@ -1041,6 +1043,11 @@ const shopRandom = (): number => {
 
 // The five every shop and merge in this block rolls from.
 const Five: Loadout = { arms: ['刀', '弓'], ways: ['水流', '火爆', '土固'] };
+// Other fives, so the scope check below is not about one loadout.
+const Others: Loadout[] = [
+  { arms: ['剑', '符'], ways: ['金鸣', '木缠', '水寒'] },
+  { arms: ['盾', '刀'], ways: ['木荣', '火燎', '土崩'] },
+];
 const nameOf = (item: Item): string => (item.sort.sort === 'arm' ? item.sort.weapon : item.sort.way);
 
 {
@@ -1097,8 +1104,46 @@ const nameOf = (item: Item): string => (item.sort.sort === 'arm' ? item.sort.wea
   bag.accept(forge({ sort: 'way', way: '火爆' }, 2));
   check('a way arrives at the grade it was bought at', bag.ways[0].depth, 2);
   bag.accept(forge({ sort: 'way', way: '火爆' }, 2));
-  check('and a second one sums rather than counting', bag.ways[0].depth, 4);
+  // Weighed, not added: two 蓝 are worth six 浅绿 between them, which is a depth between 蓝 and 黄.
+  check('and a second one adds its weight', bag.ways[0].depth, 1 + Math.log(6) / Math.log(PowerPerGrade), 1e-9);
   check('still one way, not two', bag.ways.length, 1);
+  // And the 黄 they would merge into is worth more than both of them.
+  const merged = new Pack();
+  merged.accept(forge({ sort: 'way', way: '火爆' }, 3));
+  checkTrue('the 黄 two 蓝 merge into runs deeper than the two of them', merged.ways[0].depth > bag.ways[0].depth);
+}
+
+{
+  // **A grade is worth three of the grade below** — the rule that makes a merge a gain instead of a
+  // trade. Two of a grade become one of the next, so every merge is worth half again what went in.
+  check('浅绿 is worth one', power(1), 1);
+  check('蓝 three', power(2), 3);
+  check('黄 nine', power(3), 9);
+  check('彩 two hundred and forty-three', power(Tiers), 243);
+  let gains = true;
+  for (let t = 1; t < Tiers; t++) if (power(t + 1) <= 2 * power(t)) gains = false;
+  checkTrue('every merge is worth more than the two that went into it', gains);
+}
+
+{
+  // **Spill.** What a heavy hit does not need goes on to the nearest others close by, so a 黄 blow
+  // into a pack of goblins takes several of them rather than overkilling one.
+  const run = new Trial();
+  run.start(1, true);
+  for (let i = 0; i < 6; i++) run.hurl('goblin', 'common', 300 + i * 9, 300);
+  run.cull(300, 300, StrikeRadius, 1, power(3));
+  check('a 黄 hit into six one-hit goblins takes all six', run.killCount, 6);
+  const far = new Trial();
+  far.start(1, true);
+  far.hurl('goblin', 'common', 300, 300);
+  far.hurl('goblin', 'common', 300 + StrikeRadius + SpillReach + 40, 300);
+  far.cull(300, 300, StrikeRadius, 1, power(3));
+  check('but not one standing well clear of where it landed', far.killCount, 1);
+  const light = new Trial();
+  light.start(1, true);
+  for (let i = 0; i < 3; i++) light.hurl('goblin', 'common', 300 + i * 9, 300);
+  light.cull(300, 300, StrikeRadius, 1, power(1));
+  check('and a 浅绿 hit, with nothing to spare, takes one', light.killCount, 1);
 }
 
 {
@@ -1154,9 +1199,42 @@ const nameOf = (item: Item): string => (item.sort.sort === 'arm' ? item.sort.wea
   checkTrue('and a higher realm walks in with more', startingSilver(Ascended - 1) > startingSilver(1));
 
   // What one kill is worth, by rank — the three numbers TOWER.md set.
-  check('a common drops one', RANKS.common.silver, 1);
-  check('an elite twelve', RANKS.elite.silver, 12);
-  check('a boss sixty', RANKS.boss.silver, 60);
+  check('a common drops about twenty', RANKS.common.silver, 20);
+  check('an elite about fifty', RANKS.elite.silver, 50);
+  check('a king a hundred and fifty', RANKS.boss.silver, 150);
+
+  // 宝箱: an elite or a king leaves one where it fell; a common never does. Clicked open, it pays
+  // somewhere between a hundred and a thousand into the level's silver.
+  const run = new Trial();
+  run.start(1, true);
+  run.hurl('goblin', 'common', 300, 300);
+  run.cull(300, 300, StrikeRadius, 1, 999);
+  check('a common leaves no chest', run.closedChests().length, 0);
+  const goblinPaid = run.silver;
+  checkTrue(`and pays about twenty: ${goblinPaid}`, goblinPaid >= 16 && goblinPaid <= 24);
+  run.hurl('goblin', 'elite', 400, 300);
+  run.cull(400, 300, StrikeRadius, 1, 9999);
+  check('an elite leaves one', run.closedChests().length, 1);
+  const where = run.closedChests()[0];
+  const index = run.chestAt(where.x, where.y);
+  checkTrue('and it can be found by pointing at it', index >= 0);
+  const before = run.silver;
+  const worth = run.openChest(index);
+  checkTrue(`opened, it pays between a hundred and a thousand: ${worth}`, worth >= ChestLeast && worth <= ChestMost);
+  check("into the level's silver", run.silver - before, worth);
+  check('and opening it again pays nothing', run.openChest(index), 0);
+  let lowest = Infinity;
+  let highest = 0;
+  for (let i = 0; i < 400; i++) {
+    const roll = new Trial();
+    roll.start(1, true);
+    roll.hurl('goblin', 'boss', 300, 300);
+    roll.cull(300, 300, StrikeRadius, 1, 99999);
+    const paid = roll.openChest(roll.chestAt(roll.closedChests()[0].x, roll.closedChests()[0].y));
+    lowest = Math.min(lowest, paid);
+    highest = Math.max(highest, paid);
+  }
+  checkTrue(`over many chests the whole range turns up: ${lowest} to ${highest}`, lowest < 250 && highest > 850);
 }
 
 {
@@ -1395,6 +1473,49 @@ const nameOf = (item: Item): string => (item.sort.sort === 'arm' ? item.sort.wea
   checkTrue(`what it cannot fades back (${other.alpha})`, other.alpha < 0.5);
 }
 
+{
+  // **Dragging merges.** One item carried onto another of its grade merges them, the result where
+  // it was dropped; carried onto an empty slot it moves; let go in place it is a click; let go off
+  // the bar it goes back.
+  const bag = new Pack();
+  bag.accept(forge({ sort: 'arm', weapon: '刀' }, 1));
+  bag.accept(forge({ sort: 'arm', weapon: '弓' }, 2));
+  bag.accept(forge({ sort: 'arm', weapon: '刀' }, 1));
+  const bar = new Bar();
+  bar.layout(1280, 720, bag.size);
+  const at = (i: number) => bar.slotCentre(i);
+  const carry = (from: number, to: { x: number; y: number }) => {
+    checkTrue(`slot ${from} can be taken in hand`, bar.grab(at(from).x, at(from).y, bag));
+    bar.drag((at(from).x + to.x) / 2, (at(from).y + to.y) / 2);
+    bar.drag(to.x, to.y);
+    checkTrue('and is being dragged', bar.dragging);
+    return bar.drop(to.x, to.y, bag, Five, () => 0.5);
+  };
+
+  checkTrue('an empty slot is not taken in hand', !bar.grab(at(4).x, at(4).y, bag));
+  const merged = carry(0, at(2));
+  checkTrue('two 浅绿刀 dragged together merge', merged.kind === 'merged');
+  checkTrue('into one 蓝 where it was dropped', bag.worn[2]?.tier === 2);
+  checkTrue('and that one is still a 刀', bag.worn[2]?.sort.sort === 'arm' && bag.worn[2].sort.weapon === '刀');
+  checkTrue('and the slot it came from is free', bag.worn[0] === null);
+  checkTrue('nothing is in hand afterwards', !bar.holding);
+
+  // Two 蓝 of different things: a merge too, rolled.
+  checkTrue('a 蓝弓 onto the 蓝刀 merges as well', carry(1, at(2)).kind === 'merged');
+  checkTrue('one grade up', bag.worn[2]?.tier === 3);
+
+  checkTrue('carried onto an empty slot it moves', carry(2, at(5)).kind === 'moved');
+  checkTrue('and is there now', bag.worn[5]?.tier === 3 && bag.worn[2] === null);
+
+  checkTrue('let go off the bar it goes back', carry(5, { x: 640, y: 200 }).kind === 'back');
+  checkTrue('and is where it was', bag.worn[5]?.tier === 3);
+
+  bar.grab(at(5).x, at(5).y, bag);
+  bar.drag(at(5).x + 2, at(5).y + 1);
+  const still = bar.drop(at(5).x + 2, at(5).y + 1, bag, Five, () => 0.5);
+  checkTrue('a press that barely moves is a click on that slot', still.kind === 'click' && still.index === 5);
+}
+
 
 // ---------------------------------------------------------------------------------------------
 // 邪物: the roster — eight kinds in three orders — and whether a level actually gets worse.
@@ -1605,8 +1726,8 @@ Math.random = fightRandom;
  *   again. Silver piles up unspent.
  * - **buyer**: buys whenever it can afford to and there is room. Never merges, so the bar fills
  *   and stays full.
- * - **player**: buys whenever it can, and when the bar is full with silver still to spend, merges a
- *   pair to make room — which is the behaviour the whole shape is meant to force.
+ * - **player**: buys whenever it can, merges two of the same thing whenever it has them, and when
+ *   the bar is full with silver still to spend, takes a rolled merge to make room.
  */
 type Hand = 'neglect' | 'buyer' | 'player';
 
@@ -1656,6 +1777,8 @@ function fight(level: number, hand: Hand, kit?: Item[], five: Loadout = Five, re
   let outAt = -1;
   const dt = 1 / 60;
   while (trial.outcome === 'running' && seconds < 900) {
+    // Every hand opens the chests: there is no strategy in leaving silver on the ground.
+    for (const c of trial.closedChests()) trial.openChest(trial.chestAt(c.x, c.y));
     purse.earn(trial.silver - banked);
     banked = trial.silver;
 
@@ -1666,10 +1789,12 @@ function fight(level: number, hand: Hand, kit?: Item[], five: Loadout = Five, re
       rearm();
     }
     if (bag.full && purse.silver >= purse.price && forcedAt < 0) forcedAt = seconds;
-    if (hand === 'player' && bag.full && purse.silver >= purse.price) {
-      // Only when the merge is what stands between it and the next purchase — the situation the
-      // whole shape is built to force. A known merge if there is one, a rolled one if not.
-      const pair = bag.pairs()[0] ?? bag.pairs(true)[0];
+    if (hand === 'player') {
+      // A merge of two of the same thing whenever it has one — a grade is worth three of the one
+      // below, so that is always a gain. A rolled merge of two different things only when the bar
+      // is full with silver to spend: that one can turn a weapon into a way.
+      const forced = bag.full && purse.silver >= purse.price;
+      const pair = bag.pairs()[0] ?? (forced ? bag.pairs(true)[0] : undefined);
       const into = pair ? fuseOnBar(bag, pair.b, pair.a, five, fightRandom) : null;
       if (into) {
         merges++;
@@ -1772,22 +1897,41 @@ for (const level of [1, 10, 25]) run(level, 'neglect');
 //    Three of each rather than one. The shop is dice, and one level-one fight on one seed is the
 //    dice as much as the curve.
 const atOne = [0, 1, 2].map(() => run(1, 'player'));
-// Over the fights that got through. One that falls on wave five never lived long enough to fill
-// anything, and what it says is about level one's difficulty, which is asserted just below.
-const through = atOne.filter((r) => r.outcome === 'cleared');
-checkTrue(
-  `every level-1 fight that is played through fills the bar with silver still to spend: at ${through.map((r) => r.forcedAt).join('s, ')}s`,
-  through.length > 0 && through.every((r) => r.forcedAt >= 0),
-);
 checkTrue(
   `level 1 is cleared by somebody who keeps buying: ${atOne.filter((r) => r.outcome === 'cleared').length} of 3`,
   atOne.filter((r) => r.outcome === 'cleared').length >= 2,
 );
-// And now that two different things merge, a full bar always has a merge in it — which is what
-// "forced to merge" was waiting on. With all fifteen in the shop it was mostly not there to make.
+
+// **Does merging pay over a whole level?** A grade is worth three of the one below and a heavy hit
+// spills onto the crowd, so the same hand that also merges ought to get further. The
+// version of this that came first — "a level-one bar fills and forces a merge" — stopped being
+// true when prices went up by the hundreds and level one was thinned: the bar no longer fills that
+// early, and merging two of the same thing as they come keeps it from filling at all. What is
+// asserted instead is the thing that was meant: merging pays.
+//
+// Across the middle of the tower and all three fives, where a build has to be grown to get through;
+// at level one either hand does.
+const merging = (hand: Hand) => {
+  let cleared = 0;
+  for (const level of [15, 20, 25, 30, 35, 40]) {
+    for (const five of [Five, ...Others]) {
+      const s = fight(level, hand, undefined, five);
+      fought.push(s);
+      if (s.outcome === 'cleared') cleared++;
+    }
+  }
+  return cleared;
+};
+const mergerClears = merging('player');
+const buyerClears = merging('buyer');
+// It was a tie, three in eighteen each, while kills paid one silver: a level bought seven or eight
+// things, two of the same at the same grade rarely met, and a gain that comes once a level does not
+// move a level. Kills pay twenty now and elites drop a chest, a level buys twenty-odd things, and a
+// hand that never merges fills its six slots with 浅绿 and stays there. This is the old stage-six
+// guard — "a build that never merges does not get through" — in the form it can be held to.
 checkTrue(
-  `and the full bar is merged, every time: ${through.map((r) => r.merges).join(', ')} merges`,
-  through.every((r) => r.merges > 0),
+  `a hand that merges gets much further than one that never does: ${mergerClears} of 18 cleared against ${buyerClears}`,
+  mergerClears >= buyerClears * 2 && mergerClears - buyerClears >= 4,
 );
 for (const level of [50]) run(level, 'player');
 // Buying without merging, reported. With all fifteen kinds in the shop two of the same kind at
@@ -1826,11 +1970,16 @@ for (const level of [10, 25]) run(level, 'player');
   while (trial.outcome === 'running' && seconds < 900) {
     bar.layout(1200, 800, bag.size);
     bar.advance(1 / 60);
+    // A chest is a click on the field, not on the bar — the only one this hand makes elsewhere.
+    for (const c of trial.closedChests()) {
+      clicks++;
+      trial.openChest(trial.chestAt(c.x, c.y));
+    }
     purse.earn(trial.silver - banked);
     banked = trial.silver;
     if (purse.canBuy(bag)) tap(bar.buttonCentre());
-    else if (bag.full && purse.silver >= purse.price) {
-      const pair = bag.pairs()[0] ?? bag.pairs(true)[0];
+    else {
+      const pair = bag.pairs()[0] ?? (bag.full && purse.silver >= purse.price ? bag.pairs(true)[0] : undefined);
       if (pair) {
         tap(bar.slotCentre(bag.slotOf(pair.a.id)));
         tap(bar.slotCentre(bag.slotOf(pair.b.id)));
@@ -1845,11 +1994,6 @@ for (const level of [10, 25]) run(level, 'player');
   checkTrue('buying and merging both, by clicking', purse.bought > 4 && merges > 0);
 }
 
-// Other fives, so the scope check below is not about one loadout.
-const Others: Loadout[] = [
-  { arms: ['剑', '符'], ways: ['金鸣', '木缠', '水寒'] },
-  { arms: ['盾', '刀'], ways: ['木荣', '火燎', '土崩'] },
-];
 for (const five of Others) {
   const s = fight(10, 'player', undefined, five);
   fought.push(s);

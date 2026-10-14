@@ -151,6 +151,8 @@ export interface Dictionary {
     silver: string;
     /** The button, with `{price}` on it. */
     buy: string;
+    /** What an opened 宝箱 held, `{silver}`, rising off it. */
+    found: string;
   };
 
   trial: {

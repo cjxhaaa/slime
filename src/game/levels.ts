@@ -48,7 +48,7 @@ function span(level: number, bottom: number, top: number): number {
  * send.
  */
 export function waveSize(level: number, wave: number): number {
-  const opening = span(level, 14, 40);
+  const opening = span(level, 10, 40);
   const swell = 1 + 1.4 * (Math.max(0, Math.min(9, wave)) / 9);
   return Math.round(opening * swell);
 }
@@ -61,7 +61,7 @@ export function waveSize(level: number, wave: number): number {
  * way the old run's arrival rate did across ninety seconds.
  */
 export function arrivalRate(level: number, wave: number): number {
-  const opening = span(level, 4, 8);
+  const opening = span(level, 3.4, 8);
   return opening * (1 + 0.6 * (Math.max(0, Math.min(9, wave)) / 9));
 }
 
@@ -71,20 +71,43 @@ export function menaceSpeed(level: number): number {
 }
 
 /**
- * How many times over an ordinary 邪气's hits are multiplied.
+ * How many times over everything's hits are multiplied: compounding, 4.5% a level.
  *
- * Applied to the breed's own count and rounded, so 游魂 stays one-hit until about level 25 and
- * takes three at the top. That reverses the one-hit rule (`Trial.strike`) late in the road, and it
- * is meant to: past the middle of the tower a talisman is not supposed to be enough, and the build
- * is supposed to have answered that by then.
+ * About one and a half at level ten, twice at twenty, nine at fifty, seventy-five at the top. It
+ * used to be a straight line from one to three, which was right while a build grew by buying —
+ * and wrong the moment merging did: a grade is worth three of the one below (`gear.power`), so a
+ * build grows geometrically, and a merging 大乘 build cleared level ninety-nine nine times in nine
+ * against a door that had only tripled. A door that compounds is the only kind that can keep up
+ * with a build that does.
  */
+export const ToughnessPerLevel = 1.045;
+
 export function toughness(level: number): number {
-  return span(level, 1, 3);
+  return ToughnessPerLevel ** (clampLevel(level) - 1);
 }
 
-/** How much punishment the body absorbs before the level is lost. */
+/**
+ * How much punishment the body absorbs before the level is lost.
+ *
+ * Starts at eight rather than five. It used to rise from five, which put the thinnest body at the
+ * bottom of the tower, where somebody is still learning what the bar is for — and at level one
+ * half the measured fights died to the first elite. The bottom is where a mistake should be
+ * survivable.
+ */
 export function vitality(level: number): number {
-  return span(level, 5, 12.2);
+  return span(level, 8, 13);
+}
+
+/**
+ * How much of an elite's and a king's full toughness (`RANKS`) they come with at this level: half
+ * at the bottom, all of it from the middle of the tower up.
+ *
+ * An eight-hit elite at level one, recoiling off the body and walking back in to hit it again every
+ * second, was what killed most first levels — against a build of four 浅绿 things nobody has had
+ * the chance to merge yet.
+ */
+export function rankRamp(level: number): number {
+  return Math.min(1, 0.5 + along(level));
 }
 
 /**

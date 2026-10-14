@@ -459,7 +459,10 @@ function chooseFromMenu(id: string): void {
   menu.hide();
   fullRepaint = true;
   if (id === 'settings') void invoke('open_settings');
-  else if (id === 'enter-trial') enterTrial(canvas.width, canvas.height);
+  // The window's size in CSS pixels, which is what everything is positioned in. `canvas.width` is
+  // the backing store, in device pixels — on a 150% display that centred the pet at three quarters
+  // of the way across and down, and the whole level walked to the wrong place.
+  else if (id === 'enter-trial') enterTrial(window.innerWidth, window.innerHeight);
   else if (id === 'leave-trial') leaveTrial();
 }
 
@@ -780,6 +783,10 @@ function beginLevel(chosen: Loadout): void {
   scope = chosen;
   lastLoadout = chosen;
   picker.hide();
+  // 开打 means the fight starts. The level waits for something that swings, and the first thing it
+  // was waiting on was somebody noticing a glowing button — so the press that starts the level
+  // also buys its opening weapon. Still nothing happens until a person presses something.
+  buyOne();
   requestSave(currentSave());
   fullRepaint = true;
 }
@@ -793,7 +800,9 @@ function beginLevel(chosen: Loadout): void {
 /** The yard, with a kit chosen in Settings rather than drafted. */
 function startArena(kit: { weapon: Armed | null; ways: Walked[] }): void {
   if (inTrial) leaveTrial();
-  const { width, height } = canvas;
+  // CSS pixels, not the canvas's device pixels — see `chooseFromMenu`.
+  const width = window.innerWidth;
+  const height = window.innerHeight;
   inTrial = true;
   const dummies = new Dummies();
   arena = { dummies };
@@ -830,6 +839,28 @@ function buyOne(): void {
 function pressSlot(index: number): void {
   if (!scope) return;
   if (bar.press(index, pack, scope, Math.random)) {
+    equipFromPack();
+    if (pack.ways.length >= Ways) achieve('fullSet');
+  }
+  fullRepaint = true;
+}
+
+/**
+ * Letting go of something held on the bar. A release where it was pressed is a click, and goes
+ * the way a click always has; a drag onto a partner is a merge; a drag onto anything else on the
+ * bar rearranges it.
+ */
+function dropOnBar(x: number, y: number): void {
+  if (!scope) {
+    bar.letGo();
+    return;
+  }
+  const done = bar.drop(x, y, pack, scope, Math.random);
+  if (done.kind === 'click') {
+    pressSlot(done.index);
+    return;
+  }
+  if (done.kind === 'merged') {
     equipFromPack();
     if (pack.ways.length >= Ways) achieve('fullSet');
   }
@@ -886,6 +917,7 @@ function leaveTrial(): void {
   inTrial = false;
   arena = null;
   bar.select(null);
+  bar.letGo();
   picker.hide();
   scope = null;
   attacks.reset();
@@ -1556,6 +1588,8 @@ function frame(now: number): void {
   const barUp = inTrial && arena === null && !picker.isOpen;
   if (barUp) bar.layout(width, height, pack.size);
   const overBar = barUp && cursor !== null && bar.contains(cursor.x, cursor.y);
+  // A chest on the ground takes the click over it, the same way the bar does.
+  const overChest = barUp && cursor !== null && trial.chestAt(cursor.x, cursor.y) >= 0;
   // Same treatment, same reason: it washes the whole screen, so nothing under it survives a
   // dirty-rect repaint.
   if (pause.isOpen) {
@@ -1570,7 +1604,15 @@ function frame(now: number): void {
   }
 
   const wantsClicks =
-    grabbed || overBody || overBubble || overBar || menu.isOpen || pause.isOpen || picker.isOpen;
+    grabbed ||
+    bar.holding ||
+    overBody ||
+    overBubble ||
+    overBar ||
+    overChest ||
+    menu.isOpen ||
+    pause.isOpen ||
+    picker.isOpen;
 
   // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is
@@ -1598,7 +1640,7 @@ function frame(now: number): void {
           ? unionRect(
               arena !== null
                 ? unionRect(arena.dummies.bounds(), arena.dummies.readoutBounds(width))
-                : unionRect(unionRect(trial.bounds(), waveRowBounds(width)), padRect(bar.bounds, 12)),
+                : unionRect(unionRect(trial.bounds(), waveRowBounds(width)), padRect(bar.paintBounds, 12)),
               attacks.bounds(),
             )
           : null,
@@ -1735,7 +1777,7 @@ function frame(now: number): void {
 
     context.restore();
   }
-  requestClicks(wantsClicks, grabbed, now);
+  requestClicks(wantsClicks, grabbed || bar.holding, now);
 
   requestAnimationFrame(frame);
 }
@@ -1748,6 +1790,19 @@ function wirePointer(): void {
     pointerDown = true;
     paw.setPressed(true);
     cursor = { x: event.clientX, y: event.clientY };
+    // An item on the bar, taken in hand: it may become a drag onto another (a merge), or it may be
+    // let go where it was, which is a click. Either way the press is the bar's and nothing else's.
+    if (inTrial && arena === null && !pause.isOpen && !picker.isOpen && !menu.isOpen) {
+      if (bar.grab(event.clientX, event.clientY, pack)) {
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // Not fatal: the overlay holds clicks while something is held anyway.
+        }
+        fullRepaint = true;
+        return;
+      }
+    }
     if (slime.hitTest(event.clientX, event.clientY)) {
       if (slime.devourPhase !== null) {
         // Touching a slime mid-meal is not yet an abort. Wait to see whether this becomes a pull.
@@ -1784,6 +1839,11 @@ function wirePointer(): void {
     // The DOM stream is the only drag input. The polled cursor from Rust arrives at 30Hz, and
     // feeding both meant the drag moved in visible 33ms steps while everything else ran at 60.
     cursor = { x: event.clientX, y: event.clientY };
+
+    if (bar.holding) {
+      bar.drag(event.clientX, event.clientY);
+      return;
+    }
 
     if (pullPending) {
       const pulled = Math.hypot(event.clientX - pressedPoint.x, event.clientY - pressedPoint.y);
@@ -1832,6 +1892,12 @@ function wirePointer(): void {
     const moved = Math.hypot(event.clientX - pressedPoint.x, event.clientY - pressedPoint.y);
     pointerDown = false;
     paw.setPressed(false);
+    if (bar.holding) {
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      dropOnBar(event.clientX, event.clientY);
+      paw.ping(event.clientX, event.clientY);
+      return;
+    }
     if (pullPending) {
       pullPending = false;
       if (canvas.hasPointerCapture(event.pointerId)) {
@@ -1905,6 +1971,14 @@ function wirePointer(): void {
         return;
       }
       if (inTrial && arena === null) {
+        // 宝箱 first: it sits on the field, and a click on it is never meant for anything else.
+        const chest = trial.chestAt(event.clientX, event.clientY);
+        if (chest >= 0) {
+          trial.openChest(chest);
+          paw.ping(event.clientX, event.clientY);
+          fullRepaint = true;
+          return;
+        }
         const hit = bar.click(event.clientX, event.clientY);
         if (hit) {
           if (hit.kind === 'buy') buyOne();
@@ -1934,7 +2008,9 @@ function wirePointer(): void {
         // takes the breakthrough. Otherwise progress would be stuck behind a trip to Settings.
         // A find on offer is what the click takes, ahead of anything else a poke would do.
         // In seclusion nothing hops to say a stage is full, so the poke has to be able to take it.
-        const took = takeFortune() || (quiet && takeBreakThrough());
+        // Not during a level: a breakthrough is a long sequence of its own, and a fight is the wrong
+        // place for one — it waits, and is taken by the first poke after.
+        const took = takeFortune() || (quiet && !inTrial && takeBreakThrough());
         // Only the body gets poked. Clicks land here from the hover bubble too, and denting the
         // slime from an inch away because the pointer was over its speech bubble looks like a bug.
         //
@@ -2056,7 +2132,10 @@ async function main(): Promise<void> {
       }
     }
 
-    if (cultivation.readyToBreakThrough) {
+    // Not during a level. A breakthrough is a sequence of its own — the body shut in a cocoon for
+    // seconds, a jolt of light — and starting one in the middle of a fight was how the pet ended
+    // up frozen in one with 邪物 walking at it. The qi keeps coming; it happens after.
+    if (cultivation.readyToBreakThrough && !inTrial) {
       // A stage takes itself; a realm edge asks.
       //
       // Seventy-two clicks a run to confirm something that was never a decision is a chore, not an
@@ -2142,6 +2221,9 @@ async function main(): Promise<void> {
     const debugHooks = window as unknown as Record<string, unknown>;
     // Handle for inspecting the simulation from a devtools console.
     debugHooks.__slime = slime;
+    // The bar's state, for laying out a merge to try by hand without buying for a minute first.
+    debugHooks.__pack = pack;
+    debugHooks.__purse = purse;
     // Fires the full alert performance without needing anything to raise one. The animation is
     // otherwise only reachable from whatever feature happens to be driving alerts.
     debugHooks.__raiseAlert = (text = 'Something happened\nclick to dismiss') => {
@@ -2184,13 +2266,13 @@ async function main(): Promise<void> {
     // purpose — the kings otherwise only come once a level, at the end of it.
     debugHooks.__hurl = (kind = 'gunner', rank = 'common', x?: number, y?: number) => {
       if (!inTrial || arena !== null) return;
-      trial.hurl(kind as Kind, rank as Rank, x ?? canvas.width * 0.8, y ?? canvas.height * 0.3);
+      trial.hurl(kind as Kind, rank as Rank, x ?? window.innerWidth * 0.8, y ?? window.innerHeight * 0.3);
     };
     debugHooks.__trial = (level = towerLevel) => {
       if (inTrial) leaveTrial();
       towerLevel = clampLevel(level);
       if (!trialUnlocked()) cultivation.realm = 1;
-      enterTrial(canvas.width, canvas.height);
+      enterTrial(window.innerWidth, window.innerHeight);
     };
     // The charm hoard, for checking the odds and the failure without typing for an hour first.
     debugHooks.__charms = (held?: number) => {

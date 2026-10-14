@@ -138,6 +138,7 @@ export const ko: Dictionary = {
   bar: {
     silver: '은 {silver}',
     buy: '사기 {price}',
+    found: '+{silver} 은',
   },
 
   trial: {
