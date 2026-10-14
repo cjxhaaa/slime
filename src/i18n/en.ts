@@ -140,6 +140,12 @@ export const en: Dictionary = {
     way: 'Phase',
   },
 
+  loadout: {
+    title: 'What to take into this level',
+    arms: 'Arms · pick two',
+    ways: 'Phases · pick three',
+    start: 'Begin',
+  },
   bar: {
     silver: 'Silver {silver}',
     buy: 'Buy {price}',

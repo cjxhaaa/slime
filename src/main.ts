@@ -20,7 +20,8 @@ import { TopLevel, clampLevel } from './game/levels';
 import { drawWaveRow, waveRowBounds } from './ui/WaveRow';
 import { Pack } from './game/Pack';
 import { Purse } from './game/purse';
-import { canMerge, merged } from './game/gear';
+import { canMerge } from './game/gear';
+import { type Loadout, fuseOnBar, readLoadout } from './game/loadout';
 import { type Armed, type Walked, Ways } from './game/kit';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
@@ -35,6 +36,7 @@ import {
   words,
 } from './i18n';
 import { Bar } from './ui/Bar';
+import { LoadoutPanel } from './ui/Loadout';
 import { Pause } from './ui/Pause';
 import { Depth, type Painter } from './game/depth';
 import { requirement, stageName } from './game/realms';
@@ -83,6 +85,16 @@ const pack = new Pack();
 const purse = new Purse();
 const attacks = new Attacks();
 const bar = new Bar();
+/** 选定: the dialog before each level. */
+const picker = new LoadoutPanel();
+/**
+ * The five the level in progress was opened with, or null while the dialog is still up.
+ *
+ * Everything the shop sells and every merge rolls from these, and nothing else — see `loadout.ts`.
+ */
+let scope: Loadout | null = null;
+/** The last five picked, so the dialog opens on them. Kept in the save. */
+let lastLoadout: Loadout | null = null;
 /** Silver already banked from `trial.silver`, so the frame loop pays in only what is new. */
 let silverSeen = 0;
 
@@ -757,6 +769,18 @@ function enterTrial(width: number, height: number): void {
   silverSeen = 0;
   bubble.hide();
   slime.clearAlert();
+  // The five first. Nothing can be bought until they are picked, so nothing arrives either.
+  scope = null;
+  picker.show(lastLoadout);
+  fullRepaint = true;
+}
+
+/** The dialog's start button: the level's five are fixed, and the bar opens for business. */
+function beginLevel(chosen: Loadout): void {
+  scope = chosen;
+  lastLoadout = chosen;
+  picker.hide();
+  requestSave(currentSave());
   fullRepaint = true;
 }
 
@@ -787,7 +811,8 @@ function startArena(kit: { weapon: Armed | null; ways: Walked[] }): void {
 
 /** 买: one random thing, at the grade this moment of the level deals. The fight does not stop. */
 function buyOne(): void {
-  const item = purse.buy(pack, Math.random, trial.through, cultivation.realm);
+  if (!scope) return;
+  const item = purse.buy(pack, scope, Math.random, trial.through, cultivation.realm);
   if (!item) return;
   equipFromPack();
   // A weapon is the only purchase worth a word — it is the one that changes how everything else
@@ -813,9 +838,8 @@ function pressSlot(index: number): void {
   const first = picked !== null ? pack.worn[picked] : null;
   if (picked === index) {
     bar.select(null);
-  } else if (first && item && canMerge(first, item)) {
-    const into = merged(first, item);
-    if (into && pack.fuse(item.id, first.id, into)) {
+  } else if (scope && first && item && canMerge(first, item)) {
+    if (fuseOnBar(pack, item, first, scope, Math.random)) {
       equipFromPack();
       if (pack.ways.length >= Ways) achieve('fullSet');
     }
@@ -877,6 +901,8 @@ function leaveTrial(): void {
   inTrial = false;
   arena = null;
   bar.select(null);
+  picker.hide();
+  scope = null;
   attacks.reset();
   pause.hide();
   void invoke('watch_escape', { on: false }).catch(() => {});
@@ -1011,7 +1037,7 @@ function currentSave(): SaveState {
     lieLow,
     feats: feats.snapshot(),
     locale: chosenLocale,
-    tower: { level: towerLevel },
+    tower: { level: towerLevel, loadout: lastLoadout },
   };
 }
 
@@ -1394,6 +1420,7 @@ function frame(now: number): void {
   // The fight, and then what the pet is doing about it — in that order, so an effect fired this
   // frame is tested against where things are now rather than where they were before they moved.
   pause.advance(elapsed);
+  picker.advance(elapsed);
   // A paused level goes nowhere: `through` moves only when the fight is given time, and a panel
   // that is up is time it was not given.
   if (inTrial && !pause.isOpen) {
@@ -1404,8 +1431,12 @@ function frame(now: number): void {
       arena.dummies.update(elapsed);
       attacks.update(elapsed, body, arena.dummies);
     } else {
-      // Holds still until something that swings has been bought — see the top of `Trial.update`.
-      trial.update(elapsed, body, width, height, attacks);
+      // Holds still until the five are picked and something that swings has been bought — see the
+      // top of `Trial.update` for the second half.
+      if (!picker.isOpen) trial.update(elapsed, body, width, height, attacks);
+      // Stepped even while the dialog is up. It carries nothing yet, so nothing happens — but it is
+      // where the body is known, and a weapon bought the moment the dialog closes heralds itself
+      // from that: held, it went off wherever the pet had been standing before the level.
       attacks.update(elapsed, body, trial);
       // 护体, onto the body where the eye already is. Fed every frame rather than on a change,
       // because the alternative is a second place that has to know when damage lands.
@@ -1534,7 +1565,9 @@ function frame(now: number): void {
   // showing — the menu would draw and refuse to be clicked.
   // The bar takes clicks on its own account, like the menu: it is where the whole level is played,
   // and an overlay that went click-through under it would be a bar that cannot be pressed.
-  const barUp = inTrial && arena === null;
+  // Not while the five are being picked: nothing can be bought yet, and a lit buy button under the
+  // dialog says otherwise.
+  const barUp = inTrial && arena === null && !picker.isOpen;
   if (barUp) bar.layout(width, height, pack.size);
   const overBar = barUp && cursor !== null && bar.contains(cursor.x, cursor.y);
   // Same treatment, same reason: it washes the whole screen, so nothing under it survives a
@@ -1544,9 +1577,14 @@ function frame(now: number): void {
     if (cursor !== null) pause.hover(cursor.x, cursor.y);
     fullRepaint = true;
   }
+  if (picker.isOpen) {
+    picker.layout(width, height);
+    if (cursor !== null) picker.hover(cursor.x, cursor.y);
+    fullRepaint = true;
+  }
 
   const wantsClicks =
-    grabbed || overBody || overBubble || overBar || menu.isOpen || pause.isOpen;
+    grabbed || overBody || overBubble || overBar || menu.isOpen || pause.isOpen || picker.isOpen;
 
   // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is
@@ -1694,8 +1732,8 @@ function frame(now: number): void {
       // it. See `Dummies.drawReadout`.
       if (arena !== null) arena.dummies.drawReadout(context, width);
       else {
-        drawWaveRow(context, width, trial.wave, trial.waveProgress);
-        bar.draw(context, pack, purse, now);
+        drawWaveRow(context, width, trial.marks());
+        if (barUp) bar.draw(context, pack, purse, now);
       }
     } else {
       paintSlime(context, 0);
@@ -1703,6 +1741,7 @@ function frame(now: number): void {
     volley.draw(context, slime.bodyColour);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     menu.draw(context);
+    picker.draw(context, width, height);
     pause.draw(context, width, height);
     paw.draw(context);
 
@@ -1869,6 +1908,14 @@ function wirePointer(): void {
         paw.ping(event.clientX, event.clientY);
         return;
       }
+      if (picker.isOpen) {
+        const pick = picker.click(event.clientX, event.clientY);
+        const chosen = picker.choice;
+        if (pick === 'start' && chosen) beginLevel(chosen);
+        else if (pick === 'leave') leaveTrial();
+        paw.ping(event.clientX, event.clientY);
+        return;
+      }
       if (inTrial && arena === null) {
         const hit = bar.click(event.clientX, event.clientY);
         if (hit) {
@@ -1964,6 +2011,7 @@ async function main(): Promise<void> {
         lieLow = saved.lieLow;
         feats.restore(saved.feats);
         towerLevel = clampLevel(saved.tower.level);
+        lastLoadout = readLoadout(saved.tower.loadout);
         // Rust starts out listening, so a save that says otherwise has to say so out loud.
         if (quiet) void invoke('set_quiet', { quiet: true }).catch(() => {});
         // Told every time rather than only when false. Rust starts this on, so saying so when it is
@@ -2297,6 +2345,11 @@ async function main(): Promise<void> {
     // Registered only while a run is up, but an unregister that lost a race would otherwise make
     // Esc pop a panel over the desktop with no run behind it.
     if (!inTrial) return;
+    // Before the level has started there is nothing to pause: Esc is the way back out.
+    if (picker.isOpen) {
+      leaveTrial();
+      return;
+    }
     if (pause.isOpen) pause.hide();
     else pause.show();
     fullRepaint = true;

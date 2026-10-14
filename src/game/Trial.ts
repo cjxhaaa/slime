@@ -3,8 +3,9 @@
  *
  * 邪气 come in from the edges of the desktop toward the slime, which holds the middle and does not
  * move. What it does about them is whatever it is carrying — see `kit.ts` for the five weapons and
- * ten ways, and `Attacks.ts` for them running. They come in waves (`Waves.ts`), and the level ends
- * one of two ways: the boss of wave ten falls, or the body does.
+ * ten ways, and `Attacks.ts` for them running. They come in waves, on a timetable that has all ten
+ * out within three minutes (`Waves.ts`), and the level ends one of two ways: everything that came
+ * has been killed, or the body has fallen. There is no timeout.
  *
  * **It costs nothing but time.** No charms — those are realm insurance, and a play mode that
  * quietly eats your 渡劫 odds is the same trap the automatic stages and the 御符 throw each set
@@ -87,6 +88,8 @@ export interface Menace {
   health: number;
   /** Common, elite or boss. What it is drawn at and how much it takes — see `RANKS`. */
   rank: Rank;
+  /** The wave it came with, from 0. Its 裂魄 pieces inherit it. */
+  wave: number;
   /** Seconds this one has been alive, which is what every breed's own clock runs off. */
   age: number;
   /**
@@ -228,21 +231,31 @@ export class Trial {
     return this.stage;
   }
 
-  /** The wave in progress, counting from 0. */
+  /** The newest wave that has arrived, counting from 0. */
   get wave(): number {
     return this.waves.wave;
   }
 
-  /** How much of the wave in progress is gone, 0 to just under 1. */
-  get waveProgress(): number {
-    return this.waves.progress;
+  /** Each wave's dot: -1 before it has arrived, then how much of it is gone. See `Waves.marks`. */
+  marks(): number[] {
+    return this.waves.marks();
+  }
+
+  /** True once all ten waves are out. After that nothing more arrives; it is down to the field. */
+  get allOut(): boolean {
+    return this.waves.allOut;
+  }
+
+  /** Seconds of fight so far, on the clock the timetable runs on. */
+  get seconds(): number {
+    return this.waves.seconds;
   }
 
   /**
-   * How far through the level, 0 to 1: `(waves cleared + this wave's progress) / 10`.
+   * How far through the level, 0 to 1: the ten dots summed, over ten.
    *
-   * Exactly 1 only once the boss is down. `Waves` stops just short of it on its own, so a level
-   * lost with the boss on its last hit is paid as nearly there rather than as there.
+   * Exactly 1 only once the level is cleared. `Waves` stops just short of it on its own, so a level
+   * lost with one 邪气 left standing is paid as nearly there rather than as there.
    */
   get through(): number {
     return this.outcome === 'cleared' ? 1 : this.waves.through;
@@ -340,9 +353,10 @@ export class Trial {
       // it stalled a level: first a 重煞 boss inside every pillar of an eruption at once went
       // fifteen hundred pixels off the screen; then, with the throw divided by its area, a build
       // carrying 土崩 — a shove on *every* hit — still pushed it outward faster than it walks,
-      // from 350 pixels to 720 over thirty seconds while taking a hundred and sixty hits. A wave
-      // only ends when its boss does, so a boss that can be held off the screen is a level that
-      // cannot end. They still recoil off the body (`Recoil`); that is a different thing.
+      // from 350 pixels to 720 over thirty seconds while taking a hundred and sixty hits. A level
+      // is only cleared once everything in it is dead, so a boss that can be held off the screen
+      // is a level that cannot end. They still recoil off the body (`Recoil`); that is a
+      // different thing.
       if (m.rank !== 'common') continue;
       // Straight up out of the ground at the exact centre: a divide by zero would be a NaN
       // position, and one NaN 邪气 takes the whole fight with it.
@@ -409,10 +423,11 @@ export class Trial {
             born('dart', m.x + Math.cos(away) * 18, m.y + Math.sin(away) * 18, this.hits('dart', 'common'), {
               arrival: 1,
               timer: DartWindSeconds * 0.4,
+              wave: m.wave,
             }),
           );
         }
-        this.waves.swell(SplitInto);
+        this.waves.swell(m.wave, SplitInto);
       }
     }
     if (dead.size > 0) this.menaces = this.menaces.filter((_, i) => !dead.has(i));
@@ -568,8 +583,8 @@ export class Trial {
         //
         // It used to plant on a timer — a moment after arriving, wherever it was — which was right
         // while the body moved: it took the ground you had been standing on. With the body holding
-        // the middle that ground is the border, and a wave is only over when everything in it is
-        // dead, so a 钉煎 that planted out of reach of every weapon stalled the level for ever.
+        // the middle that ground is the border, and a level is only cleared once everything in it
+        // is dead, so a 钉煎 that planted out of reach of every weapon stalled the level for ever.
         if (!m.planted && m.age >= RootTravelSeconds && away <= RootPlantReach + body.radius) {
           m.planted = true;
           // A whole beat before the first pulse, so it is seen planting before it is felt.
@@ -622,7 +637,7 @@ export class Trial {
           // Spent on the body. 钉煎 is the exception: it stays. It does its damage from where it
           // stands, so being walked into cannot be what removes it — otherwise the breed that
           // cannot be kited would be cleared by kiting into it once.
-          this.waves.resolve(1);
+          this.waves.resolve(m.wave, 1);
           continue;
         }
       }
@@ -630,22 +645,19 @@ export class Trial {
     }
     this.menaces = survivors;
 
-    if (this.outcome === 'running' && this.integrity <= 0) this.outcome = 'overwhelmed';
+    if (this.outcome !== 'running') return;
+    if (this.integrity <= 0) this.outcome = 'overwhelmed';
+    // Cleared: all ten have come and nothing is left of any of them. Not "the boss is down" — the
+    // escort, and whatever is still walking in from wave eight, are part of the level too.
+    else if (this.waves.allOut && this.menaces.length === 0) this.outcome = 'cleared';
   }
 
-  /**
-   * One of them is dead: counted, dispersed, and crossed off its wave.
-   *
-   * And if it was the boss, that is the level. Everything else still on the field stops where it
-   * is — the escort is not owed a fight once the thing it was escorting has fallen, and a level
-   * that made you mop up after its own ending would have a second, smaller ending nobody asked for.
-   */
+  /** One of them is dead: counted, paid for, dispersed, and crossed off its wave. */
   private fall(m: Menace): void {
     this.kills += 1;
     this.spoils += RANKS[m.rank].silver;
     this.undo(m);
-    this.waves.resolve(1);
-    if (m.rank === 'boss' && this.outcome === 'running') this.outcome = 'cleared';
+    this.waves.resolve(m.wave, 1);
   }
 
   /**
@@ -702,7 +714,9 @@ export class Trial {
     const kind =
       arrival.kind ??
       (arrival.rank === 'common' ? rollBreed(point, Math.random) : rollChampion(point, Math.random)).kind;
-    this.menaces.push(born(kind, at.x, at.y, this.hits(kind, arrival.rank), { rank: arrival.rank }));
+    this.menaces.push(
+      born(kind, at.x, at.y, this.hits(kind, arrival.rank), { rank: arrival.rank, wave: arrival.wave ?? 0 }),
+    );
   }
 
   bounds(): Rect | null {
@@ -967,11 +981,12 @@ function born(
   x: number,
   y: number,
   health: number,
-  extra: { arrival?: number; timer?: number; rank?: Rank },
+  extra: { arrival?: number; timer?: number; rank?: Rank; wave?: number },
 ): Menace {
   return {
     kind,
     rank: extra.rank ?? 'common',
+    wave: extra.wave ?? 0,
     x,
     y,
     vx: 0,

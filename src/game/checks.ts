@@ -71,7 +71,19 @@ import {
   vitality,
   waveSize,
 } from './levels.js';
-import { BossWave, EliteWaves, WaveRest, Waves, WavesPerLevel, bossOf, elitesAt, lineup, rankOf } from './Waves.js';
+import {
+  BossWave,
+  EliteWaves,
+  SpawnSeconds,
+  WaveRest,
+  Waves,
+  WavesPerLevel,
+  bossOf,
+  elitesAt,
+  latestStart,
+  lineup,
+  rankOf,
+} from './Waves.js';
 import { Attacks } from './Attacks.js';
 import type { Battlefield } from './Attacks.js';
 import { GuardBite, PillarShove, QuakeTell, SlashSpeed, SlashWidth } from './Attacks.js';
@@ -99,7 +111,9 @@ import {
   startingSilver,
   stock,
 } from './purse.js';
-import { type Item, Tiers, canMerge, dropTier, forge, merged } from './gear.js';
+import { type Item, Tiers, canMerge, dropTier, forge } from './gear.js';
+import { type Loadout, complete, fuseOnBar, mergeOf, readLoadout, within } from './loadout.js';
+import { LoadoutPanel, Pitch, togglePick } from '../ui/Loadout.js';
 import {
   ARMS,
   MaxDepth,
@@ -829,29 +843,67 @@ check('a common is neither', RANKS.common.size * RANKS.common.health, 1);
 }
 
 {
-  // A wave is cleared, not timed out. Once its queue is spent, it holds for as long as anything
-  // of it is still alive — here, for a minute.
-  const waves = new Waves();
-  waves.start(1);
-  let sentOut = 0;
-  for (let i = 0; i < 60 * 30; i++) sentOut += waves.tick(1 / 60, 1).length;
-  check('the whole first wave is sent', sentOut, lineup(1, 0).length);
-  check('and a minute later, with one left standing, it is still the first wave', waves.wave, 0);
-  waves.tick(1 / 60, 0);
-  check('the moment the field is empty, the next one opens', waves.wave, 1);
-  checkTrue('after a breath', waves.resting);
-  check('with nothing on the way during it', waves.tick(WaveRest / 2, 0).length, 0);
+  // **The timetable.** Three minutes is when the 邪气 stop *arriving*, not when the level stops. So
+  // with something left standing the whole time — nothing ever cleared — every wave still comes, in
+  // full, and the last of them is out inside `SpawnSeconds`. At every level.
+  let late = 0;
+  let short = 0;
+  for (let level = 1; level <= TopLevel; level += 7) {
+    const waves = new Waves();
+    waves.start(level);
+    let sent = 0;
+    let lastAt = 0;
+    for (let i = 0; i < 60 * (SpawnSeconds + 30); i++) {
+      const n = waves.tick(1 / 60, 1).length;
+      if (n > 0) {
+        sent += n;
+        lastAt = waves.seconds;
+      }
+    }
+    let due = 0;
+    for (let wave = 0; wave < WavesPerLevel; wave++) due += lineup(level, wave).length;
+    if (lastAt > SpawnSeconds + 1e-6 || !waves.allOut) late++;
+    if (sent !== due) short++;
+  }
+  check(`with the field never cleared, all ten waves are out within ${SpawnSeconds}s at every level`, late, 0);
+  check('and every one of them is sent in full', short, 0);
+  let ordered = true;
+  for (let wave = 1; wave < WavesPerLevel; wave++) if (latestStart(50, wave) <= latestStart(50, wave - 1)) ordered = false;
+  checkTrue('one after another, never two at the same moment', ordered);
 
-  // Progress never goes backwards, even when a kill adds to the wave.
+  // **Clear the field and the next one comes early**, after a breath — the timetable is when a
+  // wave arrives at the latest, not the earliest.
+  const quick = new Waves();
+  quick.start(1);
+  let sent = 0;
+  while (sent < lineup(1, 0).length) sent += quick.tick(1 / 60, 1).length;
+  const clearedAt = quick.seconds;
+  for (let i = 0; i < Math.round((WaveRest / 2) * 60); i++) quick.tick(1 / 60, 0);
+  check('with the field just cleared, a breath first', quick.wave, 0);
+  while (quick.wave === 0 && quick.seconds < 60) quick.tick(1 / 60, 0);
+  const calledIn = quick.seconds - clearedAt;
+  checkTrue(`then the next one, ${calledIn.toFixed(2)}s after the field went empty`, Math.abs(calledIn - WaveRest) < 0.05);
+  checkTrue(
+    `well ahead of its place on the timetable (${latestStart(1, 1).toFixed(0)}s)`,
+    quick.seconds < latestStart(1, 1) - 5,
+  );
+
+  // **The dots.** One per wave, -1 until it arrives; it fills as that wave's 邪气 die, never goes
+  // backwards, and is solid only once all of it has come and gone.
   const counted = new Waves();
   counted.start(1);
+  check('no dot is open before anything arrives', counted.marks().filter((m) => m >= 0).length, 0);
+  counted.tick(2, 1);
   const size = lineup(1, 0).length;
-  counted.resolve(Math.floor(size / 2));
-  const half = counted.progress;
-  counted.swell(4);
-  checkTrue(`a 裂魄 coming apart does not move the dot back (${half.toFixed(2)})`, counted.progress >= half);
-  counted.resolve(size + 10);
-  checkTrue('and a wave never reads as finished on its own', counted.progress < 1);
+  checkTrue('the first opens when its wave does', counted.marks()[0] === 0 && counted.marks()[1] === -1);
+  counted.resolve(0, Math.floor(size / 2));
+  const half = counted.marks()[0];
+  counted.swell(0, 4);
+  checkTrue(`a 裂魄 coming apart does not move the dot back (${half.toFixed(2)})`, counted.marks()[0] >= half);
+  counted.resolve(0, size + 10);
+  checkTrue('and a wave still walking in never reads as finished', counted.marks()[0] < 1);
+  for (let i = 0; i < 60 * 20; i++) counted.tick(1 / 60, 1);
+  check('once all of it has come and gone, it is solid', counted.marks()[0], 1);
 }
 
 // A beat of quiet on entry: choosing the mode must not also be the first hit.
@@ -983,22 +1035,49 @@ const shopRandom = (): number => {
   return shopSeed / 0x7fffffff;
 };
 
+// The five every shop and merge in this block rolls from.
+const Five: Loadout = { arms: ['刀', '弓'], ways: ['水流', '火爆', '土固'] };
+const nameOf = (item: Item): string => (item.sort.sort === 'arm' ? item.sort.weapon : item.sort.way);
+
 {
-  // 1. **A weapon while you have none.** Every time, not on average.
+  // 0. **The five.** Exactly two weapons and three ways, all different, all real.
+  checkTrue('two weapons and three ways is a loadout', complete(Five));
+  checkTrue('one weapon short is not', !complete({ arms: ['刀'], ways: Five.ways }));
+  checkTrue('nor is the same weapon twice', !complete({ arms: ['刀', '刀'], ways: Five.ways }));
+  checkTrue('nor four ways', !complete({ arms: Five.arms, ways: [...Five.ways, '金锐'] }));
+  checkTrue('nor a way that does not exist', !complete({ arms: Five.arms, ways: ['水流', '火爆', '土裂' as never] }));
+  checkTrue('a save holding one reads back', readLoadout(JSON.parse(JSON.stringify(Five))) !== null);
+  checkTrue('and a mangled one reads back as nothing', readLoadout({ arms: '刀弓', ways: [] }) === null);
+  // Picking past the limit lets go of the earliest pick rather than refusing.
+  check('a third weapon lets go of the first', togglePick(['刀', '弓'], '剑', 2).join() === '弓,剑' ? 1 : 0, 1);
+  check('and picking one again puts it down', togglePick(['刀', '弓'], '刀', 2).join() === '弓' ? 1 : 0, 1);
+  const panel = new LoadoutPanel();
+  panel.show(null);
+  checkTrue('the dialog opens with nothing picked the first time', panel.choice === null);
+  panel.show(Five);
+  checkTrue('and on the last five after that', panel.choice !== null && complete(panel.choice));
+}
+
+{
+  // 1. **A weapon while you have none**, and it is one of the two picked. Every time.
   let notWeapons = 0;
   for (let i = 0; i < 1000; i++) {
-    if (stock(new Pack(), shopRandom, 0, 1).sort.sort !== 'arm') notWeapons++;
+    const item = stock(new Pack(), Five, shopRandom, 0, 1);
+    if (item.sort.sort !== 'arm' || !within(Five, item)) notWeapons++;
   }
-  check('an empty-handed purchase is always a weapon', notWeapons, 0);
-  // And after that, anything — the shop does not lean toward what the build wants.
+  check('an empty-handed purchase is always one of the two weapons', notWeapons, 0);
+  // And after that, any of the five and nothing else.
   const armed = new Pack();
   armed.accept(forge({ sort: 'arm', weapon: '弓' }, 1));
   const seen = new Set<string>();
+  let outside = 0;
   for (let i = 0; i < 3000; i++) {
-    const item = stock(armed, shopRandom, 0, 1);
-    seen.add(item.sort.sort === 'arm' ? item.sort.weapon : item.sort.way);
+    const item = stock(armed, Five, shopRandom, 0, 1);
+    seen.add(nameOf(item));
+    if (!within(Five, item)) outside++;
   }
-  check('and once armed, every one of the fifteen turns up', seen.size, WEAPONS.length + WAYS.length);
+  check('and once armed, every one of the five turns up', seen.size, 5);
+  check('and nothing outside them', outside, 0);
 }
 
 {
@@ -1078,23 +1157,23 @@ const shopRandom = (): number => {
   const purse = new Purse();
   purse.start(1);
   const opening = purse.silver;
-  const first = purse.buy(bag, shopRandom, 0, 1);
+  const first = purse.buy(bag, Five, shopRandom, 0, 1);
   checkTrue('the opening silver buys something', first !== null);
   check('and it costs what the button said', opening - purse.silver, FirstPrice);
   checkTrue('it is on the bar', bag.wornCount === 1 && first !== null && bag.find(first.id) !== null);
   checkTrue('and it is a weapon', !bag.unarmed);
 
-  while (purse.silver >= purse.price) purse.buy(bag, shopRandom, 0, 1);
+  while (purse.silver >= purse.price) purse.buy(bag, Five, shopRandom, 0, 1);
   check('the opening purse buys the opening four', purse.bought, OpeningBuys);
   const poor = purse.silver;
-  checkTrue('and with too little, the purchase is refused', purse.buy(bag, shopRandom, 0, 1) === null);
+  checkTrue('and with too little, the purchase is refused', purse.buy(bag, Five, shopRandom, 0, 1) === null);
   check('and nothing is taken for it', purse.silver, poor);
 
   purse.earn(100_000);
-  while (!bag.full) purse.buy(bag, shopRandom, 0, 1);
+  while (!bag.full) purse.buy(bag, Five, shopRandom, 0, 1);
   const rich = purse.silver;
   const bought = purse.bought;
-  checkTrue('a full bar refuses however rich you are', !purse.canBuy(bag) && purse.buy(bag, shopRandom, 0, 1) === null);
+  checkTrue('a full bar refuses however rich you are', !purse.canBuy(bag) && purse.buy(bag, Five, shopRandom, 0, 1) === null);
   checkTrue('and keeps its silver and its count', purse.silver === rich && purse.bought === bought);
   check('the bar grew as it was bought for', bag.size, slotsAfter(bought));
   checkTrue(`every slot filled: ${bag.wornCount} of ${bag.size}`, bag.wornCount === bag.size);
@@ -1127,20 +1206,61 @@ const shopRandom = (): number => {
 }
 
 {
-  // 8. **Merging.** Same kind, same grade, one step up — and the rules that keep it meaningful.
+  // 8. **Merging.** Any two of a grade, one step up. The same thing stays itself; two different
+  //    things roll one of the five.
   const a = forge({ sort: 'arm', weapon: '刀' }, 2);
   const b = forge({ sort: 'arm', weapon: '刀' }, 2);
   const c = forge({ sort: 'arm', weapon: '刀' }, 3);
   const d = forge({ sort: 'way', way: '火爆' }, 2);
   checkTrue('two of the same thing at the same grade merge', canMerge(a, b));
-  check('into one grade higher', merged(a, b)?.tier ?? 0, 3);
+  const same = mergeOf(a, b, Five, shopRandom, true);
+  checkTrue('into that thing, one grade higher', same !== null && nameOf(same) === '刀' && same.tier === 3);
   checkTrue('different grades do not', !canMerge(a, c));
-  checkTrue('and neither do different things at the same grade', !canMerge(a, d));
+  checkTrue('different things at the same grade do', canMerge(a, d));
   checkTrue('nor does an item with itself', !canMerge(a, a));
   checkTrue(
     'and the top of the ladder has nowhere to go',
     !canMerge(forge({ sort: 'arm', weapon: '刀' }, Tiers), forge({ sort: 'arm', weapon: '刀' }, Tiers)),
   );
+
+  // Two different things: a grade up, one of the five, and over enough rolls every one of them.
+  const rolled = new Set<string>();
+  let wrong = 0;
+  for (let i = 0; i < 2000; i++) {
+    const into = mergeOf(a, d, Five, shopRandom, true);
+    if (!into || into.tier !== 3 || !within(Five, into)) wrong++;
+    else rolled.add(nameOf(into));
+  }
+  check('two different things become one of the five, a grade up, every time', wrong, 0);
+  check('and any of the five', rolled.size, 5);
+
+  // **Never unarmed by a merge.** A level holds still while nothing swings, so a merge that ate the
+  // last weapon and rolled a way would freeze the fight with no way out but silver.
+  let disarmed = 0;
+  for (let i = 0; i < 2000; i++) {
+    const bag = new Pack();
+    const blade = forge({ sort: 'arm', weapon: '刀' }, 1);
+    const fire = forge({ sort: 'way', way: '火爆' }, 1);
+    bag.accept(blade);
+    bag.accept(fire);
+    bag.accept(forge({ sort: 'way', way: '水流' }, 2));
+    fuseOnBar(bag, fire, blade, Five, shopRandom);
+    if (bag.unarmed) disarmed++;
+  }
+  check('merging away the only weapon always gives a weapon back', disarmed, 0);
+  // While another weapon is carried, the roll is the whole five again.
+  const free = new Set<string>();
+  for (let i = 0; i < 2000; i++) {
+    const bag = new Pack();
+    const blade = forge({ sort: 'arm', weapon: '刀' }, 1);
+    const fire = forge({ sort: 'way', way: '火爆' }, 1);
+    bag.accept(forge({ sort: 'arm', weapon: '弓' }, 2));
+    bag.accept(blade);
+    bag.accept(fire);
+    const into = fuseOnBar(bag, fire, blade, Five, shopRandom);
+    if (into) free.add(into.sort.sort);
+  }
+  checkTrue('and with another weapon in hand it can roll a way', free.has('way'));
 
   // **The merge buys a slot and costs weight.** Two 蓝刀 worn are two sabres; the 黄刀 they make
   // is one. That trade is the whole decision, so it is asserted rather than assumed.
@@ -1151,8 +1271,8 @@ const shopRandom = (): number => {
   bag.accept(x);
   bag.accept(y);
   check('two worn sabres are two weapons', bag.arms.length, 2);
-  const into = merged(x, y);
-  checkTrue('they can be fused', into !== null && bag.fuse(y.id, x.id, into));
+  const into = fuseOnBar(bag, y, x, Five, shopRandom);
+  checkTrue('they can be fused', into !== null);
   check('leaving one weapon', bag.arms.length, 1);
   check('a grade higher', bag.arms[0].depth, 3);
   check('in the slot the hand ended on', bag.slotOf(into?.id ?? -1), 2);
@@ -1168,6 +1288,10 @@ const shopRandom = (): number => {
   check('three of a kind is one pair, not three', pairs.length, 1);
   const named = new Set(pairs.flatMap((p) => [p.a.id, p.b.id]));
   check('and no item appears twice across the pairs', named.size, pairs.length * 2);
+  // Loosely, the odd 刀 pairs with nothing — the 火爆 is a grade below it.
+  check('loose pairs still need the same grade', bag.pairs(true).length, 1);
+  bag.accept(forge({ sort: 'way', way: '水流' }, 2));
+  check('and find the odd one a partner once there is one', bag.pairs(true).length, 2);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1294,8 +1418,8 @@ Math.random = fightRandom;
  *   again. Silver piles up unspent.
  * - **buyer**: buys whenever it can afford to and there is room. Never merges, so the bar fills
  *   and stays full.
- * - **player**: buys whenever it can, and merges a pair whenever the bar is full — which is the
- *   behaviour the whole shape is meant to force.
+ * - **player**: buys whenever it can, and when the bar is full with silver still to spend, merges a
+ *   pair to make room — which is the behaviour the whole shape is meant to force.
  */
 type Hand = 'neglect' | 'buyer' | 'player';
 
@@ -1310,6 +1434,10 @@ interface Standing {
   merges: number;
   /** Seconds in when the bar was first full with the next purchase affordable, or -1. */
   forcedAt: number;
+  /** Times anything outside the level's five was bought, made or carried. Has to be zero. */
+  strays: number;
+  /** Fight seconds when the last of the ten waves was out, or -1 if the level ended first. */
+  outAt: number;
   paid: number;
 }
 
@@ -1319,7 +1447,7 @@ interface Standing {
  * `kit`, when given, is carried from the start instead of the opening purchases — a fixed build,
  * for the questions that are about the door rather than about the shop's dice.
  */
-function fight(level: number, hand: Hand, kit?: Item[], realm = 1): Standing {
+function fight(level: number, hand: Hand, kit?: Item[], five: Loadout = Five, realm = 1): Standing {
   const arena = { width: 1200, height: 800 };
   const trial = new Trial();
   const bag = new Pack();
@@ -1337,6 +1465,8 @@ function fight(level: number, hand: Hand, kit?: Item[], realm = 1): Standing {
   let banked = 0;
   let merges = 0;
   let forcedAt = -1;
+  let strays = 0;
+  let outAt = -1;
   const dt = 1 / 60;
   while (trial.outcome === 'running' && seconds < 900) {
     purse.earn(trial.silver - banked);
@@ -1344,21 +1474,27 @@ function fight(level: number, hand: Hand, kit?: Item[], realm = 1): Standing {
 
     const shopping = hand !== 'neglect' || bag.unarmed;
     while (shopping && purse.canBuy(bag)) {
-      purse.buy(bag, fightRandom, trial.through, realm);
+      const item = purse.buy(bag, five, fightRandom, trial.through, realm);
+      if (item && !within(five, item)) strays++;
       rearm();
     }
     if (bag.full && purse.silver >= purse.price && forcedAt < 0) forcedAt = seconds;
-    if (hand === 'player' && bag.full) {
-      const pair = bag.pairs()[0];
-      const into = pair ? merged(pair.a, pair.b) : null;
-      if (pair && into && bag.fuse(pair.b.id, pair.a.id, into)) {
+    if (hand === 'player' && bag.full && purse.silver >= purse.price) {
+      // Only when the merge is what stands between it and the next purchase — the situation the
+      // whole shape is built to force. A known merge if there is one, a rolled one if not.
+      const pair = bag.pairs()[0] ?? bag.pairs(true)[0];
+      const into = pair ? fuseOnBar(bag, pair.b, pair.a, five, fightRandom) : null;
+      if (into) {
         merges++;
+        if (!within(five, into)) strays++;
         rearm();
       }
     }
+    for (const slot of bag.worn) if (slot && !kit && !within(five, slot)) strays++;
 
     trial.update(dt, body, arena.width, arena.height, arts);
     arts.update(dt, body, trial);
+    if (outAt < 0 && trial.allOut) outAt = trial.seconds;
     seconds += dt;
   }
   return {
@@ -1370,13 +1506,15 @@ function fight(level: number, hand: Hand, kit?: Item[], realm = 1): Standing {
     bought: purse.bought,
     merges,
     forcedAt: Math.round(forcedAt * 10) / 10,
+    strays,
+    outAt: Math.round(outAt * 10) / 10,
     paid: Math.round(harvest(trial.through, trial.outcome)),
   };
 }
 
 const say = (at: number, hand: string, s: Standing) =>
   console.log(
-    `NOTE  level ${at}, ${hand}: ${s.outcome} on wave ${s.wave} at ${s.seconds}s, ${s.kills} killed, ${s.bought} bought, ${s.merges} merged, full at ${s.forcedAt}s, integrity ${s.integrity}, paid ${s.paid}`,
+    `NOTE  level ${at}, ${hand}: ${s.outcome} on wave ${s.wave} at ${s.seconds}s (all out at ${s.outAt}s), ${s.kills} killed, ${s.bought} bought, ${s.merges} merged, full at ${s.forcedAt}s, integrity ${s.integrity}, paid ${s.paid}${s.strays ? `, ${s.strays} STRAYS` : ''}`,
   );
 
 // 1. The structural half. Open a level and buy nothing: it does not start.
@@ -1447,13 +1585,22 @@ for (const level of [1, 10, 25]) run(level, 'neglect');
 //    Three of each rather than one. The shop is dice, and one level-one fight on one seed is the
 //    dice as much as the curve.
 const atOne = [0, 1, 2].map(() => run(1, 'player'));
+// Over the fights that got through. One that falls on wave five never lived long enough to fill
+// anything, and what it says is about level one's difficulty, which is asserted just below.
+const through = atOne.filter((r) => r.outcome === 'cleared');
 checkTrue(
-  `every level-1 fight fills the bar with silver still to spend: at ${atOne.map((r) => r.forcedAt).join('s, ')}s`,
-  atOne.every((r) => r.forcedAt >= 0),
+  `every level-1 fight that is played through fills the bar with silver still to spend: at ${through.map((r) => r.forcedAt).join('s, ')}s`,
+  through.length > 0 && through.every((r) => r.forcedAt >= 0),
 );
 checkTrue(
   `level 1 is cleared by somebody who keeps buying: ${atOne.filter((r) => r.outcome === 'cleared').length} of 3`,
   atOne.filter((r) => r.outcome === 'cleared').length >= 2,
+);
+// And now that two different things merge, a full bar always has a merge in it — which is what
+// "forced to merge" was waiting on. With all fifteen in the shop it was mostly not there to make.
+checkTrue(
+  `and the full bar is merged, every time: ${through.map((r) => r.merges).join(', ')} merges`,
+  through.every((r) => r.merges > 0),
 );
 for (const level of [50]) run(level, 'player');
 // Buying without merging, reported. With all fifteen kinds in the shop two of the same kind at
@@ -1463,9 +1610,31 @@ for (const level of [50]) run(level, 'player');
 for (const level of [10, 25]) run(level, 'buyer');
 for (const level of [10, 25]) run(level, 'player');
 
+// Other fives, so the scope check below is not about one loadout.
+const Others: Loadout[] = [
+  { arms: ['剑', '符'], ways: ['金鸣', '木缠', '水寒'] },
+  { arms: ['盾', '刀'], ways: ['木荣', '火燎', '土崩'] },
+];
+for (const five of Others) {
+  const s = fight(10, 'player', undefined, five);
+  fought.push(s);
+  say(10, `player with ${five.arms.join('')} ${five.ways.join(' ')}`, s);
+}
+
+// 4. The landing standard for 开局选定: **nothing outside the five, ever, in a whole level** —
+//    bought, rolled out of a merge, or sitting on the bar.
+check(
+  "nothing outside a level's five was bought, merged into being or carried, in any level fought here",
+  fought.reduce((sum, f) => sum + f.strays, 0),
+  0,
+);
+
 check('every level fought here ended, one way or the other', fought.filter((f) => f.outcome === 'running').length, 0);
-const slowest = Math.max(...fought.filter((f) => f.outcome === 'cleared').map((f) => f.seconds));
-checkTrue(`and no cleared level took longer than three minutes: the slowest was ${slowest}s`, slowest <= 180);
+// And in every one that lasted that long, the last wave was out inside the timetable. There is no
+// bound on how long a level *lasts* — that is up to how fast the field is cleared, and a level
+// only ends cleared or lost — but the 邪气 stop coming at three minutes, whatever is happening.
+const latest = Math.max(...fought.map((f) => f.outAt));
+checkTrue(`and all ten waves were out by ${SpawnSeconds}s in every level: the latest at ${latest}s`, latest <= SpawnSeconds + 0.1);
 
 Math.random = wildRandom;
 
@@ -1993,6 +2162,16 @@ const budget = (what: string, text: string, width: number, size: number, most: n
 
 for (const tag of LOCALES) {
   const dict = DICTIONARIES[tag];
+
+  // 选定: the title and headings across the panel, each name under its tile in two lines at
+  // most, and the start button in half the width.
+  const across = Pitch * 5;
+  budget(`${tag} loadout title`, dict.loadout.title, across, 20, 1);
+  budget(`${tag} loadout arms`, dict.loadout.arms, across, 12, 1);
+  budget(`${tag} loadout ways`, dict.loadout.ways, across, 12, 1);
+  budget(`${tag} loadout start`, dict.loadout.start, (across - 10) / 2 - 12, 14, 1);
+  for (const k of WEAPONS) budget(`${tag} loadout name`, dict.arms[k].name, Pitch - 4, 12, 2);
+  for (const k of WAYS) budget(`${tag} loadout name`, dict.ways[k].name, Pitch - 4, 12, 2);
 
   // The bar: the button and the silver over it, each with five digits in it.
   budget(`${tag} buy`, fill(dict.bar.buy, { price: '99999' }), BuyRoom, 13, 1);

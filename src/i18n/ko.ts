@@ -127,6 +127,12 @@ export const ko: Dictionary = {
     way: '오행',
   },
 
+  loadout: {
+    title: '이번 관에 가져갈 것',
+    arms: '병기 · 둘 고르기',
+    ways: '오행 · 셋 고르기',
+    start: '시작',
+  },
   bar: {
     silver: '은 {silver}',
     buy: '사기 {price}',

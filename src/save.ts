@@ -60,8 +60,11 @@ export interface SaveState {
    * The furthest reached, which is always one not yet beaten. A second line of progress beside the
    * realm, on purpose — see TOWER.md §2 for the cost of that. Absent in every save from before the
    * tower, and absent means the bottom of it.
+   *
+   * `loadout` is the last two weapons and three ways picked, so the dialog before a level opens on
+   * them. Kept as whatever was read; `loadout.readLoadout` decides whether it is still a real one.
    */
-  tower: { level: number };
+  tower: { level: number; loadout: unknown };
 }
 
 /**
@@ -120,7 +123,7 @@ export async function loadSave(): Promise<SaveState | null> {
       quiet?: unknown;
       lieLow?: unknown;
       locale?: unknown;
-      tower?: { level?: unknown };
+      tower?: { level?: unknown; loadout?: unknown };
     };
     // A file from a future version is not something this build can reason about, and guessing at
     // it is how a save gets quietly mangled. Starting fresh is bad; corrupting is worse.
@@ -162,7 +165,10 @@ export async function loadSave(): Promise<SaveState | null> {
       // Absent in every save written before there was a language menu, which is the common case
       // and not an error: null means "follow the system", and that is the right default for them.
       locale: typeof parsed.locale === 'string' ? parsed.locale : null,
-      tower: { level: Math.max(1, Math.floor(numberOr(parsed.tower?.level, 1))) },
+      tower: {
+        level: Math.max(1, Math.floor(numberOr(parsed.tower?.level, 1))),
+        loadout: parsed.tower?.loadout ?? null,
+      },
     };
   } catch {
     return null;

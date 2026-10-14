@@ -127,6 +127,16 @@ export interface Dictionary {
     way: string;
   };
 
+  /** 选定: the dialog before a level, where two weapons and three ways are picked. */
+  loadout: {
+    title: string;
+    /** The headings over the two groups. */
+    arms: string;
+    ways: string;
+    /** The button that starts the level once all five are picked. */
+    start: string;
+  };
+
   /**
    * 装备栏, along the bottom of a level. The only numbers the mode shows while it is running, and
    * TOWER.md §4 is where that exception was made: a price you cannot read is not a price.

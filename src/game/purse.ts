@@ -2,9 +2,9 @@
  * 银币 — what a level pays as it goes, and what spending it costs.
  *
  * This is the draft's replacement. The draft handed you three cards whenever a kill meter filled
- * and stopped the fight until you chose; buying hands you **one random thing whenever you ask**,
- * and the fight never stops for it. So the one decision left in the mode is not *which* card — it
- * is what to merge, because what you buy is not yours to pick (TOWER.md §3).
+ * and stopped the fight until you chose; buying hands you **one random thing from the level's five
+ * whenever you ask**, and the fight never stops for it. So the decisions left in the mode are which
+ * five to open with and what to merge, because what you buy is not yours to pick (TOWER.md §3).
  *
  * ## Where silver comes from
  *
@@ -27,7 +27,7 @@
  * often enough to force a merge, rarely enough that buying stays the default.
  */
 import { type Item, dropTier, forge } from './gear.js';
-import { WAYS, WEAPONS } from './kit.js';
+import { type Loadout, rollSort } from './loadout.js';
 import { type Pack, Slots } from './Pack.js';
 
 /** What the first purchase of a level costs. */
@@ -76,22 +76,17 @@ export function startingSilver(realm: number): number {
 }
 
 /**
- * What the shop hands over: one of the fifteen, at the grade this moment of the level deals.
+ * What the shop hands over: one of the level's five (`loadout.ts`), at the grade this moment of
+ * the level deals.
  *
  * **A weapon while you have none.** The draft had the same rule — its first card was a weapon,
  * full stop — and for the same reason: a pet carrying three 五行 and nothing to deliver them is a
- * pet standing in a crowd. Otherwise every kind is equally likely; the shop does not lean toward
- * what your build wants, because a thumb on that scale would make merging a formality.
+ * pet standing in a crowd. Otherwise each of the five is equally likely; the shop does not lean
+ * toward what your build wants, because a thumb on that scale would make merging a formality.
  */
-export function stock(pack: Pack, random: () => number, through: number, realm: number): Item {
+export function stock(pack: Pack, loadout: Loadout, random: () => number, through: number, realm: number): Item {
   const tier = dropTier(through, realm, random);
-  const pick = <T>(from: readonly T[]): T => from[Math.floor(random() * from.length) % from.length];
-  if (pack.unarmed) return forge({ sort: 'arm', weapon: pick(WEAPONS) }, tier);
-  const kinds = WEAPONS.length + WAYS.length;
-  const at = Math.floor(random() * kinds) % kinds;
-  return at < WEAPONS.length
-    ? forge({ sort: 'arm', weapon: WEAPONS[at] }, tier)
-    : forge({ sort: 'way', way: WAYS[at - WEAPONS.length] }, tier);
+  return forge(rollSort(loadout, random, pack.unarmed), tier);
 }
 
 export class Purse {
@@ -134,9 +129,9 @@ export class Purse {
   }
 
   /** Spends, stocks and stows one. Null when it cannot — see `canBuy`. */
-  buy(pack: Pack, random: () => number, through: number, realm: number): Item | null {
+  buy(pack: Pack, loadout: Loadout, random: () => number, through: number, realm: number): Item | null {
     if (!this.canBuy(pack)) return null;
-    const item = stock(pack, random, through, realm);
+    const item = stock(pack, loadout, random, through, realm);
     this.coins -= this.price;
     this.buys += 1;
     pack.accept(item);

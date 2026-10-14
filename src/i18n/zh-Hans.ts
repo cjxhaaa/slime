@@ -115,6 +115,12 @@ export const zhHans: Dictionary = {
     way: '五行',
   },
 
+  loadout: {
+    title: '此关带什么',
+    arms: '兵器 · 选二',
+    ways: '五行 · 选三',
+    start: '开打',
+  },
   bar: {
     silver: '银 {silver}',
     buy: '买 {price}',

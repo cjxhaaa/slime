@@ -17,20 +17,19 @@
  *
  * ## Merging
  *
- * Two of the **same kind at the same tier** become one of that kind, one tier up. Same kind
- * matters: if any two same-tier items merged, 刀 + 火爆 would have to produce either a random
- * thing or a prompt, and both of those take the point out of hoarding sabres — which is the
- * feeling merging exists for.
+ * Any two **at the same tier** merge, one tier up. Two of the same kind stay that kind; two
+ * different kinds become a random one of the five the level was opened with — see `loadout.ts`,
+ * which is where the roll lives, because only the level knows what the five are.
  *
  * Note what that trade actually is, because it is not a free upgrade. Two 蓝刀 equipped in two
  * slots carry more weight between them than the one 黄刀 they merge into. What the merge buys is
  * **a slot back**. That is the whole decision.
  *
- * ## Why drops climb
+ * ## Why what is sold climbs
  *
- * Merging alone would need 32 浅绿 to reach 彩, and a ninety-second run does not deal 32 of
- * anything. So what drops gets better as the run goes on, and merging is for consolidating the
- * duplicates that arrive rather than being the only way up.
+ * Merging alone would need 32 浅绿 to reach 彩, and a two-minute level does not sell 32 of
+ * anything. So what the shop deals gets better as the level goes on, and merging is for
+ * consolidating what arrives rather than being the only way up.
  */
 import { MaxDepth } from './kit.js';
 import type { Way, Weapon } from './kit.js';
@@ -100,22 +99,19 @@ export function sameSort(a: Item, b: Item): boolean {
   return false;
 }
 
-/** Whether these two can become one. Not against itself — an item cannot merge with itself. */
+/**
+ * Whether these two can become one: the same tier, below the top, and not the same item twice.
+ * What they become is `loadout.mergeOf`'s to say.
+ */
 export function canMerge(a: Item, b: Item): boolean {
-  return a.id !== b.id && a.tier === b.tier && a.tier < Tiers && sameSort(a, b);
-}
-
-/** The thing two of them become. Returns null rather than guessing when they cannot merge. */
-export function merged(a: Item, b: Item): Item | null {
-  if (!canMerge(a, b)) return null;
-  return forge(a.sort, a.tier + 1);
+  return a.id !== b.id && a.tier === b.tier && a.tier < Tiers;
 }
 
 /**
  * The band a drop comes from, as `through` runs 0 to 1.
  *
- * Two tiers per band from the second onward, so the same moment in a run does not always hand out
- * the same thing — a run where every drop is predictable is a run where the draft is a formality.
+ * Two tiers per band from the second onward, so the same moment in a level does not always sell
+ * the same thing — a shop whose every purchase is predictable is a shop with nothing to gamble on.
  */
 const BANDS: { until: number; from: number; to: number }[] = [
   { until: 0.2, from: 1, to: 1 },

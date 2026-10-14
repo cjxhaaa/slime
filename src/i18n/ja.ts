@@ -128,6 +128,12 @@ export const ja: Dictionary = {
     way: '五行',
   },
 
+  loadout: {
+    title: 'この関に携えるもの',
+    arms: '兵器 · 二つ選ぶ',
+    ways: '五行 · 三つ選ぶ',
+    start: '始める',
+  },
   bar: {
     silver: '銀 {silver}',
     buy: '買う {price}',

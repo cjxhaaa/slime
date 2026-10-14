@@ -123,6 +123,12 @@ export const zhHant: Dictionary = {
     way: '五行',
   },
 
+  loadout: {
+    title: '此關帶什麼',
+    arms: '兵器 · 選二',
+    ways: '五行 · 選三',
+    start: '開打',
+  },
   bar: {
     silver: '銀 {silver}',
     buy: '買 {price}',

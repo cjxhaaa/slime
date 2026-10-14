@@ -24,12 +24,14 @@ function radiusOf(wave: number): number {
 }
 
 /**
- * Draws the row.
+ * Draws the row from `Trial.marks`: -1 for a wave that has not arrived, then how much of it is
+ * gone. Cleared waves are solid, arrived ones fill as a ring, the rest are hollow.
  *
- * `wave` is the one in progress, counting from 0, and `progress` how much of it is gone. Cleared
- * waves are solid, the current one fills as a ring, the rest are hollow.
+ * Several can be filling at once. The timetable does not wait for a wave to be finished, so wave
+ * three can be half done when wave four arrives — and the dot that is still open is the honest
+ * picture of what is still out there.
  */
-export function drawWaveRow(context: CanvasRenderingContext2D, width: number, wave: number, progress: number): void {
+export function drawWaveRow(context: CanvasRenderingContext2D, width: number, marks: number[]): void {
   const left = width / 2 - Width / 2;
   const y = Top + Height / 2;
   context.save();
@@ -47,7 +49,8 @@ export function drawWaveRow(context: CanvasRenderingContext2D, width: number, wa
     const boss = i === BossWave;
     const ink = boss ? '255, 190, 120' : '255, 255, 255';
 
-    if (i < wave) {
+    const mark = marks[i] ?? -1;
+    if (mark >= 1) {
       context.fillStyle = `rgba(${ink}, 0.92)`;
       context.beginPath();
       context.arc(x, y, r, 0, Math.PI * 2);
@@ -56,18 +59,18 @@ export function drawWaveRow(context: CanvasRenderingContext2D, width: number, wa
     }
 
     context.lineWidth = boss ? 2 : 1.5;
-    context.strokeStyle = `rgba(${ink}, ${i === wave ? 0.85 : 0.32})`;
+    context.strokeStyle = `rgba(${ink}, ${mark >= 0 ? 0.85 : 0.32})`;
     context.beginPath();
     context.arc(x, y, r, 0, Math.PI * 2);
     context.stroke();
 
-    if (i === wave && progress > 0) {
+    if (mark > 0) {
       // Filled as a pie from twelve o'clock, so it reads as a clock face filling rather than a dot
       // getting brighter — brightness is what the cleared ones already use.
       context.fillStyle = `rgba(${ink}, 0.7)`;
       context.beginPath();
       context.moveTo(x, y);
-      context.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, progress));
+      context.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, mark));
       context.closePath();
       context.fill();
     }

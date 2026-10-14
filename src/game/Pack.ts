@@ -107,8 +107,13 @@ export class Pack {
     return true;
   }
 
-  /** Every pair that could be merged, each item in at most one pair. */
-  pairs(): { a: Item; b: Item }[] {
+  /**
+   * Pairs that could be merged, each item in at most one pair.
+   *
+   * By default only pairs of **the same thing** — the merges whose result is known. `loose` takes
+   * any two of a grade, the merges that roll.
+   */
+  pairs(loose = false): { a: Item; b: Item }[] {
     const all = this.slots.filter((s): s is Item => s !== null);
     const out: { a: Item; b: Item }[] = [];
     const spent = new Set<number>();
@@ -117,7 +122,7 @@ export class Pack {
       for (let j = i + 1; j < all.length; j++) {
         if (spent.has(all[j].id)) continue;
         if (all[i].tier !== all[j].tier) continue;
-        if (!sameSort(all[i], all[j])) continue;
+        if (!loose && !sameSort(all[i], all[j])) continue;
         out.push({ a: all[i], b: all[j] });
         spent.add(all[i].id);
         spent.add(all[j].id);
