@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "name": { "zh-Hans": "猫耳", "zh-Hant": "貓耳", "en": "Neko", "ja": "ねこみみ", "ko": "고양이 귀" },
+  "author": "Slime",
+  "description": { "zh-Hans": "长了一对猫耳和胡须。境界颜色照旧。", "en": "Cat ears and whiskers. Realm colours as usual." },
+  "face": { "style": "classic", "blush": "#ff8fb1" },
+  "accessories": [
+    { "image": "ears.svg", "layer": "behind", "y": -1.0, "width": 1.85 },
+    { "image": "whiskers.svg", "layer": "front", "y": 0.2, "width": 1.9 }
+  ]
+}

@@ -19,6 +19,7 @@ import { HaloReach } from '../game/Glyphs.js';
 import { type Hop, arch, planHop } from '../game/pursuit.js';
 import { BreakthroughSpread, StageSpread } from '../game/Motes.js';
 import { clear, mix } from './colour.js';
+import { Classic, type FaceFrame, type Skin } from './skin.js';
 import { smooth } from './ease.js';
 
 export type Mood =
@@ -238,17 +239,8 @@ export interface BodyLook {
 const AURA_HUES = ['#ff5f5a', '#ff9d3d', '#f5d63f', '#63dd77', '#45d6d0', '#5b8cf0', '#a86fe8'];
 export const MaxAura = AURA_HUES.length;
 
-const PALETTE: Record<string, Palette> = {
-  calm: { core: '#8ff0d4', edge: '#33c6a6', rim: '#1d9c85' },
-  alert: { core: '#ffd48a', edge: '#f59b2c', rim: '#c9761a' },
-  // Acknowledged but still pending: the same hue, drained of urgency. Still clearly not "calm",
-  // because whatever raised it has not gone away.
-  nudge: { core: '#ffe9c4', edge: '#e8b978', rim: '#b58a4e' },
-  // One colour for every realm, arrived at by a fade rather than by a substitution. Deriving a
-  // dimmed version of each realm's own palette was tried — see the note in `colour.ts` — and nine
-  // dim colours turned out to be more of a palette than the pet wanted.
-  sleep: { core: '#b9d8ee', edge: '#6fa8cd', rim: '#4d86ab' },
-};
+/** The calm body before any look has been handed in. Alert, nudge and sleep belong to the skin. */
+const CalmPalette: Palette = { core: '#8ff0d4', edge: '#33c6a6', rim: '#1d9c85' };
 
 /**
  * How long the body takes to take on the sleeping colour, and to lose it again.
@@ -594,6 +586,15 @@ export class Slime {
     };
   }
 
+  setSkin(skin: Skin): void {
+    this.skin = skin;
+    this.gradients.clear();
+  }
+
+  get skinId(): string {
+    return this.skin.id;
+  }
+
   setLook(look: BodyLook): void {
     if (look.scale !== this.bodyLook.scale) {
       this.radius = this.baseRadius * look.scale;
@@ -642,7 +643,18 @@ export class Slime {
     return this.sleepFade > 0 && this.sleepFade < 1;
   }
 
-  private bodyLook: BodyLook = { scale: 1, palette: PALETTE.calm, glow: 0, aura: 0 };
+  private bodyLook: BodyLook = { scale: 1, palette: CalmPalette, glow: 0, aura: 0 };
+  /** What the body is painted as. See `skin.ts` for where the line between the two sits. */
+  private skin: Skin = Classic;
+  /** Handed to the skin every frame; one object, refilled, so drawing allocates nothing. */
+  private readonly frame: FaceFrame = {
+    mood: 'idle',
+    radius: 0,
+    squash: { x: 1, y: 1 },
+    look: { x: 0, y: 0 },
+    open: 1,
+    clock: 0,
+  };
   private chaseX: number | null = null;
   private ascension: { until: number; phase: 'gathering' | 'burst'; tremble: number } | null = null;
   private realmBreak: {
@@ -1100,6 +1112,14 @@ export class Slime {
     rightSpan = Math.max(rightSpan + 3, decoration);
     topSpan = Math.max(topSpan + 3, decoration);
     bottomSpan = Math.max(bottomSpan + 3, decoration);
+    // Whatever the skin hangs off the body. Nothing is hung on it while it wraps a window.
+    if (!this.devour) {
+      const reach = this.skin.reach;
+      leftSpan = Math.max(leftSpan, this.radius * reach.left + 3);
+      rightSpan = Math.max(rightSpan, this.radius * reach.right + 3);
+      topSpan = Math.max(topSpan, this.radius * reach.top + 3);
+      bottomSpan = Math.max(bottomSpan, this.radius * reach.bottom + 3);
+    }
 
     // The crust's pieces are the one thing here whose reach cannot be written down as a multiple of
     // the body radius: they are thrown at a range of speeds and they keep going. So they are
@@ -2317,9 +2337,9 @@ export class Slime {
     const awake = this.devour
       ? this.deeper(this.bodyLook.palette)
       : this.mood === 'nudge'
-        ? PALETTE.nudge
+        ? this.skin.moods.nudge
         : this.mood === 'alert'
-          ? PALETTE.alert
+          ? this.skin.moods.alert
           : this.bodyLook.palette;
     // Hoisted above the halo, which is drawn before the body and needs it too.
     const shining = this.stageGlow;
@@ -2328,9 +2348,9 @@ export class Slime {
       tint <= 0
         ? awake
         : {
-            core: mix(awake.core, PALETTE.sleep.core, tint),
-            edge: mix(awake.edge, PALETTE.sleep.edge, tint),
-            rim: mix(awake.rim, PALETTE.sleep.rim, tint),
+            core: mix(awake.core, this.skin.moods.sleep.core, tint),
+            edge: mix(awake.edge, this.skin.moods.sleep.edge, tint),
+            rim: mix(awake.rim, this.skin.moods.sleep.rim, tint),
           };
     // And the drain of a failed breakthrough over the top of that, towards a flat grey. Laid on
     // last so it applies whatever else the body happens to be doing, the same way sleep is.
@@ -2415,16 +2435,40 @@ export class Slime {
     context.save();
     context.translate(this.renderX, this.renderY);
 
+    const skin = this.skin;
+    const frame = this.fillFrame();
+    // Ears, tails, anything that sits behind the jelly. Not while it is stretched over a window:
+    // there is no "top of the head" on a body that is a rectangle, and anything pinned to where
+    // the head was would float in the middle of somebody's document.
+    if (!this.devour) {
+      context.save();
+      skin.drawBehind(context, frame);
+      context.restore();
+    }
+
     Blob.trace(context, this.points, this.blob.count);
 
     context.fillStyle = this.bodyGradient(context, palette, !this.sleepFading);
-    context.globalAlpha = 0.92;
+    context.globalAlpha = skin.body.opacity;
     context.fill();
 
     context.globalAlpha = 1;
-    context.lineWidth = 2;
-    context.strokeStyle = palette.rim;
-    context.stroke();
+    // Under the rim rather than over it, or the inner half of the stroke is painted out wherever
+    // the overlay reaches the edge.
+    if (skin.drawOverlay) {
+      context.save();
+      context.clip();
+      skin.drawOverlay(context, frame);
+      context.restore();
+    }
+
+    if (skin.body.rimWidth > 0) {
+      // Traced again after an overlay, which is free to have started paths of its own.
+      if (skin.drawOverlay) Blob.trace(context, this.points, this.blob.count);
+      context.lineWidth = skin.body.rimWidth;
+      context.strokeStyle = palette.rim;
+      context.stroke();
+    }
 
     // The swallow. Clipped to the body, so it lights the membrane from inside rather than washing
     // a disc over the top of it.
@@ -2441,35 +2485,37 @@ export class Slime {
     }
 
     // Specular blob, clipped to the body so it never leaks past a squashed silhouette.
-    context.save();
-    Blob.trace(context, this.points, this.blob.count);
-    context.clip();
-    context.globalAlpha = 0.55;
-    context.fillStyle = '#ffffff';
-    context.beginPath();
-    context.ellipse(
-      -this.radius * 0.32,
-      -this.radius * 0.42,
-      this.radius * 0.26,
-      this.radius * 0.16,
-      -0.5,
-      0,
-      Math.PI * 2,
-    );
-    context.fill();
-    context.globalAlpha = 0.18;
-    context.beginPath();
-    context.ellipse(
-      this.radius * 0.3,
-      this.radius * 0.3,
-      this.radius * 0.34,
-      this.radius * 0.2,
-      0.4,
-      0,
-      Math.PI * 2,
-    );
-    context.fill();
-    context.restore();
+    if (skin.body.shine) {
+      context.save();
+      Blob.trace(context, this.points, this.blob.count);
+      context.clip();
+      context.globalAlpha = 0.55;
+      context.fillStyle = '#ffffff';
+      context.beginPath();
+      context.ellipse(
+        -this.radius * 0.32,
+        -this.radius * 0.42,
+        this.radius * 0.26,
+        this.radius * 0.16,
+        -0.5,
+        0,
+        Math.PI * 2,
+      );
+      context.fill();
+      context.globalAlpha = 0.18;
+      context.beginPath();
+      context.ellipse(
+        this.radius * 0.3,
+        this.radius * 0.3,
+        this.radius * 0.34,
+        this.radius * 0.2,
+        0.4,
+        0,
+        Math.PI * 2,
+      );
+      context.fill();
+      context.restore();
+    }
 
     // The light, over the body's own shading and under the face. A radial rather than a flat
     // white fill:
@@ -2491,7 +2537,14 @@ export class Slime {
       context.restore();
     }
 
-    this.drawFace(context);
+    context.save();
+    skin.drawFace(context, frame);
+    context.restore();
+    if (!this.devour) {
+      context.save();
+      skin.drawFront(context, frame);
+      context.restore();
+    }
     // The crust, over everything the body draws including the face. Covering the face is most of
     // what makes it read as being sealed in rather than as a change of paint.
     const sealing = this.realmBreak;
@@ -2512,131 +2565,21 @@ export class Slime {
     if (this.mood === 'asleep') this.drawSleepMarks(context);
   }
 
-  private drawFace(context: CanvasRenderingContext2D): void {
-    const scale = this.blob.squashScale;
-    const eyeGap = this.radius * 0.34;
-    const eyeY = -this.radius * 0.08 * scale.y;
-    const lookX = this.look.x * this.radius * 0.16;
-    const lookY = this.look.y * this.radius * 0.12;
-    const open = 1 - this.blinkPhase;
-
-    context.fillStyle = '#12332e';
-    context.strokeStyle = '#12332e';
-    context.lineCap = 'round';
-
-    const eyes: Array<[number, number]> = [
-      [-eyeGap * scale.x + lookX, eyeY + lookY],
-      [eyeGap * scale.x + lookX, eyeY + lookY],
-    ];
-
-    if (this.mood === 'asleep' || (this.mood === 'sleepy' && open < 0.5)) {
-      context.lineWidth = 2.4;
-      for (const [ex, ey] of eyes) {
-        context.beginPath();
-        context.arc(ex, ey, this.radius * 0.12, 0.25 * Math.PI, 0.75 * Math.PI);
-        context.stroke();
-      }
-    } else if (this.mood === 'happy') {
-      // Blush first, so the eye arcs sit on top of it. Two soft patches are what turn "eyes
-      // closed" into "pleased" — without them an upturned arc reads much the same as a squint.
-      //
-      // Drawn as a gradient at high alpha rather than a flat patch at low alpha, and that is not a
-      // style choice. Red composited over this body at 0.4 lands on a grey-beige, because the
-      // green channel it is blending into is almost maxed — two dirty smudges instead of a blush.
-      // At 0.75 the centre is actually pink, and the gradient is what keeps it from being a disc.
-      context.save();
-      for (const side of [-1, 1]) {
-        const cx = side * this.radius * 0.36 * scale.x + lookX;
-        const cy = eyeY + this.radius * 0.2 + lookY;
-        const spread = this.radius * 0.16;
-        const blush = context.createRadialGradient(cx, cy, 0, cx, cy, spread);
-        blush.addColorStop(0, 'rgba(255, 122, 122, 0.78)');
-        blush.addColorStop(1, 'rgba(255, 122, 122, 0)');
-        context.fillStyle = blush;
-        context.beginPath();
-        context.ellipse(cx, cy, spread, spread * 0.62, 0, 0, Math.PI * 2);
-        context.fill();
-      }
-      context.restore();
-
-      context.lineWidth = 2.6;
-      for (const [ex, ey] of eyes) {
-        context.beginPath();
-        context.arc(ex, ey + this.radius * 0.07, this.radius * 0.135, 1.1 * Math.PI, 1.9 * Math.PI);
-        context.stroke();
-      }
-    } else {
-      const wide = this.mood === 'surprised' || this.mood === 'alert' ? 1.35 : 1;
-      for (const [ex, ey] of eyes) {
-        context.beginPath();
-        context.ellipse(
-          ex,
-          ey,
-          this.radius * 0.105 * wide,
-          this.radius * 0.13 * wide * Math.max(0.06, open),
-          0,
-          0,
-          Math.PI * 2,
-        );
-        context.fill();
-        if (open > 0.6) {
-          context.save();
-          context.fillStyle = '#ffffff';
-          context.globalAlpha = 0.9;
-          context.beginPath();
-          context.ellipse(
-            ex - this.radius * 0.035,
-            ey - this.radius * 0.05 * wide,
-            this.radius * 0.032,
-            this.radius * 0.038,
-            0,
-            0,
-            Math.PI * 2,
-          );
-          context.fill();
-          context.restore();
-        }
-      }
-    }
-
-    const mouthY = this.radius * 0.26 * scale.y;
-    context.lineWidth = 2.2;
-    context.beginPath();
-    if (this.mood === 'happy') {
-      // An ω, as two arcs in two separate paths.
-      //
-      // In one path the canvas joins the end of the first arc to the start of the second with a
-      // straight line, which draws a bar across the top and closes the whole thing into a dark
-      // blob. And at the old radius — 0.085, under four pixels — a 2.2px stroke was wider than the
-      // arcs were tall, so what little survived filled in solid. Both of those were invisible at
-      // the size the pet is normally drawn and obvious the moment it was magnified.
-      const w = this.radius * 0.115;
-      context.lineWidth = 2;
-      for (const side of [-1, 1]) {
-        context.beginPath();
-        context.arc(lookX + side * w, mouthY, w, 0, Math.PI);
-        context.stroke();
-      }
-    } else if (this.mood === 'surprised' || this.mood === 'alert') {
-      context.ellipse(lookX, mouthY, this.radius * 0.075, this.radius * 0.1, 0, 0, Math.PI * 2);
-      context.fill();
-    } else if (this.mood === 'dragged') {
-      context.ellipse(lookX, mouthY, this.radius * 0.11, this.radius * 0.07, 0, 0, Math.PI * 2);
-      context.fill();
-    } else if (this.mood === 'asleep' || this.mood === 'sleepy') {
-      context.moveTo(lookX - this.radius * 0.07, mouthY);
-      context.lineTo(lookX + this.radius * 0.07, mouthY);
-      context.stroke();
-    } else {
-      context.arc(lookX, mouthY - this.radius * 0.04, this.radius * 0.1, 0.2 * Math.PI, 0.8 * Math.PI);
-      context.stroke();
-    }
+  private fillFrame(): FaceFrame {
+    const frame = this.frame;
+    frame.mood = this.mood;
+    frame.radius = this.radius;
+    frame.squash = this.blob.squashScale;
+    frame.look = this.look;
+    frame.open = 1 - this.blinkPhase;
+    frame.clock = this.clock;
+    return frame;
   }
 
   private drawSleepMarks(context: CanvasRenderingContext2D): void {
     context.save();
     // Off the palette rather than a copy of its literal, which is what this was before.
-    context.fillStyle = PALETTE.sleep.rim;
+    context.fillStyle = this.skin.moods.sleep.rim;
     context.font = '600 14px system-ui, sans-serif';
     for (let i = 0; i < 3; i++) {
       // Each z rises and fades on its own offset phase, so they read as a drift rather than a blink.

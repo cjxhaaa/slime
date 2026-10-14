@@ -167,6 +167,13 @@ export const zhHant: Dictionary = {
     languageTitle: '語言',
     languageAuto: '（目前跟隨系統）',
     quitLabel: '退出 Slime',
+    skinTitle: '形象',
+    skinClassic: '史萊姆',
+    skinNote: '換形象不影響修為和動作。自製形象放進形象資料夾，每個形象一個子資料夾。',
+    skinFolder: '打開形象資料夾',
+    skinRescan: '重新掃描',
+    skinBroken: '無法使用 {name}：{error}',
+    skinBy: '作者：{author}',
 
     rebirthTitle: '轉生',
     rebirthButton: '轉生重歷',

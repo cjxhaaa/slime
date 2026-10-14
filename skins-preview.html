@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>skins</title>
+    <style>
+      body { margin: 0; color: #2a2a36; font: 13px system-ui, sans-serif; }
+      canvas { display: block; }
+      #error { color: #c0483f; white-space: pre-wrap; margin: 12px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="error"></div>
+    <script type="module">
+      // Every bundled skin in every mood, on a light half and a dark half of the sheet — the pet
+      // lives on somebody's wallpaper, so a skin has to read on both. Open it from `npm run dev`
+      // at /skins-preview.html. ?realm=3 shows the body at that realm's colour and size.
+      //
+      // The body is held still here rather than simulated, so what changes between columns is the
+      // skin's answer to each mood and nothing else. Mods in the skins folder are not shown: this
+      // page runs in a plain browser, which cannot read that folder.
+      import { Slime } from '/src/slime/Slime.ts';
+      import { listSkins, loadSkin } from '/src/skins/catalog.ts';
+      import { pickText } from '/src/skins/manifest.ts';
+      import { lookFor } from '/src/game/appearance.ts';
+      import { Cultivation } from '/src/game/cultivation.ts';
+
+      const moods = ['idle', 'happy', 'sleepy', 'asleep', 'surprised', 'alert', 'nudge', 'dragged'];
+      const query = new URLSearchParams(location.search);
+      const realm = Number(query.get('realm') || 0);
+
+      const entries = (await listSkins()).filter((entry) => !entry.error);
+      const worn = [];
+      for (const entry of entries) {
+        try {
+          worn.push({ entry, skin: await loadSkin(entry) });
+        } catch (error) {
+          document.getElementById('error').textContent += `${entry.id}: ${error.message}\n`;
+        }
+      }
+
+      const Cell = 130;
+      const Row = 150;
+      const Left = 90;
+      const W = Left + moods.length * Cell;
+      const H = 40 + worn.length * Row * 2;
+      const dpr = window.devicePixelRatio || 1;
+      const c = document.getElementById('c');
+      c.width = W * dpr;
+      c.height = H * dpr;
+      c.style.width = W + 'px';
+      c.style.height = H + 'px';
+      const x = c.getContext('2d');
+      x.scale(dpr, dpr);
+
+      const pet = new Cultivation(0);
+      pet.realm = realm;
+
+      x.fillStyle = '#eef0e6';
+      x.fillRect(0, 0, W, H / 2 + 20);
+      x.fillStyle = '#1e2433';
+      x.fillRect(0, H / 2 + 20, W, H / 2);
+      x.fillStyle = '#2a2a36';
+      moods.forEach((mood, col) => x.fillText(mood, Left + col * Cell + 40, 24));
+
+      for (const half of [0, 1]) {
+        worn.forEach(({ entry, skin }, row) => {
+          const top = 40 + (half * worn.length + row) * Row;
+          x.fillStyle = half ? '#d8dbe6' : '#2a2a36';
+          x.fillText(entry.source === 'classic' ? 'classic' : pickText(entry.name, 'zh-Hans'), 12, top + 75);
+          moods.forEach((mood, col) => {
+            const slime = new Slime(Left + col * Cell + 60, top + 70);
+            slime.setSkin(skin);
+            slime.setLook(lookFor(pet, skin.realms));
+            slime.mood = mood;
+            slime.beginFrame(1);
+            slime.draw(x);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>

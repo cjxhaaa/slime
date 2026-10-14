@@ -2,6 +2,7 @@ mod devour;
 mod gather;
 mod presence;
 mod save;
+mod skins;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -289,6 +290,8 @@ pub fn run() {
             presence::lie_low_supported,
             save::load_save,
             save::write_save,
+            skins::list_skins,
+            skins::open_skins_folder,
             devour::devour_supported,
             devour::window_at,
             devour::raise,

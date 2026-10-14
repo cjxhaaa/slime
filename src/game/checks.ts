@@ -150,6 +150,8 @@ import {
   squeezeAt,
 } from '../ui/reveal.js';
 import { MaxReach, MinReach, Settle, arch, cycleSeconds, pace, planHop } from './pursuit.js';
+import { Limits, faceSlotFor, parseManifest, pickText } from '../skins/manifest.js';
+import { lookFor } from './appearance.js';
 
 let failures = 0;
 function check(label: string, actual: number, expected: number, tol = 1e-6): void {
@@ -3848,6 +3850,148 @@ checkTrue('and the functions really were called', FINDS.length + Ascended > 20);
 
 setLocale(wasLocale);
 checkTrue('the locale is put back', locale() === wasLocale);
+
+// ---------------------------------------------------------------- skins
+//
+// The parser is the whole safety story for a folder of files somebody downloaded, so it is checked
+// against the ways a hand-written skin.json actually goes wrong — and every pack shipped with the
+// app is run through it with its real files, so a typo in one fails here rather than at launch.
+{
+  const files = new Set(['ears.png', 'face.png', 'evil.png']);
+  const good = parseManifest({ format: 1, name: 'Plain' }, files);
+  checkTrue('a skin.json with only a name is a whole skin', good.ok);
+  if (good.ok) {
+    checkTrue('  and it keeps the classic face', good.spec.face.style === 'classic');
+    check('  and the classic jelly', good.spec.body.opacity, 0.92);
+    checkTrue('  and the realm ramp', good.spec.colors.realms === null);
+  }
+
+  const refused = (label: string, raw: unknown, mentions: string) => {
+    const parsed = parseManifest(raw, files);
+    checkTrue(`refused: ${label}`, !parsed.ok && parsed.error.includes(mentions));
+  };
+  refused('no format', { name: 'x' }, 'format');
+  refused('a format from the future', { format: 99, name: 'x' }, 'newer');
+  refused('no name', { format: 1 }, 'name');
+  refused('a script skin', { format: 1, name: 'x', kind: 'script' }, 'script');
+  refused(
+    'a picture that is not there',
+    { format: 1, name: 'x', accessories: [{ image: 'hat.png' }] },
+    'hat.png',
+  );
+  refused(
+    'a path out of the folder',
+    { format: 1, name: 'x', accessories: [{ image: '../evil.png' }] },
+    'not a path',
+  );
+  refused(
+    'a path into a subfolder',
+    { format: 1, name: 'x', body: { overlay: 'sub/evil.png' } },
+    'not a path',
+  );
+  refused(
+    'a URL',
+    { format: 1, name: 'x', body: { overlay: 'https://example.com/a.png' } },
+    'not a path',
+  );
+  refused('not a picture', { format: 1, name: 'x', body: { overlay: 'evil.exe' } }, 'evil.exe');
+  refused(
+    'a three-digit colour',
+    { format: 1, name: 'x', colors: { alert: { core: '#fff', edge: '#000000', rim: '#000000' } } },
+    'colors.alert.core',
+  );
+  refused(
+    'a mood that does not exist',
+    { format: 1, name: 'x', accessories: [{ image: 'ears.png', moods: ['angry'] }] },
+    'angry',
+  );
+  refused(
+    'a picture face with no idle to fall back to',
+    { format: 1, name: 'x', face: { images: { happy: 'face.png' } } },
+    'idle',
+  );
+  refused(
+    'an ear placed off in the next room',
+    { format: 1, name: 'x', accessories: [{ image: 'ears.png', y: -(Limits.offset + 1) }] },
+    'between',
+  );
+  refused(
+    'more ears than anybody needs',
+    {
+      format: 1,
+      name: 'x',
+      accessories: Array.from({ length: Limits.accessories + 1 }, () => ({ image: 'ears.png' })),
+    },
+    'at most',
+  );
+
+  const pictured = parseManifest(
+    { format: 1, name: 'x', face: { images: { idle: 'face.png' } } },
+    files,
+  );
+  checkTrue(
+    'pictures in the face make it a picture face without saying so',
+    pictured.ok && pictured.spec.face.style === 'images',
+  );
+
+  // Fallbacks: one idle picture is a complete face.
+  const only =
+    (...slots: string[]) =>
+    (slot: string) =>
+      slots.includes(slot);
+  const moods = [
+    'idle',
+    'happy',
+    'sleepy',
+    'asleep',
+    'surprised',
+    'alert',
+    'nudge',
+    'dragged',
+    'devouring',
+  ] as const;
+  checkTrue(
+    'every mood finds idle when idle is all there is',
+    moods.every((mood) => faceSlotFor(mood, only('idle')) === 'idle'),
+  );
+  checkTrue(
+    'sleepy borrows asleep before idle',
+    faceSlotFor('sleepy', only('idle', 'asleep')) === 'asleep',
+  );
+  checkTrue(
+    'dragged borrows surprised, then alert',
+    faceSlotFor('dragged', only('idle', 'alert')) === 'alert',
+  );
+  checkTrue('no pictures at all is no picture, not a loop', faceSlotFor('dragged', only()) === null);
+
+  const names = { 'zh-Hans': '布丁', en: 'Pudding' };
+  checkTrue('a name in the exact language', pickText(names, 'zh-Hans') === '布丁');
+  checkTrue('a name in the same language, another script', pickText(names, 'zh-Hant') === '布丁');
+  checkTrue('a name in English when there is no match', pickText(names, 'ko') === 'Pudding');
+
+  // A skin's own ramp: one colour means one colour at every realm.
+  const one = { core: '#111111', edge: '#222222', rim: '#333333' };
+  const pet = new Cultivation(0);
+  pet.realm = 5;
+  checkTrue('a one-colour ramp holds at every realm', lookFor(pet, [one]).palette === one);
+  checkTrue('no ramp keeps the realm colours', lookFor(pet).palette.core !== one.core);
+
+  // Every bundled pack, with the files it really has.
+  type Fs = {
+    readdirSync(path: string): string[];
+    readFileSync(path: string, encoding: string): string;
+  };
+  const fs = (await import('node:' + 'fs')) as unknown as Fs;
+  const root = 'src/skins/packs';
+  const packs = fs.readdirSync(root);
+  checkTrue('there are bundled skins to check', packs.length > 0);
+  for (const pack of packs) {
+    const present = new Set(fs.readdirSync(`${root}/${pack}`));
+    const raw: unknown = JSON.parse(fs.readFileSync(`${root}/${pack}/skin.json`, 'utf8'));
+    const parsed = parseManifest(raw, present);
+    checkTrue(`the bundled skin "${pack}" parses${parsed.ok ? '' : ': ' + parsed.error}`, parsed.ok);
+  }
+}
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

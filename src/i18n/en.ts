@@ -184,6 +184,13 @@ export const en: Dictionary = {
     languageTitle: 'Language',
     languageAuto: '(currently following the system)',
     quitLabel: 'Quit Slime',
+    skinTitle: 'Look',
+    skinClassic: 'Slime',
+    skinNote: 'A different look changes nothing about progress or behaviour. Your own skins go in the skins folder, one subfolder each.',
+    skinFolder: 'Open skins folder',
+    skinRescan: 'Rescan',
+    skinBroken: 'Can\'t use {name}: {error}',
+    skinBy: 'By {author}',
 
     rebirthTitle: 'Rebirth',
     rebirthButton: 'Begin again',

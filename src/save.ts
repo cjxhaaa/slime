@@ -55,6 +55,14 @@ export interface SaveState {
    */
   locale: string | null;
   /**
+   * The skin being worn, or null for the classic slime.
+   *
+   * Kept as chosen even when that skin cannot be found — a mod folder that is renamed, or moved
+   * while the pet is closed. The pet falls back to the classic look for the session, and the choice
+   * comes back by itself when the folder does.
+   */
+  skin: string | null;
+  /**
    * 关卡: the level the next 历练 is fought at, 1 to 99.
    *
    * The furthest reached, which is always one not yet beaten. A second line of progress beside the
@@ -123,6 +131,7 @@ export async function loadSave(): Promise<SaveState | null> {
       quiet?: unknown;
       lieLow?: unknown;
       locale?: unknown;
+      skin?: unknown;
       tower?: { level?: unknown; loadout?: unknown };
     };
     // A file from a future version is not something this build can reason about, and guessing at
@@ -165,6 +174,7 @@ export async function loadSave(): Promise<SaveState | null> {
       // Absent in every save written before there was a language menu, which is the common case
       // and not an error: null means "follow the system", and that is the right default for them.
       locale: typeof parsed.locale === 'string' ? parsed.locale : null,
+      skin: typeof parsed.skin === 'string' ? parsed.skin : null,
       tower: {
         level: Math.max(1, Math.floor(numberOr(parsed.tower?.level, 1))),
         loadout: parsed.tower?.loadout ?? null,

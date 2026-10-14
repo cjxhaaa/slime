@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "name": { "zh-Hans": "布丁", "zh-Hant": "布丁", "en": "Pudding", "ja": "プリン", "ko": "푸딩" },
+  "author": "Slime",
+  "description": {
+    "zh-Hans": "焦糖布丁。自带配色，所以境界只体现在体型上。",
+    "en": "Caramel pudding. It brings its own colours, so the realm only shows in its size."
+  },
+  "colors": {
+    "realms": [{ "core": "#fff1b8", "edge": "#f5c84c", "rim": "#c98f1d" }],
+    "alert": { "core": "#ffd0dc", "edge": "#f27a9b", "rim": "#c24d70" },
+    "nudge": { "core": "#ffe6ec", "edge": "#f0a9bc", "rim": "#b97a8c" },
+    "sleep": { "core": "#efe3c8", "edge": "#cdb27a", "rim": "#9a8048" }
+  },
+  "body": { "opacity": 1, "rimWidth": 2, "shine": true, "overlay": "caramel.svg" },
+  "face": {
+    "size": 1,
+    "y": 0.09,
+    "images": {
+      "idle": "face-idle.svg",
+      "blink": "face-blink.svg",
+      "happy": "face-happy.svg",
+      "asleep": "face-asleep.svg",
+      "alert": "face-alert.svg"
+    }
+  },
+  "accessories": [
+    { "image": "cherry.svg", "layer": "behind", "x": 0.08, "y": -1.12, "width": 0.42 },
+    { "image": "sweat.svg", "layer": "front", "x": 0.72, "y": -0.5, "width": 0.26, "moods": ["alert", "surprised", "dragged"] }
+  ]
+}

@@ -308,3 +308,10 @@ button.secondary {
   opacity: 0.55;
   font-weight: 400;
 }
+
+/* 形象: skins in the folder that cannot be worn, and why. Paths and file names break anywhere. */
+.broken p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

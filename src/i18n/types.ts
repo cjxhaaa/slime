@@ -204,6 +204,19 @@ export interface Dictionary {
     languageAuto: string;
     quitLabel: string;
 
+    /** 形象: which skin the pet wears. */
+    skinTitle: string;
+    /** The name of the slime as drawn in code, the one skin with no skin.json to name it. */
+    skinClassic: string;
+    /** Where skins come from, under the chips. */
+    skinNote: string;
+    skinFolder: string;
+    skinRescan: string;
+    /** `{name}` and `{error}`: a skin that is in the folder but cannot be worn, and why. */
+    skinBroken: string;
+    /** `{author}`, as a chip's tooltip. */
+    skinBy: string;
+
     rebirthTitle: string;
     rebirthButton: string;
     /** The second of the two clicks, and the line that says what it costs. */

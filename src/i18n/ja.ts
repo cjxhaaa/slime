@@ -172,6 +172,13 @@ export const ja: Dictionary = {
     languageTitle: '言語',
     languageAuto: '（現在はシステムに従っている）',
     quitLabel: 'Slime を終了',
+    skinTitle: '見た目',
+    skinClassic: 'スライム',
+    skinNote: '見た目を変えても修行や動きは変わりません。自作の見た目はスキンフォルダに、一つずつサブフォルダで入れてください。',
+    skinFolder: 'スキンフォルダを開く',
+    skinRescan: '再読み込み',
+    skinBroken: '{name} は使えません：{error}',
+    skinBy: '作者：{author}',
 
     rebirthTitle: '転生',
     rebirthButton: '転生してやり直す',

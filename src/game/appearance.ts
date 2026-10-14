@@ -50,14 +50,20 @@ const GlowFrom = 0.55;
 const NourishedScale = 1.05;
 const NourishedGlow = 0.4;
 
-export function lookFor(cultivation: Cultivation): BodyLook {
+/**
+ * `realms` is a skin's own ramp, when it brings one. Shorter than nine is allowed and the last
+ * colour carries on, so a skin that wants to be one colour throughout can say so with one entry.
+ */
+export function lookFor(cultivation: Cultivation, realms: readonly Palette[] | null = null): BodyLook {
   const realm = Math.min(cultivation.realm, Ascended);
   const progress = Math.min(1, Math.max(0, cultivation.progress));
   const nourished = cultivation.nourished;
   const glow = progress <= GlowFrom ? 0 : (progress - GlowFrom) / (1 - GlowFrom);
   return {
     scale: (1 + ScalePerRealm * realm) * (nourished ? NourishedScale : 1),
-    palette: REALM_PALETTES[realm] ?? REALM_PALETTES[0],
+    palette: realms
+      ? realms[Math.min(realm, realms.length - 1)]
+      : (REALM_PALETTES[realm] ?? REALM_PALETTES[0]),
     // Half an hour of visibly holding something, which is the whole reason the reward is a state
     // and not a lump of qi nobody can see.
     glow: nourished ? Math.max(NourishedGlow, glow) : glow,

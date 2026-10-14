@@ -20,6 +20,7 @@ import {
   setLocale,
   words,
 } from './i18n';
+import { type LocalText, pickText } from './skins/manifest';
 
 // A settings page that fails silently is indistinguishable from one that never loaded, which is
 // exactly the hole this fell into: a blank white window with no way to tell whether the document,
@@ -289,6 +290,76 @@ function paintLanguage(): void {
   );
 }
 
+/**
+ * 形象. The overlay reads the skins and wears one; this lists them and says which to wear.
+ *
+ * A skin that is in the folder but cannot be worn is listed under the chips with the reason rather
+ * than left out. Somebody who just made one and does not see it needs to be told what is wrong with
+ * it, and nothing else in the app is going to tell them.
+ */
+interface SkinRow {
+  id: string;
+  source: 'classic' | 'builtin' | 'mod';
+  folder: string;
+  name: LocalText;
+  author: string | null;
+  error: string | null;
+}
+let skinState: { chosen: string; worn: string; skins: SkinRow[] } | null = null;
+
+function skinName(row: SkinRow): string {
+  return row.source === 'classic' ? words().settings.skinClassic : pickText(row.name, locale());
+}
+
+function paintSkins(): void {
+  const w = words();
+  el<HTMLHeadingElement>('skin-title').textContent = w.settings.skinTitle;
+  el<HTMLParagraphElement>('skin-note').textContent = w.settings.skinNote;
+  el<HTMLButtonElement>('skin-folder').textContent = w.settings.skinFolder;
+  el<HTMLButtonElement>('skin-rescan').textContent = w.settings.skinRescan;
+  const rows = skinState?.skins ?? [];
+  el<HTMLDivElement>('skin-chips').replaceChildren(
+    ...rows
+      .filter((row) => row.error === null)
+      .map((row) => {
+        const chip = document.createElement('button');
+        chip.className = 'chip';
+        chip.type = 'button';
+        chip.textContent = skinName(row);
+        if (row.author) chip.title = fill(w.settings.skinBy, { author: row.author });
+        // What is on the pet, not what was asked for: the two differ while a skin is loading, and
+        // for good when the one asked for turned out to be broken.
+        chip.setAttribute('aria-pressed', String(row.id === skinState?.worn));
+        chip.addEventListener('click', () => tell('skin-changed', row.id));
+        return chip;
+      }),
+  );
+  el<HTMLDivElement>('skin-broken').replaceChildren(
+    ...rows
+      .filter((row) => row.error !== null)
+      .map((row) => {
+        const line = document.createElement('p');
+        line.className = 'muted';
+        line.textContent = fill(w.settings.skinBroken, {
+          name: row.folder || skinName(row),
+          error: row.error ?? '',
+        });
+        return line;
+      }),
+  );
+}
+
+el<HTMLButtonElement>('skin-folder').addEventListener('click', () => {
+  void invoke('open_skins_folder').catch((error) => console.warn(`SKINS_FOLDER ${String(error)}`));
+});
+el<HTMLButtonElement>('skin-rescan').addEventListener('click', () => tell('skins-rescan'));
+
+void listen<{ chosen: string; worn: string; skins: SkinRow[] }>('skin-state', (event) => {
+  skinState = event.payload;
+  paintSkins();
+});
+tell('want-skins');
+
 /** The arena's headings and buttons, which are static markup in every other section. */
 function paintArena(): void {
   const w = words();
@@ -304,6 +375,7 @@ function paintAll(): void {
   // font has to be fallen back to — the shapes of 直 and 類 are not the same in all three.
   document.documentElement.lang = locale();
   paintLanguage();
+  paintSkins();
   paintRebirth();
   paintArena();
   paintSwitches();

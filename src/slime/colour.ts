@@ -34,6 +34,12 @@ export function clear(hex: string): string {
   return `rgba(${part(0)}, ${part(1)}, ${part(2)}, 0)`;
 }
 
+/** The same colour at `alpha`. Takes `#rrggbb`. */
+export function withAlpha(hex: string, alpha: number): string {
+  const channel = (index: number) => parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16);
+  return `rgba(${channel(0)}, ${channel(1)}, ${channel(2)}, ${alpha})`;
+}
+
 /** Blend two `#rrggbb` colours. `t` of 0 is all `a`, 1 is all `b`. */
 export function mix(a: string, b: string, t: number): string {
   const channel = (hex: string, index: number) =>

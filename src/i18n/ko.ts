@@ -171,6 +171,13 @@ export const ko: Dictionary = {
     languageTitle: '언어',
     languageAuto: '(지금은 시스템을 따르는 중)',
     quitLabel: 'Slime 종료',
+    skinTitle: '외형',
+    skinClassic: '슬라임',
+    skinNote: '외형을 바꿔도 수련과 동작은 그대로입니다. 직접 만든 외형은 스킨 폴더에 하나씩 하위 폴더로 넣으세요.',
+    skinFolder: '스킨 폴더 열기',
+    skinRescan: '다시 검색',
+    skinBroken: '{name} 사용 불가: {error}',
+    skinBy: '제작: {author}',
 
     rebirthTitle: '환생',
     rebirthButton: '환생하여 다시 걷기',

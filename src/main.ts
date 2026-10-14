@@ -5,6 +5,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { Slime, type Bite, type DevourRect } from './slime/Slime';
 import { lookFor } from './game/appearance';
+import { ClassicId, type SkinEntry, listSkins, loadSkin } from './skins/catalog';
+import { Classic, type Skin } from './slime/skin';
+import type { Palette } from './slime/Slime';
 import { allowance, burden, effort, engulfSeconds, spoilMinutes, strain } from './game/combat';
 import { Daily } from './game/daily';
 import { resolveErrand } from './game/errand';
@@ -1054,6 +1057,7 @@ function currentSave(): SaveState {
     lieLow,
     feats: feats.snapshot(),
     locale: chosenLocale,
+    skin: chosenSkin,
     tower: { level: towerLevel, loadout: lastLoadout },
   };
 }
@@ -1123,6 +1127,71 @@ function gatherReach(): number {
 /** What `applyLook` last handed over, so an unchanged look costs nothing and forces no repaint. */
 let appliedLook = { scale: 0, core: '', glow: -1, aura: -1 };
 
+/** The skin chosen in Settings, or null for the classic slime. See `SaveState.skin`. */
+let chosenSkin: string | null = null;
+/** Everything there is to wear, as last read. Read again on every rescan. */
+let skins: SkinEntry[] = [];
+/**
+ * Skins that parsed but then failed to put together — a picture that will not decode, say — by id.
+ * The parser cannot know about those, and Settings should still say why the choice did not stick.
+ */
+const skinFailures = new Map<string, string>();
+/** Bumped by every request, so a slow load cannot land on top of a newer choice. */
+let skinRequest = 0;
+/** The worn skin's own realm colours, when it brings them. */
+let skinRealms: readonly Palette[] | null = null;
+
+async function refreshSkins(): Promise<void> {
+  skins = await listSkins();
+  skinFailures.clear();
+}
+
+/**
+ * Puts on whatever is chosen, or the classic slime when that cannot be found or will not load.
+ *
+ * Only the paint changes. The body, the mood, the cultivation and the save are all exactly where
+ * they were, which is the whole promise a skin makes.
+ */
+async function wearSkin(): Promise<void> {
+  const request = ++skinRequest;
+  const wanted = chosenSkin ?? ClassicId;
+  const entry = skins.find((candidate) => candidate.id === wanted && !candidate.error);
+  let skin: Skin = Classic;
+  if (entry) {
+    try {
+      skin = await loadSkin(entry);
+    } catch (error) {
+      skinFailures.set(entry.id, error instanceof Error ? error.message : String(error));
+      console.warn(`SKIN_LOAD_FAILED ${entry.id} ${String(error)}`);
+    }
+  }
+  if (request !== skinRequest) return;
+  slime.setSkin(skin);
+  skinRealms = skin.realms;
+  // The realm palette may have changed while the realm did not, which `applyLook` would otherwise
+  // judge to be no change at all.
+  appliedLook = { scale: 0, core: '', glow: -1, aura: -1 };
+  applyLook();
+  fullRepaint = true;
+  emitSkins();
+}
+
+/** Tells Settings what can be worn and what is. Names go raw, so Settings picks the language. */
+function emitSkins(): void {
+  void emit('skin-state', {
+    chosen: chosenSkin ?? ClassicId,
+    worn: slime.skinId,
+    skins: skins.map((entry) => ({
+      id: entry.id,
+      source: entry.source,
+      folder: entry.folder,
+      name: entry.name,
+      author: entry.author,
+      error: skinFailures.get(entry.id) ?? entry.error,
+    })),
+  }).catch(() => {});
+}
+
 /**
  * Pushes the realm onto the body: size, palette, and how close the stage is to full.
  *
@@ -1185,7 +1254,7 @@ function emitPetState(): void {
 }
 
 function applyLook(): void {
-  const look = lookFor(cultivation);
+  const look = lookFor(cultivation, skinRealms);
   // Every field that can change has to be in here. `aura` was left out of the first version and
   // the symptom was quiet: a pet that gained a band of light kept the one it had, because the look
   // was judged unchanged and never handed over. It happened to work through an ascension only
@@ -2071,6 +2140,7 @@ async function main(): Promise<void> {
         fortune.restore(saved.fortune);
         seenIntro = saved.seenIntro;
         chosenLocale = saved.locale;
+        chosenSkin = saved.skin;
         quiet = saved.quiet;
         lieLow = saved.lieLow;
         feats.restore(saved.feats);
@@ -2097,6 +2167,10 @@ async function main(): Promise<void> {
       // null, which counts; a thrown read does not, and leaves saving off for the session.
       allowSaving();
       requestSave(currentSave());
+      // Returned, so the pet is not shown until it is wearing what was chosen — otherwise it turns
+      // up as the classic slime and changes a moment later. The one-second timeout below still
+      // applies, so a skin that is slow to decode delays nothing beyond that.
+      return refreshSkins().then(wearSkin);
     })
     .catch((error) => {
       console.warn(`SAVE_LOAD_FAILED ${String(error)}`);
@@ -2329,6 +2403,19 @@ async function main(): Promise<void> {
   // Settings has no state of its own: it asks, and this window — which owns the save — answers.
   await listen('want-state', () => emitPetState());
   await listen('want-locale', () => emitLocale());
+  await listen('want-skins', () => emitSkins());
+
+  await listen<string>('skin-changed', (event) => {
+    if (typeof event.payload !== 'string') return;
+    chosenSkin = event.payload === ClassicId ? null : event.payload;
+    requestSave(currentSave());
+    void wearSkin();
+  });
+
+  // The folder is read again, so a skin being worked on can be looked at without a restart.
+  await listen('skins-rescan', () => {
+    void refreshSkins().then(wearSkin);
+  });
 
   await listen<string>('locale-changed', (event) => {
     if (!isLocale(event.payload)) return;

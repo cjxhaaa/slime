@@ -397,6 +397,25 @@ Everything else is built on those two pieces: landings poke the contact point an
 jumps stretch it, a drag elongates it along its travel direction into a droplet, and the contact
 shadow shrinks with altitude — which is most of what actually sells the jump.
 
+## Skins
+
+What the slime *does* and what it *looks like* are separate. Everything that moves — the soft
+body, hops, throws, moods, blinking, gaze, the devour and the breakthroughs — lives in `Slime`, and
+once a frame it hands the result to a `Skin` that only decides how to paint it. So a new look gets
+every motion the slime already has, and costs a folder of pictures rather than a second animation
+system.
+
+A skin is a folder with a `skin.json` and some images: colours, a classic or picture face per
+mood, a texture inside the body, and accessories pinned to it that squash along with it. The
+bundled ones live in `src/skins/packs/` (the "DLC"); anyone can drop their own into the `skins`
+folder in the app-data directory (the "mods"). Both go through the same parser, and Settings lists
+them under 形象, including the ones that cannot be worn and why. The classic slime is still drawn
+entirely in code — a skin adds pictures on top of the physics, never frames.
+
+The format, its limits and the reasons for them are in [SKINS.md](SKINS.md). Scripted skins are
+deliberately not supported yet: running a downloaded script in a window that can close and kill
+other applications needs a sandbox first.
+
 ## Behaviour
 
 `src/slime/Slime.ts` holds the state machine: idle, happy, sleepy, asleep, surprised, alert,

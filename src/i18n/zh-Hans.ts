@@ -159,6 +159,13 @@ export const zhHans: Dictionary = {
     languageTitle: '语言',
     languageAuto: '（当前跟随系统）',
     quitLabel: '退出 Slime',
+    skinTitle: '形象',
+    skinClassic: '史莱姆',
+    skinNote: '换形象不影响修为和动作。自制形象放进形象文件夹，每个形象一个子文件夹。',
+    skinFolder: '打开形象文件夹',
+    skinRescan: '重新扫描',
+    skinBroken: '无法使用 {name}：{error}',
+    skinBy: '作者：{author}',
 
     rebirthTitle: '转生',
     rebirthButton: '转生重历',
