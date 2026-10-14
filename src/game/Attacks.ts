@@ -16,7 +16,7 @@
  * kill, throw, hold, set alight, give back. The trial owns the fight; this owns what the pet is
  * doing about it.
  *
- * `absorb` is the one thing asked of it rather than fired by it — 金钟罩 and 固土 have to act
+ * `absorb` is the one thing asked of it rather than fired by it — 固土's shell has to act
  * *between* a contact and the damage it would do, and everything else in here acts on its own
  * timer.
  */
@@ -387,7 +387,6 @@ export class Attacks {
   reset(): void {
     this.shellLeft = 0;
     this.shellLayers = 0;
-    this.shieldCards = 0;
     this.plateWay = 0;
     this.shellBack = 0;
     this.shellBurst = 0;
@@ -755,29 +754,17 @@ export class Attacks {
   private shellBurst = 0;
 
   /**
-   * How many layers of 金钟 are drafted.
+   * How many layers 固土 gives: one a depth.
    *
-   * Pushed in rather than read from `Arsenal`, because this module already takes its holdings that
-   * way and a second path to the same source is a second thing that can disagree with the first.
+   * There used to be a second source, 金钟罩, a card of its own that summed into the same shell.
+   * It went with the draft — the shop sells the fifteen and nothing else — and the shell it fed is
+   * 固土's alone now.
    */
-  guard(layers: number): void {
-    this.shieldCards = layers;
-    this.reshell();
-  }
-
-  /** How many layers the card gave. 固土 keeps its own count beside it. */
-  private shieldCards = 0;
   private plateWay = 0;
 
-  /**
-   * Totals the two sources of shell and hands the difference to the body.
-   *
-   * 金钟罩 is a card and 固土 is one of the ten, and they are the same armour — so they are
-   * summed rather than kept as two shells with two clocks, which would mean two sets of plates
-   * turning around the pet at two radii and no way to tell what either one was.
-   */
+  /** Hands the body however many layers it should have now. */
   private reshell(): void {
-    const layers = this.shieldCards + this.plateWay;
+    const layers = this.plateWay;
     if (layers === this.shellLayers) return;
     // A layer gained mid-run is a layer you have now, not one you have in nine seconds.
     const gained = Math.max(0, layers - this.shellLayers);

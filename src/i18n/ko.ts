@@ -122,31 +122,14 @@ export const ko: Dictionary = {
     土固: { name: '고토', blurb: '돌갑옷을 둘러 한 대를 받아 낸다' },
   },
 
-  draft: {
-    choose: '하나 고르기',
-    newSchool: '새 술법',
-    raise: '정진',
-    evolve: '★ 진화',
+  kit: {
     arm: '병기',
     way: '오행',
-    grades: ['연두', '파랑', '노랑', '빨강', '하양', '무지개'],
-    alsoCarry: '보유 {count}개',
-    stacksTo: '합쳐서 {depth}단',
-    mend: '운기조식',
-    mendTitle: '호체',
-    mendBlurb: '호체 셋 회복',
-    shield: '금종',
-    shieldTitle: '금종조',
-    shieldBlurb: '한 대를 받아낸다. 마지막 겹이 깨지면 사방으로 튕겨 내고, 이윽고 다시 맺힌다',
-    pairsWith: '{school} 합 · {combo}',
-    triadWith: '삼합 · {triad}',
   },
 
-  satchel: {
-    title: '행낭',
-    worn: '장비',
-    stash: '여분',
-    fuse: '합성',
+  bar: {
+    silver: '은 {silver}',
+    buy: '사기 {price}',
   },
 
   trial: {

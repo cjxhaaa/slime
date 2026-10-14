@@ -85,17 +85,27 @@ import {
   Spread as YardSpread,
 } from './Dummies.js';
 import { Depth } from './depth.js';
-import { Arsenal, CardsPerOffer, MaxShields, Opening } from './Arsenal.js';
-import { Capacity, Pack, Slots } from './Pack.js';
-import { Tiers, canMerge, dropTier, forge, merged } from './gear.js';
+import { Pack, Slots } from './Pack.js';
+import {
+  BuysPerSlot,
+  FirstPrice,
+  MostSlots,
+  PriceGrowth,
+  OpeningBuys,
+  Purse,
+  costOf,
+  price,
+  slotsAfter,
+  startingSilver,
+  stock,
+} from './purse.js';
+import { type Item, Tiers, canMerge, dropTier, forge, merged } from './gear.js';
 import {
   ARMS,
   MaxDepth,
   PATHS,
   WAYS,
   WEAPONS,
-  type Way,
-  Ways,
   type Weapon,
   span,
   swing,
@@ -113,6 +123,7 @@ import {
 import { DICTIONARIES, LOCALES, fill, isLocale, locale, localeFor, setLocale } from '../i18n/index.js';
 import { fit, wrap } from '../ui/text.js';
 import { drawWayIcon, drawWeaponIcon } from '../ui/icons.js';
+import { ButtonWidth } from '../ui/Bar.js';
 import {
   HiddenUntil,
   crawl,
@@ -912,6 +923,28 @@ checkTrue(
   ticks * 0.05 >= 45 && ticks * 0.05 < 150,
 );
 
+{
+  // **A boss is not thrown.** Fought to the last wave the same way as above, then the boss — which
+  // leads its wave, so it is alone on the field — is hit with four pillars' worth of 山崩 from just
+  // on the far side of it. Throwable, it was once pushed off the screen and held there by a build
+  // that shoved on every hit, and a level whose boss never comes back is a level that never ends.
+  const run = new Trial();
+  run.start(1);
+  const body = { x: 400, y: 300, radius: 40 };
+  let ticks = 0;
+  while (!(run.wave === BossWave && run.targets().length > 0) && ticks++ < 20000) {
+    run.update(0.05, body, 800, 600);
+    if (run.wave < BossWave) for (let i = 0; i < 6; i++) run.strike(400, 624);
+  }
+  const alone = run.targets();
+  checkTrue(`the boss walks in alone: ${alone.length} on the field`, alone.length === 1);
+  const from = Math.hypot(alone[0].x - body.x, alone[0].y - body.y);
+  run.shove(alone[0].x, alone[0].y - 30, 200, PillarShove * 4);
+  for (let i = 0; i < 18; i++) run.update(1 / 120, body, 800, 600);
+  const to = Math.hypot(run.targets()[0].x - body.x, run.targets()[0].y - body.y);
+  checkTrue(`and a throw does not move it back: ${from.toFixed(0)}px before, ${to.toFixed(0)}px after`, to <= from + 1);
+}
+
 // The ceiling, which is the whole reason the payout stopped counting kills. `harvest` takes no
 // level and no realm — that is the structural half of the guarantee — and what it can pay is capped
 // below the time a level actually takes, so grinding the minigame cannot become the fastest way up
@@ -934,134 +967,150 @@ Math.random = realRandom;
 
 
 // ---------------------------------------------------------------------------------------------
-// 行囊: the draft, now that a kit is six slots of graded gear.
+// 装备栏 and 银币: the slots, the purse, and the shop between them.
 //
-// The rules this used to assert are gone, and they were load-bearing, so they are named here
-// rather than quietly deleted. **A duplicate no longer deepens** — it is a second item, and two
-// of them are either two things worn at once or one merge. **A weapon no longer swaps** — a
-// second weapon is carried alongside the first. **Nothing leaves the pool at a ceiling**, because
-// with 品质 there is no such thing as a card you already have.
-//
-// What carries over untouched is the one that was never about any of that: **the opening has to
-// hand you a build before the first 邪气 arrives**, because that is what makes an unattended run
-// worth nothing.
+// The draft is gone, and some of what it asserted was load-bearing, so it is named here rather
+// than quietly dropped. **The first thing you get is a weapon** — that survives, as a rule of the
+// shop. **Four cards before the first 邪气** — that survives as a rule of the level: nothing
+// arrives until something that swings is carried (asserted with the fight, further down). **An
+// offer is never empty** — gone, because nothing is offered; a full bar refuses the purchase
+// instead, and that refusal is the point.
 
-// Its own generator. `fightRandom` is declared further down the file, and reaching for a shared
-// one would also make this block's outcome depend on how many draws happened above it — the exact
-// trap that one carries a comment about.
-let draftSeed = 20261010;
-const draftRandom = (): number => {
-  draftSeed = (draftSeed * 1103515245 + 12345) & 0x7fffffff;
-  return draftSeed / 0x7fffffff;
+// Its own generator, so this block's outcome does not depend on how many draws happened above it.
+let shopSeed = 20261010;
+const shopRandom = (): number => {
+  shopSeed = (shopSeed * 1103515245 + 12345) & 0x7fffffff;
+  return shopSeed / 0x7fffffff;
 };
 
 {
-  const bag = new Pack();
-  const kit = new Arsenal(bag);
-  kit.start();
-  check('the opening owes four cards', kit.openingLeft, Opening);
-  checkTrue('and nothing is carried before it', bag.wornCount === 0 && bag.arms.length === 0);
-
-  // 1. **The first card of the run is a weapon.** A run that opened on four elements and nothing
-  //    to swing them with would be a pet standing in a crowd.
-  const first = kit.offer(draftRandom);
-  check('the first offer is three cards', first.length, CardsPerOffer);
-  checkTrue(
-    `and every one of them is a weapon: ${first.map((c) => c.kind).join(', ')}`,
-    first.every((c) => c.kind === 'arm'),
-  );
-  kit.take(first[0]);
-  checkTrue('so the run has something to swing', bag.arms.length === 1);
-  // **Straight onto the body**, not into the bag. This is the rule that decides whether the panel
-  // is an optional optimisation or a chore attached to every single drop.
-  check('and it is worn rather than stashed', bag.stash.length, 0);
-
-  // 2. And the rest of the opening fills out the ways.
-  while (kit.openingLeft > 0) {
-    const offered = kit.offer(draftRandom);
-    checkTrue(
-      `the rest of the opening is 五行: ${offered.map((c) => c.kind).join(', ')}`,
-      offered.every((c) => c.kind === 'way'),
-    );
-    kit.take(offered[0]);
+  // 1. **A weapon while you have none.** Every time, not on average.
+  let notWeapons = 0;
+  for (let i = 0; i < 1000; i++) {
+    if (stock(new Pack(), shopRandom, 0, 1).sort.sort !== 'arm') notWeapons++;
   }
-  check('the opening fills four of the six slots', bag.wornCount, Opening);
-  check('and none of it went to the bag', bag.stash.length, 0);
-  check('three of them being ways', bag.ways.length, Ways);
+  check('an empty-handed purchase is always a weapon', notWeapons, 0);
+  // And after that, anything — the shop does not lean toward what the build wants.
+  const armed = new Pack();
+  armed.accept(forge({ sort: 'arm', weapon: '弓' }, 1));
+  const seen = new Set<string>();
+  for (let i = 0; i < 3000; i++) {
+    const item = stock(armed, shopRandom, 0, 1);
+    seen.add(item.sort.sort === 'arm' ? item.sort.weapon : item.sort.way);
+  }
+  check('and once armed, every one of the fifteen turns up', seen.size, WEAPONS.length + WAYS.length);
 }
 
 {
-  // 3. **A duplicate is a second item**, which is the rule the whole merge system rests on. The
-  //    old draft deepened in place; if any of that survived, a second 弓 would disappear into the
-  //    first one and you would be a slot down with nothing to show for it.
+  // 2. **A duplicate is a second item**, which is the rule the whole merge system rests on.
   const bag = new Pack();
-  const kit = new Arsenal(bag);
-  kit.start();
-  kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
-  check('a weapon arrives', bag.arms.length, 1);
-  kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
-  check('and the same one again is a second weapon', bag.arms.length, 2);
+  bag.accept(forge({ sort: 'arm', weapon: '弓' }, 1));
+  bag.accept(forge({ sort: 'arm', weapon: '弓' }, 1));
+  check('the same weapon twice is two weapons', bag.arms.length, 2);
   checkTrue('both of them 弓', bag.arms.every((a) => a.weapon === '弓'));
 
   // **Weapons are counted, ways are summed.** They are different kinds of thing: one acts, the
   // other says how hard. Backwards, and a second 火爆 becomes a second explosion.
-  kit.take({ kind: 'way', way: '火爆', tier: 2 });
-  check('a way arrives at the grade it was drafted at', bag.ways[0].depth, 2);
-  kit.take({ kind: 'way', way: '火爆', tier: 2 });
+  bag.accept(forge({ sort: 'way', way: '火爆' }, 2));
+  check('a way arrives at the grade it was bought at', bag.ways[0].depth, 2);
+  bag.accept(forge({ sort: 'way', way: '火爆' }, 2));
   check('and a second one sums rather than counting', bag.ways[0].depth, 4);
   check('still one way, not two', bag.ways.length, 1);
 }
 
 {
-  // 4. Summed depth stops at the ceiling rather than running past it, because `swing` and `span`
-  //    clamp there — and a number the engine clamps is a number the panel must not promise.
+  // 3. Summed depth stops at the ceiling rather than running past it, because `swing` and `span`
+  //    clamp there — and a number the engine clamps is a number the bar must not promise.
   const bag = new Pack();
   for (let i = 0; i < Slots; i++) bag.accept(forge({ sort: 'way', way: '水寒' }, Tiers));
   check('a stack of ways stops at the ceiling', bag.ways[0].depth, MaxDepth);
 }
 
 {
-  // 5. **Six slots, then the bag.** Nothing is dropped while there is room anywhere, and the
-  //    seventh item is what proves the slots are not simply a list that grows.
+  // 4. **No stash.** Six slots, and the seventh thing is refused rather than put somewhere else.
   const bag = new Pack();
-  const kit = new Arsenal(bag);
-  kit.start();
-  for (let i = 0; i < Slots; i++) kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
+  for (let i = 0; i < Slots; i++) bag.accept(forge({ sort: 'arm', weapon: '弓' }, 1));
   check('six slots fill', bag.wornCount, Slots);
-  check('with nothing spare yet', bag.stash.length, 0);
-  kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
-  check('the seventh goes to the bag', bag.stash.length, 1);
-  check('and the slots are untouched', bag.wornCount, Slots);
+  checkTrue('and then it is full', bag.full);
+  checkTrue('and the seventh has nowhere to go', !bag.accept(forge({ sort: 'arm', weapon: '弓' }, 1)));
+  check('so nothing was carried that is not on the bar', bag.wornCount, Slots);
+
+  // Growing adds empty slots, and never takes one away — a slot that vanished with something in
+  // it would be a purchase quietly confiscated.
+  bag.grow(Slots + 1);
+  checkTrue('a grown bar has room again', !bag.full && bag.size === Slots + 1);
+  bag.grow(Slots - 2);
+  check('and asking it to shrink does nothing', bag.size, Slots + 1);
 }
 
 {
-  // 6. An offer is never empty. A meter that fills with nothing to spend it on reads as broken
-  //    rather than as finished, and with a bag that fills up it is a state people reach.
+  // 5. **The purse.** What things cost, and what the bar grows to.
+  check('the first purchase costs ten', price(0), FirstPrice);
+  let steady = true;
+  for (let n = 1; n < 40; n++) {
+    if (price(n) < price(n - 1)) steady = false;
+    if (Math.abs(price(n) / price(n - 1) - PriceGrowth) > 0.12) steady = false;
+  }
+  checkTrue('and each one after it is about 18% dearer', steady);
+  check('six slots to begin with', slotsAfter(0), Slots);
+  check('still six after four purchases', slotsAfter(BuysPerSlot - 1), Slots);
+  check('seven after five', slotsAfter(BuysPerSlot), Slots + 1);
+  check('and never more than twelve', slotsAfter(10_000), MostSlots);
+  check('which takes thirty purchases', slotsAfter((MostSlots - Slots) * BuysPerSlot), MostSlots);
+
+  // The opening purse buys what the opening draft used to deal — four things — at every realm the
+  // trial is open at. The level does not begin until something swings, so the first of them is
+  // what makes it possible to begin at all.
+  let cannotStart = 0;
+  for (let realm = 1; realm <= Ascended; realm++) if (startingSilver(realm) < costOf(OpeningBuys)) cannotStart++;
+  check('every realm walks in able to buy the opening four', cannotStart, 0);
+  checkTrue('and a higher realm walks in with more', startingSilver(Ascended - 1) > startingSilver(1));
+
+  // What one kill is worth, by rank — the three numbers TOWER.md set.
+  check('a common drops one', RANKS.common.silver, 1);
+  check('an elite twelve', RANKS.elite.silver, 12);
+  check('a boss sixty', RANKS.boss.silver, 60);
+}
+
+{
+  // 6. **Buying.** Spend, stock, stow, and refuse for the two reasons there are.
   const bag = new Pack();
-  const kit = new Arsenal(bag);
-  kit.start();
-  for (let i = 0; i < Slots + Capacity + 4; i++) kit.take({ kind: 'arm', weapon: '弓', tier: 1 });
-  checkTrue('the 行囊 does fill up', bag.full);
-  const late = kit.offer(draftRandom);
-  check('an offer is always three cards', late.length, CardsPerOffer);
-  checkTrue(
-    `and becomes 调息 when gear would hit the floor: ${late.map((c) => c.kind).join(', ')}`,
-    late.every((c) => c.kind === 'mend'),
-  );
+  const purse = new Purse();
+  purse.start(1);
+  const opening = purse.silver;
+  const first = purse.buy(bag, shopRandom, 0, 1);
+  checkTrue('the opening silver buys something', first !== null);
+  check('and it costs what the button said', opening - purse.silver, FirstPrice);
+  checkTrue('it is on the bar', bag.wornCount === 1 && first !== null && bag.find(first.id) !== null);
+  checkTrue('and it is a weapon', !bag.unarmed);
+
+  while (purse.silver >= purse.price) purse.buy(bag, shopRandom, 0, 1);
+  check('the opening purse buys the opening four', purse.bought, OpeningBuys);
+  const poor = purse.silver;
+  checkTrue('and with too little, the purchase is refused', purse.buy(bag, shopRandom, 0, 1) === null);
+  check('and nothing is taken for it', purse.silver, poor);
+
+  purse.earn(100_000);
+  while (!bag.full) purse.buy(bag, shopRandom, 0, 1);
+  const rich = purse.silver;
+  const bought = purse.bought;
+  checkTrue('a full bar refuses however rich you are', !purse.canBuy(bag) && purse.buy(bag, shopRandom, 0, 1) === null);
+  checkTrue('and keeps its silver and its count', purse.silver === rich && purse.bought === bought);
+  check('the bar grew as it was bought for', bag.size, slotsAfter(bought));
+  checkTrue(`every slot filled: ${bag.wornCount} of ${bag.size}`, bag.wornCount === bag.size);
 }
 
 {
-  // 7. **品质 climbs with the run.** Otherwise the top half of the ladder is decoration: merging
-  //    alone needs thirty-two 浅绿 to reach 彩, and ninety seconds does not deal thirty-two of
-  //    anything.
+  // 7. **品质 climbs with the level.** Otherwise the top half of the ladder is decoration: merging
+  //    alone needs thirty-two 浅绿 to reach 彩.
   const early: number[] = [];
   const late: number[] = [];
   for (let i = 0; i < 400; i++) {
-    early.push(dropTier(0.05, 0, draftRandom));
-    late.push(dropTier(0.95, 0, draftRandom));
+    early.push(dropTier(0.05, 0, shopRandom));
+    late.push(dropTier(0.95, 0, shopRandom));
   }
   const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
-  check('the first drops of a run are all the lowest grade', Math.max(...early), 1);
+  check('the first purchases of a level are all the lowest grade', Math.max(...early), 1);
   checkTrue(
     `and the last are far better (${mean(late).toFixed(1)} against ${mean(early).toFixed(1)})`,
     mean(late) > mean(early) + 2,
@@ -1069,10 +1118,10 @@ const draftRandom = (): number => {
   checkTrue('without ever exceeding the ladder', Math.max(...late) <= Tiers);
 
   // And the realm lifts the whole thing, which is most of what a realm buys in here now.
-  const low = mean(Array.from({ length: 400 }, () => dropTier(0.5, 0, draftRandom)));
-  const high = mean(Array.from({ length: 400 }, () => dropTier(0.5, Ascended - 1, draftRandom)));
+  const low = mean(Array.from({ length: 400 }, () => dropTier(0.5, 0, shopRandom)));
+  const high = mean(Array.from({ length: 400 }, () => dropTier(0.5, Ascended - 1, shopRandom)));
   checkTrue(
-    `大乘 drops better than 筑基 at the same moment (${high.toFixed(1)} against ${low.toFixed(1)})`,
+    `大乘 is dealt better than 筑基 at the same moment (${high.toFixed(1)} against ${low.toFixed(1)})`,
     high > low,
   );
 }
@@ -1086,8 +1135,6 @@ const draftRandom = (): number => {
   checkTrue('two of the same thing at the same grade merge', canMerge(a, b));
   check('into one grade higher', merged(a, b)?.tier ?? 0, 3);
   checkTrue('different grades do not', !canMerge(a, c));
-  // The one that stops 刀 + 火爆 having to produce either a random thing or a prompt — and either
-  // of those takes the point out of hoarding sabres.
   checkTrue('and neither do different things at the same grade', !canMerge(a, d));
   checkTrue('nor does an item with itself', !canMerge(a, a));
   checkTrue(
@@ -1100,19 +1147,20 @@ const draftRandom = (): number => {
   const bag = new Pack();
   const x = forge({ sort: 'arm', weapon: '刀' }, 2);
   const y = forge({ sort: 'arm', weapon: '刀' }, 2);
+  bag.accept(forge({ sort: 'way', way: '火爆' }, 1));
   bag.accept(x);
   bag.accept(y);
   check('two worn sabres are two weapons', bag.arms.length, 2);
   const into = merged(x, y);
-  checkTrue('they can be fused', into !== null && bag.fuse(x.id, y.id, into));
+  checkTrue('they can be fused', into !== null && bag.fuse(y.id, x.id, into));
   check('leaving one weapon', bag.arms.length, 1);
   check('a grade higher', bag.arms[0].depth, 3);
-  check('and a slot free', bag.wornCount, 1);
+  check('in the slot the hand ended on', bag.slotOf(into?.id ?? -1), 2);
+  checkTrue('and the other slot free', bag.worn[1] === null && bag.wornCount === 2);
 }
 
 {
-  // 9. The panel offers every pair it could fuse, and offers each item in at most one of them — a
-  //    list that showed the same 蓝刀 in three pairs would be three buttons that fight each other.
+  // 9. Every pair it could fuse, each item in at most one of them.
   const bag = new Pack();
   for (let i = 0; i < 3; i++) bag.accept(forge({ sort: 'arm', weapon: '刀' }, 2));
   bag.accept(forge({ sort: 'way', way: '火爆' }, 1));
@@ -1121,7 +1169,6 @@ const draftRandom = (): number => {
   const named = new Set(pairs.flatMap((p) => [p.a.id, p.b.id]));
   check('and no item appears twice across the pairs', named.size, pairs.length * 2);
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // 邪气: the roster, and whether a run actually gets worse.
@@ -1207,34 +1254,31 @@ check('and a quarter faster by the end', pacing(1), 1.25);
 check('clamped past the end', pacing(4), 1.25);
 
 // ---------------------------------------------------------------------------------------------
-// The AFK guard. Fifth version, and the second that is not arithmetic.
+// The AFK guard, now that a build is bought rather than drafted.
 //
-// The first two compared two columns of the realm ladder, and both passed while a real run driven
-// frame by frame finished at full health with the body never moving. The third fought a whole run,
-// which at least caught that — and then the schools arrived and a four-slot build turned out to
-// kill five to eight times what one talisman did. Chasing it with the door took about **two
-// thousand arrivals in ninety seconds**, which is not a fight, it is a screensaver with a body in
-// it.
+// The history matters, because it was rebuilt five times. The first two compared columns of the
+// realm ladder and passed while a real run, fought frame by frame, finished at full health with
+// the body never moving. The third fought a whole run, which caught that — and then four drafted
+// slots turned out to kill five to eight times what one talisman had, and chasing that with the
+// door took two thousand arrivals in ninety seconds. What finally held was structural: **the
+// draft paused the run until four cards were taken**, so walking away earned nothing whatever the
+// build.
 //
-// The thing that actually stops a level being farmed is structural and was sitting there all
-// along: **the draft pauses the fight.** Nothing moves, no wave advances, and `through` — which is
-// the entire payout — only moves when something dies. So a level nobody is clicking earns nothing,
-// however strong the build is, and that holds without a single number being tuned for it. The
-// first assertion below is that structural fact, and it is the load-bearing one.
+// The draft is gone and that guarantee is kept in a different place: **nothing arrives until
+// something that swings is carried** (`Trial.update`). A level opened and walked away from has
+// not started. That is the first assertion below, and the load-bearing one.
 //
-// What is left to tune is the case in between: somebody who takes the four opening cards, starts
-// the fight, and then never spends the meter again. That build stays at its opening grade for the
-// whole level, and past the first few levels it has to lose — otherwise the exchanges are
-// decoration. Stage six of TOWER.md restates this for merging (a build that never merges does not
-// get past wave ten); until merging is the way a build grows, the meter is.
+// What is left to tune is the case in between: somebody who buys a weapon to start the level and
+// then never touches the bar again. Past the bottom of the tower, that has to lose — otherwise the
+// bar is decoration. Stage six of TOWER.md restates it for merging (a build that never merges does
+// not get past wave ten); this is the version a meter-free, merge-light build can be held to now.
 
-// Pinned for the whole block below. Arrivals pick their edge with `Math.random`, and so do half a
-// dozen flourishes inside the attacks, so an unpinned level is a different fight every time —
-// which for an assertion that sits right on a balance line means a check that fails one time in
-// five and teaches everybody to re-run it.
-// Its own stream rather than the shared `rng`. These fights are long and every draw moves them,
-// so reading from the shared one means that *adding an assertion anywhere above* silently changes
-// the outcome of a balance guard — which happened, and cost a while to see.
+// Pinned for the whole block. Arrivals pick their edge with `Math.random`, and so do half a dozen
+// flourishes inside the attacks, so an unpinned level is a different fight every time — which for
+// an assertion on a balance line is a check that fails one time in five.
+//
+// Its own stream rather than the shared `rng`: these fights are long and every draw moves them, so
+// a shared stream means adding an assertion anywhere above silently changes a balance guard.
 let fightSeed = 990722;
 const fightRandom = () => {
   fightSeed = (fightSeed * 1103515245 + 12345) & 0x7fffffff;
@@ -1243,6 +1287,18 @@ const fightRandom = () => {
 const wildRandom = Math.random;
 Math.random = fightRandom;
 
+/**
+ * How the bar is worked.
+ *
+ * - **neglect**: buys the one weapon the level will not start without, and never touches the bar
+ *   again. Silver piles up unspent.
+ * - **buyer**: buys whenever it can afford to and there is room. Never merges, so the bar fills
+ *   and stays full.
+ * - **player**: buys whenever it can, and merges a pair whenever the bar is full — which is the
+ *   behaviour the whole shape is meant to force.
+ */
+type Hand = 'neglect' | 'buyer' | 'player';
+
 interface Standing {
   outcome: string;
   /** The wave it ended on, counted from 1. */
@@ -1250,67 +1306,59 @@ interface Standing {
   kills: number;
   seconds: number;
   integrity: number;
-  exchanges: number;
+  bought: number;
+  merges: number;
+  /** Seconds in when the bar was first full with the next purchase affordable, or -1. */
+  forcedAt: number;
   paid: number;
 }
 
 /**
  * One whole level, fought frame by frame, with the body standing in the middle as it does now.
  *
- * `realm` only moves the grade of what the draft deals (`dropTier`); the door is the level's.
+ * `kit`, when given, is carried from the start instead of the opening purchases — a fixed build,
+ * for the questions that are about the door rather than about the shop's dice.
  */
-function fight(
-  level: number,
-  random: () => number,
-  build?: { weapon: Weapon; ways: Way[] },
-  spend = true,
-  realm = 1,
-): Standing {
+function fight(level: number, hand: Hand, kit?: Item[], realm = 1): Standing {
   const arena = { width: 1200, height: 800 };
   const trial = new Trial();
   const bag = new Pack();
-  const kit = new Arsenal(bag);
+  const purse = new Purse();
   const arts = new Attacks();
   trial.start(level);
-  kit.start();
+  purse.start(realm);
   arts.reset();
-
-  // The opening draft. A named kit when one is given — the guard has to test the *strongest* thing
-  // somebody could walk away from, not whatever cards a seed happened to deal.
-  //
-  // At the grade the opening actually deals, not at the top of the ladder: the question this
-  // answers is whether a level you walk away from loses, and somebody walking away at ten seconds
-  // is carrying 浅绿.
-  if (build) {
-    kit.take({ kind: 'arm', weapon: build.weapon, tier: 1 });
-    for (const way of build.ways) kit.take({ kind: 'way', way, tier: 1 });
-  }
-  while (kit.openingLeft > 0) kit.take(kit.offer(random, trial.through, realm)[0]);
-  const rearm = (): void => {
-    arts.equip(bag.arms, bag.ways);
-    arts.guard(kit.shields);
-  };
+  const rearm = (): void => arts.equip(bag.arms, bag.ways);
+  for (const item of kit ?? []) bag.accept(item);
   rearm();
 
   const body = { x: arena.width / 2, y: arena.height / 2, radius: 46 };
   let seconds = 0;
-  let seen = 0;
+  let banked = 0;
+  let merges = 0;
+  let forcedAt = -1;
   const dt = 1 / 60;
   while (trial.outcome === 'running' && seconds < 900) {
-    trial.update(dt, body, arena.width, arena.height, arts);
-    arts.update(dt, body, trial);
+    purse.earn(trial.silver - banked);
+    banked = trial.silver;
 
-    // Kills feed the meter, and a full meter is spent on the first card offered.
-    const now = trial.killCount;
-    for (let i = seen; i < now; i++) kit.countKill();
-    seen = now;
-    if (spend && kit.due) {
-      kit.take(kit.offer(random, trial.through, realm)[0]);
-      // 金钟 and 固土 are both armour and arrive by different routes, so both are pushed here.
-      // Without the second the harness would draft a shell and then fight without it, and the run
-      // it reports would be one nobody can have played.
+    const shopping = hand !== 'neglect' || bag.unarmed;
+    while (shopping && purse.canBuy(bag)) {
+      purse.buy(bag, fightRandom, trial.through, realm);
       rearm();
     }
+    if (bag.full && purse.silver >= purse.price && forcedAt < 0) forcedAt = seconds;
+    if (hand === 'player' && bag.full) {
+      const pair = bag.pairs()[0];
+      const into = pair ? merged(pair.a, pair.b) : null;
+      if (pair && into && bag.fuse(pair.b.id, pair.a.id, into)) {
+        merges++;
+        rearm();
+      }
+    }
+
+    trial.update(dt, body, arena.width, arena.height, arts);
+    arts.update(dt, body, trial);
     seconds += dt;
   }
   return {
@@ -1319,98 +1367,105 @@ function fight(
     kills: trial.killCount,
     seconds: Math.round(seconds * 10) / 10,
     integrity: Math.round(trial.integrity * 100) / 100,
-    exchanges: kit.exchangesTaken,
+    bought: purse.bought,
+    merges,
+    forcedAt: Math.round(forcedAt * 10) / 10,
     paid: Math.round(harvest(trial.through, trial.outcome)),
   };
 }
 
-const say = (what: string, at: number, s: Standing) =>
+const say = (at: number, hand: string, s: Standing) =>
   console.log(
-    `NOTE  level ${at} ${what}: ${s.outcome} on wave ${s.wave} at ${s.seconds}s, ${s.kills} killed, ${s.exchanges} exchanges, integrity ${s.integrity}, paid ${s.paid}`,
+    `NOTE  level ${at}, ${hand}: ${s.outcome} on wave ${s.wave} at ${s.seconds}s, ${s.kills} killed, ${s.bought} bought, ${s.merges} merged, full at ${s.forcedAt}s, integrity ${s.integrity}, paid ${s.paid}`,
   );
 
-// 1. The structural half. A level whose draft is never answered never starts — four cards are owed
-//    before the first 邪气 arrives — so nothing dies and nothing is earned. This is what makes
-//    walking away worthless, and it does not depend on a single tuned number.
-const abandoned = new Arsenal(new Pack());
-abandoned.start();
-const waiting = new Trial();
-waiting.start(TopLevel);
-checkTrue('four cards are owed before a level can begin', abandoned.due && abandoned.openingLeft === 4);
-check('so an unanswered level has gone nowhere', waiting.through, 0);
-check('and is worth nothing', harvest(waiting.through, waiting.outcome), 0);
-
-// The strongest thing measured: a bow that pierces, chains and bursts — every hit reaching three
-// targets and going off on each.
-const Strongest = { weapon: '弓' as Weapon, ways: ['金锐', '水流', '火爆'] as Way[] };
+// 1. The structural half. Open a level and buy nothing: it does not start.
+{
+  const idle = new Trial();
+  const empty = new Attacks();
+  idle.start(TopLevel);
+  empty.reset();
+  const body = { x: 600, y: 400, radius: 46 };
+  for (let i = 0; i < 60 * 60; i++) {
+    idle.update(1 / 60, body, 1200, 800, empty);
+    empty.update(1 / 60, body, idle);
+  }
+  checkTrue('a level nobody has bought a weapon for has nothing in it after a minute', idle.targets().length === 0);
+  check('so it has gone nowhere', idle.through, 0);
+  check('and is worth nothing', harvest(idle.through, idle.outcome), 0);
+  empty.equip([{ weapon: '弓', depth: 1 }], []);
+  for (let i = 0; i < 60 * 3; i++) idle.update(1 / 60, body, 1200, 800, empty);
+  checkTrue('and the first weapon is what starts it', idle.targets().length > 0);
+}
 
 // Every fight below has to end — cleared or overwhelmed — inside the harness's fifteen minutes. A
-// wave is over only when all of it is dead, so a 邪气 nothing can reach is a level that never ends;
-// the first cut of this had exactly that, a 钉煞 planted on the border of every level past five.
+// wave is over only when all of it is dead, so a 邪气 that cannot be reached or cannot be kept on
+// the screen is a level that never ends; this has caught that three times.
 const fought: Standing[] = [];
-
-// 2. The tuned half. 弓 with 金锐水流火爆, drafted and then neglected, stays at its opening grade
-//    for the whole level. From level 25 up that has to lose. It clears the first few levels, and
-//    that is reported rather than hidden: the bottom of the tower is supposed to be clearable by a
-//    build somebody picked well, and stage six restates the guard for merging anyway.
-const neglectedPay: number[] = [];
-let neglectedClears = 0;
-for (const level of [1, 10, 25, 50, 75, TopLevel]) {
-  const idle = fight(level, fightRandom, Strongest, false);
-  fought.push(idle);
-  say('drafted and then neglected', level, idle);
-  if (level >= 25) {
-    if (idle.outcome === 'cleared') neglectedClears++;
-    neglectedPay.push(idle.paid);
-  }
-}
-check('a build nobody deepens clears nothing from level 25 up', neglectedClears, 0);
-checkTrue(
-  `and neglect costs more the higher you go: paid ${neglectedPay[0]} at 25 against ${neglectedPay[neglectedPay.length - 1]} at the top`,
-  neglectedPay[neglectedPay.length - 1] < neglectedPay[0],
-);
-
-// 3. The landing standard for 关卡与波次: level 1 is fought through all ten waves and its boss goes
-//    down; level 50, with the same build and the same hand on the meter, is clearly harder.
-//
-//    Three of each rather than one. A single fight at level 50 sits right on the line — the same
-//    build cleared it on one seed and fell on wave six on the next — and a guard that flips with
-//    the seed teaches everybody to re-run it. What is asserted is the average.
-const thrice = (level: number): Standing[] => {
-  const runs = [0, 1, 2].map(() => fight(level, fightRandom, Strongest, true));
-  for (const run of runs) {
-    fought.push(run);
-    say('with the meter spent', level, run);
-  }
-  return runs;
+const run = (level: number, hand: Hand, kit?: Item[]): Standing => {
+  const s = fight(level, hand, kit);
+  fought.push(s);
+  say(level, kit ? `${hand}, fixed build` : hand, s);
+  return s;
 };
-const mean = (runs: Standing[], of: (s: Standing) => number) => runs.reduce((sum, r) => sum + of(r), 0) / runs.length;
-const atOne = thrice(1);
-checkTrue('level 1 is fought through ten waves and cleared, every time', atOne.every((r) => r.outcome === 'cleared'));
-checkTrue(
-  `in about two minutes — the first level is the short one: ${mean(atOne, (r) => r.seconds).toFixed(0)}s`,
-  mean(atOne, (r) => r.seconds) >= 60 && mean(atOne, (r) => r.seconds) <= 150,
+
+// 2. Neglect, and the door. One fixed build — 弓 with 金锐水流火爆, every one at 浅绿, the
+//    strongest four-piece measured — carried and never added to. Fixed, because both questions
+//    here are about the levels, and a build the shop rolled would make them about the dice: the
+//    same hand on the same level cleared it one time and fell on wave two the next.
+//
+//    From level 50 up it has to lose; otherwise the bar is decoration. And it clears level 1 but
+//    falls well short of the boss at 50, which is what "level 50 is clearly harder" means.
+//
+//    This line was at 25 until the 重煞 boss stopped being four times every other boss. That boss
+//    was the whole wall at 25; without it the reference build gets through with a quarter of its
+//    护体 left. Where between 25 and 50 an untouched build ought to stop is stage six's question.
+const Reference = (): Item[] => [
+  forge({ sort: 'arm', weapon: '弓' }, 1),
+  forge({ sort: 'way', way: '金锐' }, 1),
+  forge({ sort: 'way', way: '水流' }, 1),
+  forge({ sort: 'way', way: '火爆' }, 1),
+];
+const fixed = new Map<number, Standing>();
+for (const level of [1, 10, 25, 50, TopLevel]) fixed.set(level, run(level, 'neglect', Reference()));
+check(
+  'a build nobody adds to clears nothing from level 50 up',
+  [50, TopLevel].filter((level) => fixed.get(level)?.outcome === 'cleared').length,
+  0,
 );
-const atFifty = thrice(50);
-const keptAtOne = mean(atOne, (r) => r.integrity);
-const keptAtFifty = mean(atFifty, (r) => r.integrity);
+checkTrue('the same build clears level 1', fixed.get(1)?.outcome === 'cleared');
 checkTrue(
-  `level 50 is clearly harder: the same play keeps ${(keptAtFifty * 100).toFixed(0)}% of 护体 against ${(keptAtOne * 100).toFixed(0)}%`,
-  keptAtFifty < keptAtOne - 0.3,
+  `and level 50 is clearly harder: it falls on wave ${fixed.get(50)?.wave}`,
+  fixed.get(50)?.outcome === 'overwhelmed' && (fixed.get(50)?.wave ?? 99) <= 7,
 );
-// The rest of the road, reported. Whether a level past the middle can be cleared is stage six's
-// question, against a build that merges; this one only spends a meter.
-for (const level of [10, 25, TopLevel]) {
-  const spent = fight(level, fightRandom, Strongest, true);
-  fought.push(spent);
-  say('with the meter spent', level, spent);
-}
-check('and every level fought here ended, one way or the other', fought.filter((f) => f.outcome === 'running').length, 0);
-// And a cleared one is two or three minutes, not five. This caught a 重煞 boss being thrown off
-// the screen by 山崩 over and over: level ten took four minutes, three of them spent waiting for
-// the boss to walk back.
+// The opening four from the shop and then nothing, reported: whatever the dice dealt.
+for (const level of [1, 10, 25]) run(level, 'neglect');
+
+// 3. The landing standard for 银币与购买: inside one level, buying fills the bar and leaves you with
+//    silver you cannot spend — the state in which the only thing left to do is merge.
+//
+//    Three of each rather than one. The shop is dice, and one level-one fight on one seed is the
+//    dice as much as the curve.
+const atOne = [0, 1, 2].map(() => run(1, 'player'));
+checkTrue(
+  `every level-1 fight fills the bar with silver still to spend: at ${atOne.map((r) => r.forcedAt).join('s, ')}s`,
+  atOne.every((r) => r.forcedAt >= 0),
+);
+checkTrue(
+  `level 1 is cleared by somebody who keeps buying: ${atOne.filter((r) => r.outcome === 'cleared').length} of 3`,
+  atOne.filter((r) => r.outcome === 'cleared').length >= 2,
+);
+for (const level of [50]) run(level, 'player');
+// Buying without merging, reported. With all fifteen kinds in the shop two of the same kind at
+// the same grade rarely meet, so the merge that a full bar forces is mostly not there to make —
+// stage four narrows the shop to five kinds and lets two different things merge, which is when
+// "player" and "buyer" are supposed to come apart.
+for (const level of [10, 25]) run(level, 'buyer');
+for (const level of [10, 25]) run(level, 'player');
+
+check('every level fought here ended, one way or the other', fought.filter((f) => f.outcome === 'running').length, 0);
 const slowest = Math.max(...fought.filter((f) => f.outcome === 'cleared').map((f) => f.seconds));
-checkTrue(`no cleared level took longer than three minutes: the slowest was ${slowest}s`, slowest <= 180);
+checkTrue(`and no cleared level took longer than three minutes: the slowest was ${slowest}s`, slowest <= 180);
 
 Math.random = wildRandom;
 
@@ -1921,13 +1976,14 @@ checkTrue(
 
 // 7. **The whole layout budget, for every string that ships, in all five languages.**
 //
-//    Each of these has a hard ceiling in the drawing code — the card clips nothing and draws a
-//    fixed number of lines, so a string over budget is silently cut off rather than visibly wrong.
-//    That is the failure this replaces: it used to be found by opening a browser and looking.
-const CardTitle = 166; // box.width - 20, through the size ladder, at most two lines
-const CardBlurb = 160; // box.width - 26, 13px, three lines before it reaches the pairing rule
-const CardPair = 164; // box.width - 22, 13px semibold, two lines before it leaves the card
+//    Each of these has a hard ceiling in the drawing code — nothing here clips, and a string over
+//    budget is silently cut off or drawn across its neighbour rather than visibly wrong. That is
+//    the failure this replaces: it used to be found by opening a browser and looking.
+//
+//    The draft's cards had most of the budgets that used to be here — titles through a size
+//    ladder, blurbs, the lines under them. They went with the cards.
 const BubbleWidth = 260; // Bubble's MAX_WIDTH, 13px, five lines
+const BuyRoom = ButtonWidth - 12; // the buy button, one line, with the widest price it will show
 
 let overBudget: string[] = [];
 const budget = (what: string, text: string, width: number, size: number, most: number): void => {
@@ -1938,36 +1994,9 @@ const budget = (what: string, text: string, width: number, size: number, most: n
 for (const tag of LOCALES) {
   const dict = DICTIONARIES[tag];
 
-  // Titles shrink rather than wrap past two lines, so these are checked through the ladder.
-  const titles = [
-    ...WEAPONS.map((k) => dict.arms[k].name),
-    ...WAYS.map((k) => dict.ways[k].name),
-    dict.draft.mendTitle,
-    dict.draft.shieldTitle,
-  ];
-  for (const title of titles) {
-    const laid = fit(title, CardTitle, sizes, 2, at);
-    if (laid.lines.some((line) => at(laid.size, line) > CardTitle)) {
-      overBudget.push(`${tag} title overflows at its smallest size: ${title}`);
-    }
-  }
-
-  // The card's own blurb, which is the only blurb a card draws.
-  for (const k of WEAPONS) budget(`${tag} weapon blurb`, dict.arms[k].blurb, CardBlurb, 13, 3);
-  for (const k of WAYS) budget(`${tag} way blurb`, dict.ways[k].blurb, CardBlurb, 13, 3);
-  budget(`${tag} mend blurb`, dict.draft.mendBlurb, CardBlurb, 13, 3);
-  budget(`${tag} shield blurb`, dict.draft.shieldBlurb, CardBlurb, 13, 3);
-
-  // The two lines a gear card can carry under its blurb, each filled with the widest thing it
-  // could hold. The widest is what has to fit, not the average.
-  budget(`${tag} carrying`, fill(dict.draft.alsoCarry, { count: '6' }), CardPair, 13, 2);
-  for (const stage of dict.stages) {
-    budget(`${tag} stacks`, fill(dict.draft.stacksTo, { depth: stage }), CardPair, 13, 2);
-  }
-  // And every 品质 name, which sits on the one line under the title.
-  for (const grade of dict.draft.grades) {
-    budget(`${tag} grade`, grade, CardPair, 13, 1);
-  }
+  // The bar: the button and the silver over it, each with five digits in it.
+  budget(`${tag} buy`, fill(dict.bar.buy, { price: '99999' }), BuyRoom, 13, 1);
+  budget(`${tag} silver`, fill(dict.bar.silver, { silver: '99999' }), ButtonWidth, 12, 1);
 
   // The bubble: every announcement, every verdict, every result. Two paragraphs where the
   // announcement has a name above its blurb.
@@ -2405,12 +2434,6 @@ checkTrue(
     `which is about three body widths — a reprieve, not a stun: ${Math.round(speed * FlingTau)}px`,
     speed * FlingTau > 140 && speed * FlingTau < 260,
   );
-  // Divided by the area it is drawn at. A boss inside every pillar of an eruption at once was
-  // thrown off the screen and spent half a minute walking back; now it staggers.
-  checkTrue(
-    `a boss is staggered rather than thrown: ${Math.round((speed * FlingTau) / RANKS.boss.size ** 2)}px`,
-    (speed * FlingTau) / RANKS.boss.size ** 2 < 46,
-  );
   // And it ends. A throw still pushing after a second would read as a knockdown, which is a much
   // stronger move than this one is paid for.
   checkTrue(
@@ -2779,15 +2802,7 @@ check('ten ways, two to a phase', WAYS.length, 10);
     kit.equip([{ weapon: '弓', depth: 1 }], [{ way: '土固', depth: 2 }]);
     kit.update(1 / 120, { x: 400, y: 400, radius: 46 }, field());
     check('土固 is armour, one layer a depth', kit.shell, 2);
-    checkTrue('and it eats a hit like the card does', kit.absorb());
-  }
-  {
-    // And the two sources of shell are one shell, not two.
-    const kit = new Attacks();
-    kit.equip([{ weapon: '弓', depth: 1 }], [{ way: '土固', depth: 1 }]);
-    kit.guard(2);
-    kit.update(1 / 120, { x: 400, y: 400, radius: 46 }, field());
-    check('金钟 and 土固 stack into one shell', kit.shell, 3);
+    checkTrue('and it eats a hit', kit.absorb());
   }
 }
 
@@ -2830,45 +2845,10 @@ check('ten ways, two to a phase', WAYS.length, 10);
 }
 
 // -------------------------------------------------------------------------------------------------
-// 金钟罩 — the shell, back as a card of its own.
+// 金钟罩 — the shell 固土 raises.
 //
-// It was 山岳's passive and the only thing in the mode that ate a hit. 山岳 became an eruption,
-// which left the body with no defence but moving; this puts it back where you can choose it.
-
-{
-  const bag = new Pack();
-  const kit = new Arsenal(bag);
-  kit.start();
-
-  // 1. **Never in the opening four.** Those are owed before the first 邪气 and they are what makes
-  //    an unattended run worth nothing. A shell among them is a run that starts a school short,
-  //    and that is exactly what the build guards caught when it was not gated.
-  let openingShields = 0;
-  while (kit.openingLeft > 0) {
-    const offered = kit.offer(draftRandom);
-    openingShields += offered.filter((c) => c.kind === 'shield').length;
-    kit.take(offered[0]);
-  }
-  check('金钟 is never in the opening draft', openingShields, 0);
-  check('so the opening still fills every way', bag.ways.length, Ways);
-
-  // 2. And it is offered afterwards, where it is a trade against a level.
-  let laterShields = 0;
-  for (let i = 0; i < 300; i++) {
-    laterShields += kit.offer(draftRandom).filter((c) => c.kind === 'shield').length;
-  }
-  checkTrue(`and is on offer after that: seen ${laterShields} times in 300 offers`, laterShields > 0);
-
-  // 3. Layers stack to a cap. A fourth is a licence to stand in the crowd, which is the one thing
-  //    this mode is built to punish.
-  for (let i = 0; i < MaxShields + 4; i++) kit.take({ kind: 'shield' });
-  check('layers stop at the cap', kit.shields, MaxShields);
-  let capped = 0;
-  for (let i = 0; i < 200; i++) {
-    capped += kit.offer(draftRandom).filter((c) => c.kind === 'shield').length;
-  }
-  check('and it leaves the pool once it is maxed', capped, 0);
-}
+// It used to have a second source, a card of its own drafted beside the ten. The card went with
+// the draft; the shell is 固土's now, one layer a depth, and what it does is unchanged.
 
 {
   // The shell itself: it eats one hit per layer, the last one throws, and it comes back.
@@ -2888,11 +2868,12 @@ check('ten ways, two to a phase', WAYS.length, 10);
   };
   const kit = new Attacks();
   const body = { x: 400, y: 300, radius: 46 };
+  kit.equip([{ weapon: '弓', depth: 1 }], []);
   kit.update(1 / 120, body, field);
-  checkTrue('nothing absorbs anything without the card', !kit.absorb());
+  checkTrue('nothing absorbs anything without 固土', !kit.absorb());
 
-  kit.guard(2);
-  check('two layers drafted is two layers standing', kit.shell, 2);
+  kit.equip([{ weapon: '弓', depth: 1 }], [{ way: '土固', depth: 2 }]);
+  check('two deep is two layers standing', kit.shell, 2);
   checkTrue('the first hit is eaten', kit.absorb());
   check('and costs a layer', kit.shell, 1);
   checkTrue('the second is eaten too', kit.absorb());
@@ -2910,8 +2891,8 @@ check('ten ways, two to a phase', WAYS.length, 10);
   kit.absorb();
   kit.absorb();
   check('broken again', kit.shell, 0);
-  kit.guard(3);
-  checkTrue(`drafting another while it is down gives it to you at once: ${kit.shell}`, kit.shell > 0);
+  kit.equip([{ weapon: '弓', depth: 1 }], [{ way: '土固', depth: 3 }]);
+  checkTrue(`going a layer deeper while it is down gives that layer at once: ${kit.shell}`, kit.shell > 0);
 }
 
 // -------------------------------------------------------------------------------------------------

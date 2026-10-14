@@ -118,6 +118,8 @@ export interface Standing {
   size: number;
   /** Multiplier on the breed's hits. */
   health: number;
+  /** 银币 dropped when it dies. See `purse.ts`. */
+  silver: number;
 }
 
 /**
@@ -126,12 +128,13 @@ export interface Standing {
  * No new art, no bar, no label. 重煞 already set the rule — "You can see that it is big. That is
  * the bar." — and it carries straight over: something half again as wide as anything else on the
  * screen walking in is announcement enough, and something two and a half times as wide is the
- * boss. What that saves is a whole set of drawings; what it costs is three numbers.
+ * boss. What that saves is a whole set of drawings; what it costs is three numbers — four, with
+ * what each one is worth.
  */
 export const RANKS: Record<Rank, Standing> = {
-  common: { size: 1, health: 1 },
-  elite: { size: 1.7, health: 8 },
-  boss: { size: 2.6, health: 40 },
+  common: { size: 1, health: 1, silver: 1 },
+  elite: { size: 1.7, health: 8, silver: 12 },
+  boss: { size: 2.6, health: 40, silver: 60 },
 };
 
 /**

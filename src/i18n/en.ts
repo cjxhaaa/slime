@@ -135,31 +135,14 @@ export const en: Dictionary = {
     土固: { name: 'Firm Earth', blurb: 'Stone armour on the body, and a hit does not land' },
   },
 
-  draft: {
-    choose: 'Choose one',
-    newSchool: 'New',
-    raise: 'Deepen',
-    evolve: '★ Evolve',
+  kit: {
     arm: 'Arm',
     way: 'Phase',
-    grades: ['Pale', 'Blue', 'Gold', 'Red', 'White', 'Prism'],
-    alsoCarry: 'Carrying {count}',
-    stacksTo: 'Stacks to {depth}',
-    mend: 'Mend',
-    mendTitle: 'Guard',
-    mendBlurb: 'Restores three points of guard',
-    shield: 'Ward',
-    shieldTitle: 'Bell of Gold',
-    shieldBlurb: 'Eats a hit; the last one throws them off, then re-forms',
-    pairsWith: 'With {school} · {combo}',
-    triadWith: 'Triad · {triad}',
   },
 
-  satchel: {
-    title: 'Satchel',
-    worn: 'Worn',
-    stash: 'Spare',
-    fuse: 'Fuse',
+  bar: {
+    silver: 'Silver {silver}',
+    buy: 'Buy {price}',
   },
 
   trial: {

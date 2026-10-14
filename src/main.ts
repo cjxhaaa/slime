@@ -18,9 +18,10 @@ import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
 import { TopLevel, clampLevel } from './game/levels';
 import { drawWaveRow, waveRowBounds } from './ui/WaveRow';
-import { type Armed, Arsenal, type Walked } from './game/Arsenal';
 import { Pack } from './game/Pack';
-import { Ways } from './game/kit';
+import { Purse } from './game/purse';
+import { canMerge, merged } from './game/gear';
+import { type Armed, type Walked, Ways } from './game/kit';
 import { Attacks } from './game/Attacks';
 import { Dummies } from './game/Dummies';
 import { type FeatId, Feats, SlayerKills, featBlurb, featName } from './game/feats';
@@ -33,7 +34,7 @@ import {
   setLocale,
   words,
 } from './i18n';
-import { Draft } from './ui/Draft';
+import { Bar } from './ui/Bar';
 import { Pause } from './ui/Pause';
 import { Depth, type Painter } from './game/depth';
 import { requirement, stageName } from './game/realms';
@@ -79,11 +80,11 @@ const volley = new Volley();
 const menu = new Menu();
 const trial = new Trial();
 const pack = new Pack();
-const arsenal = new Arsenal(pack);
+const purse = new Purse();
 const attacks = new Attacks();
-const draft = new Draft();
-/** Kills already paid into the meter, so the frame loop can spend only the new ones. */
-let killsSeen = 0;
+const bar = new Bar();
+/** Silver already banked from `trial.silver`, so the frame loop pays in only what is new. */
+let silverSeen = 0;
 
 /**
  * 演武场: a practice yard, opened from Settings with a loadout built by hand.
@@ -658,7 +659,7 @@ let inTrial = false;
  * The pause panel, and the only thing that stops a run without ending it.
  *
  * Held here rather than inside `Trial` because pausing is not part of the fight — it is the
- * caller declining to advance it, the same way the draft does. `Trial` has no idea this exists
+ * caller declining to advance it. `Trial` has no idea this exists
  * and does not need one.
  */
 const pause = new Pause();
@@ -745,15 +746,17 @@ function enterTrial(width: number, height: number): void {
   // system-wide registration — see `watch_escape` in lib.rs for why it is not the keyboard hook,
   // and why it is not held permanently.
   void invoke('watch_escape', { on: true }).catch(() => {});
-  arsenal.start();
+  // Empty-handed, with a little silver from the realm. **The level does not begin until something
+  // that swings has been bought** — see `Trial.update` — so walking in and walking away is a
+  // level that never started, which is what the opening draft used to guarantee.
+  pack.start();
+  purse.start(cultivation.realm);
+  bar.select(null);
   attacks.reset();
-  killsSeen = 0;
+  equipFromPack();
+  silverSeen = 0;
   bubble.hide();
   slime.clearAlert();
-  // Four cards before the first 邪气 arrives. A survivors run normally earns its build over
-  // twenty minutes; a level lasts about two, so the ramp everybody means when they say the
-  // early game drags is simply not affordable — you start with a whole build on the screen.
-  offerDraft();
   fullRepaint = true;
 }
 
@@ -776,55 +779,57 @@ function startArena(kit: { weapon: Armed | null; ways: Walked[] }): void {
   dummies.place(slime.x, slime.y);
   attacks.reset();
   attacks.equip(kit.weapon ? [kit.weapon] : [], kit.ways);
-  killsSeen = 0;
   bubble.hide();
   slime.clearAlert();
   menu.hide();
-  draft.hide();
   fullRepaint = true;
 }
 
-/** Puts three cards up, which also stops the clock until one is taken. */
-function offerDraft(): void {
-  // The band a card is rolled from moves with the run, so the offer has to be told where it is.
-  draft.show(arsenal.offer(Math.random, trial.through, cultivation.realm), {
-    arms: pack.arms,
-    ways: pack.ways,
-  });
-  fullRepaint = true;
-}
-
-/** Spends a card and starts the fight again. */
-function takeCard(card: Parameters<typeof arsenal.take>[0]): void {
-  const { mend } = arsenal.take(card);
-  if (mend > 0) trial.mend(mend);
-  equipFromArsenal();
-
-  // What the card actually did, said once. A weapon is the only one of these worth interrupting
-  // for — it is the pick that alters how everything else you carry comes out.
-  if (card.kind === 'arm') {
-    attacks.herald(card.weapon);
-    trialSaid = words().arms[card.weapon].name;
+/** 买: one random thing, at the grade this moment of the level deals. The fight does not stop. */
+function buyOne(): void {
+  const item = purse.buy(pack, Math.random, trial.through, cultivation.realm);
+  if (!item) return;
+  equipFromPack();
+  // A weapon is the only purchase worth a word — it is the one that changes how everything else
+  // you carry comes out. Said the way a drafted one was.
+  if (item.sort.sort === 'arm') {
+    attacks.herald(item.sort.weapon);
+    trialSaid = words().arms[item.sort.weapon].name;
     trialUntil = performance.now() + 3_200;
   }
   if (pack.ways.length >= Ways) achieve('fullSet');
-
-  draft.hide();
-  // Another one may already be owed: the opening cards are drafted back to back.
-  if (arsenal.due) offerDraft();
   fullRepaint = true;
 }
 
-
 /**
- * Hands the kit to the fight.
+ * A click on a slot: pick it, put it down, or merge it into the one already picked.
  *
- * One place, because 金钟 and 固土 are both armour and both have to arrive before the next hit
- * is taken — two call sites for that is two chances to push one and forget the other.
+ * The result lands in the slot clicked **second** — you pick a thing up and put it onto the thing
+ * it should become part of, so that is where the hand ends and where the new one belongs.
  */
-function equipFromArsenal(): void {
+function pressSlot(index: number): void {
+  const item = pack.worn[index] ?? null;
+  const picked = bar.selected;
+  const first = picked !== null ? pack.worn[picked] : null;
+  if (picked === index) {
+    bar.select(null);
+  } else if (first && item && canMerge(first, item)) {
+    const into = merged(first, item);
+    if (into && pack.fuse(item.id, first.id, into)) {
+      equipFromPack();
+      if (pack.ways.length >= Ways) achieve('fullSet');
+    }
+    bar.select(null);
+  } else {
+    // Something that cannot be merged with it is a change of mind, not a mistake.
+    bar.select(item ? index : null);
+  }
+  fullRepaint = true;
+}
+
+/** Hands what is carried to the fight. 固土 is armour and arrives through here too. */
+function equipFromPack(): void {
   attacks.equip(pack.arms, pack.ways);
-  attacks.guard(arsenal.shields);
 }
 
 /** Ends the run and pays out what it came to. `harvest` holds the reasoning about how much. */
@@ -871,7 +876,7 @@ function leaveTrial(): void {
   if (!inTrial) return;
   inTrial = false;
   arena = null;
-  draft.hide();
+  bar.select(null);
   attacks.reset();
   pause.hide();
   void invoke('watch_escape', { on: false }).catch(() => {});
@@ -1309,7 +1314,6 @@ function frame(now: number): void {
     motes.busy ||
     volley.busy ||
     inTrial ||
-    draft.isOpen ||
     pause.isOpen ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged) ||
     menu.isOpen ||
@@ -1334,10 +1338,6 @@ function frame(now: number): void {
   // **Not in the yard.** The arena exists to watch how far a build reaches from where the slime
   // is standing, and a pet that walked off every time you touched a key could not be stood
   // anywhere. There you still drag it.
-  //
-  // Paused with everything else while a draft is up: the cards are the one thing in this mode
-  // that stops the clock, and a body still crossing the screen behind them would arrive
-  // somewhere nobody chose.
   // **塔防: it holds the middle.** Nothing steers it — not the cursor, which used to drag it
   // around, and not the keys, which replaced that for all of twenty minutes. A tower that can be
   // walked out of the way is not a tower, and the one decision this mode has is what to fuse.
@@ -1393,15 +1393,10 @@ function frame(now: number): void {
 
   // The fight, and then what the pet is doing about it — in that order, so an effect fired this
   // frame is tested against where things are now rather than where they were before they moved.
-  //
-  // **A draft stops all of it.** Not as a courtesy: the payout counts seconds that elapsed, so a
-  // paused run earns nothing, and that is what makes an unattended trial worthless without a
-  // single number being tuned for it.
-  draft.advance(elapsed);
   pause.advance(elapsed);
-  // Paused runs earn nothing, for the same reason unattended ones do: `through` counts the
-  // seconds `Trial.update` was given, and a panel that is up is seconds it was not given.
-  if (inTrial && !draft.isOpen && !pause.isOpen) {
+  // A paused level goes nowhere: `through` moves only when the fight is given time, and a panel
+  // that is up is time it was not given.
+  if (inTrial && !pause.isOpen) {
     const body = { x: slime.x, y: slime.y, radius: slime.blob.restRadius };
     if (arena !== null) {
       // The yard. No arrivals, no contact, no clock — and `Dummies` implements the same
@@ -1409,16 +1404,16 @@ function frame(now: number): void {
       arena.dummies.update(elapsed);
       attacks.update(elapsed, body, arena.dummies);
     } else {
+      // Holds still until something that swings has been bought — see the top of `Trial.update`.
       trial.update(elapsed, body, width, height, attacks);
       attacks.update(elapsed, body, trial);
       // 护体, onto the body where the eye already is. Fed every frame rather than on a change,
       // because the alternative is a second place that has to know when damage lands.
       slime.showVitality(trial.integrity);
 
-      for (let i = killsSeen; i < trial.killCount; i++) arsenal.countKill();
-      killsSeen = trial.killCount;
+      purse.earn(trial.silver - silverSeen);
+      silverSeen = trial.silver;
       if (trial.outcome !== 'running') settleTrial();
-      else if (arsenal.due) offerDraft();
     }
   }
 
@@ -1537,12 +1532,11 @@ function frame(now: number): void {
   // An open menu holds the lease on its own account: the pointer is over the menu rather than over
   // the body, and without this the overlay would go click-through under the very thing it is
   // showing — the menu would draw and refuse to be clicked.
-  // The draft dims the whole screen, so nothing under it can be repainted from a dirty rect.
-  if (draft.isOpen) {
-    draft.layout(width, height);
-    if (cursor !== null) draft.hover(cursor.x, cursor.y);
-    fullRepaint = true;
-  }
+  // The bar takes clicks on its own account, like the menu: it is where the whole level is played,
+  // and an overlay that went click-through under it would be a bar that cannot be pressed.
+  const barUp = inTrial && arena === null;
+  if (barUp) bar.layout(width, height, pack.size);
+  const overBar = barUp && cursor !== null && bar.contains(cursor.x, cursor.y);
   // Same treatment, same reason: it washes the whole screen, so nothing under it survives a
   // dirty-rect repaint.
   if (pause.isOpen) {
@@ -1552,7 +1546,7 @@ function frame(now: number): void {
   }
 
   const wantsClicks =
-    grabbed || overBody || overBubble || menu.isOpen || draft.isOpen || pause.isOpen;
+    grabbed || overBody || overBubble || overBar || menu.isOpen || pause.isOpen;
 
   // The drawn paw replaces the OS cursor exactly while the overlay is taking clicks, so the two
   // can never both be visible and the real pointer can never be hidden by a window that is
@@ -1580,7 +1574,7 @@ function frame(now: number): void {
           ? unionRect(
               arena !== null
                 ? unionRect(arena.dummies.bounds(), arena.dummies.readoutBounds(width))
-                : unionRect(trial.bounds(), waveRowBounds(width)),
+                : unionRect(unionRect(trial.bounds(), waveRowBounds(width)), padRect(bar.bounds, 12)),
               attacks.bounds(),
             )
           : null,
@@ -1625,7 +1619,6 @@ function frame(now: number): void {
     motes.busy ||
     volley.busy ||
     inTrial ||
-    draft.isOpen ||
     pause.isOpen ||
     (slime.hasLiveAlert && !slime.isAlertAcknowledged);
   // The frame the body stops moving is the frame its resting place becomes final, so that is the
@@ -1700,14 +1693,16 @@ function frame(now: number): void {
       // Last, and in screen space: it is an instrument reading the yard, not a thing standing in
       // it. See `Dummies.drawReadout`.
       if (arena !== null) arena.dummies.drawReadout(context, width);
-      else drawWaveRow(context, width, trial.wave, trial.waveProgress);
+      else {
+        drawWaveRow(context, width, trial.wave, trial.waveProgress);
+        bar.draw(context, pack, purse, now);
+      }
     } else {
       paintSlime(context, 0);
     }
     volley.draw(context, slime.bodyColour);
     if (bubbleRect) bubble.draw(context, bubbleRect, slime.drawX, anchorY);
     menu.draw(context);
-    draft.draw(context, width, height);
     pause.draw(context, width, height);
     paw.draw(context);
 
@@ -1865,10 +1860,8 @@ function wirePointer(): void {
     }
     // A short press that barely moved is a poke, not a throw.
     if (heldFor < 260 && moved < 6) {
-      // Ahead of the menu and the body both: while three cards are up, the run is stopped and
-      // there is nothing else on the screen worth clicking.
-      // Ahead of the draft: both cannot be up at once, but if a bug ever put them there the
-      // one that can get you out should be the one that answers.
+      // The pause first: while it is up the level is stopped, and the one thing worth clicking is
+      // the way back in or out.
       if (pause.isOpen) {
         const choice = pause.click(event.clientX, event.clientY);
         if (choice === 'resume') pause.hide();
@@ -1876,11 +1869,14 @@ function wirePointer(): void {
         paw.ping(event.clientX, event.clientY);
         return;
       }
-      if (draft.isOpen) {
-        const card = draft.click(event.clientX, event.clientY);
-        if (card) takeCard(card);
-        paw.ping(event.clientX, event.clientY);
-        return;
+      if (inTrial && arena === null) {
+        const hit = bar.click(event.clientX, event.clientY);
+        if (hit) {
+          if (hit.kind === 'buy') buyOne();
+          else if (hit.kind === 'slot') pressSlot(hit.index);
+          paw.ping(event.clientX, event.clientY);
+          return;
+        }
       }
       if (menu.isOpen) {
         const picked = menu.click(event.clientX, event.clientY);
@@ -2301,9 +2297,6 @@ async function main(): Promise<void> {
     // Registered only while a run is up, but an unregister that lost a race would otherwise make
     // Esc pop a panel over the desktop with no run behind it.
     if (!inTrial) return;
-    // Not while the cards are up. A draft already stops the clock, and two stacked panels is a
-    // state nobody needs — the way out of a draft is to pick one, which takes a second.
-    if (draft.isOpen) return;
     if (pause.isOpen) pause.hide();
     else pause.show();
     fullRepaint = true;

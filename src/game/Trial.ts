@@ -207,6 +207,7 @@ export class Trial {
   private hurt = 0;
   private grace = 0;
   private kills = 0;
+  private spoils = 0;
   private stage = 1;
   outcome: Outcome = 'running';
 
@@ -217,6 +218,7 @@ export class Trial {
     this.hurt = 0;
     this.grace = 0;
     this.kills = 0;
+    this.spoils = 0;
     this.outcome = 'running';
     this.waves.start(this.stage);
   }
@@ -253,6 +255,17 @@ export class Trial {
 
   get killCount(): number {
     return this.kills;
+  }
+
+  /**
+   * 银币 dropped so far this level, by everything that has died.
+   *
+   * A running total rather than a stream of events, the same as `killCount`: the caller keeps what
+   * it has already banked and takes the difference, so a frame that lands three kills cannot pay
+   * for two of them.
+   */
+  get silver(): number {
+    return this.spoils;
   }
 
   /**
@@ -323,16 +336,20 @@ export class Trial {
       const dy = m.y - y;
       const away = Math.hypot(dx, dy);
       if (away > radius + bulk(m)) continue;
+      // **Elites and bosses are not thrown.** Twice this was tried with them throwable and twice
+      // it stalled a level: first a 重煞 boss inside every pillar of an eruption at once went
+      // fifteen hundred pixels off the screen; then, with the throw divided by its area, a build
+      // carrying 土崩 — a shove on *every* hit — still pushed it outward faster than it walks,
+      // from 350 pixels to 720 over thirty seconds while taking a hundred and sixty hits. A wave
+      // only ends when its boss does, so a boss that can be held off the screen is a level that
+      // cannot end. They still recoil off the body (`Recoil`); that is a different thing.
+      if (m.rank !== 'common') continue;
       // Straight up out of the ground at the exact centre: a divide by zero would be a NaN
       // position, and one NaN 邪气 takes the whole fight with it.
       const angle = away < 1e-3 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
       // Hardest at the pillar, tailing off to nothing at the rim, so the edge of a blast nudges
       // rather than launching — and the shape of the ring is readable from how far things went.
-      // Divided by the area it is drawn at, so a boss staggers where a common flies. Without this a
-      // boss — whose girth puts it inside every pillar of an eruption at once — was thrown fifteen
-      // hundred pixels off the screen and spent half a minute walking back, and a level-10 boss
-      // that should take twenty seconds took four minutes.
-      const bite = (1 - (Math.min(away, radius) / radius) * 0.65) / RANKS[m.rank].size ** 2;
+      const bite = 1 - (Math.min(away, radius) / radius) * 0.65;
       m.flingX += Math.cos(angle) * speed * bite;
       m.flingY += Math.sin(angle) * speed * bite;
     }
@@ -432,11 +449,18 @@ export class Trial {
     width: number,
     height: number,
     guard?: {
+      readonly armed: boolean;
       absorb(): boolean;
       fields(): { x: number; y: number; radius: number; factor: number }[];
     },
   ): void {
     if (this.outcome !== 'running') return;
+    // **Nothing arrives until something that swings is carried.** The structural half of the AFK
+    // guard, and the opening draft's old job: a level opened and walked away from has not started,
+    // so it has not moved and pays nothing — without a single number tuned for it. Asked of the
+    // guard because the guard is what holds the weapons; a bare `update` with no guard at all is
+    // the checks driving the door on its own, and that is allowed to run.
+    if (guard && !guard.armed) return;
     this.grace = Math.max(0, this.grace - dt);
 
     const dispersing: Undoing[] = [];
@@ -618,14 +642,24 @@ export class Trial {
    */
   private fall(m: Menace): void {
     this.kills += 1;
+    this.spoils += RANKS[m.rank].silver;
     this.undo(m);
     this.waves.resolve(1);
     if (m.rank === 'boss' && this.outcome === 'running') this.outcome = 'cleared';
   }
 
-  /** How many hits a new one of these takes, at this level. */
+  /**
+   * How many hits a new one of these takes, at this level.
+   *
+   * For an elite or a boss the breed's own toughness counts as its square root. Taken whole, a
+   * 重煞 boss was four times a 游魂 boss — two hundred and forty hits at level 25 against sixty —
+   * and since the boss cycles through the breeds, every fifth level had a spike in it that took a
+   * level from two minutes to three and a half. Square-rooted, it is still the hardest boss, at
+   * twice the others rather than four times.
+   */
   private hits(kind: Kind, rank: Rank): number {
-    return Math.max(1, Math.round(BY_KIND[kind].health * RANKS[rank].health * toughness(this.stage)));
+    const own = rank === 'common' ? BY_KIND[kind].health : Math.sqrt(BY_KIND[kind].health);
+    return Math.max(1, Math.round(own * RANKS[rank].health * toughness(this.stage)));
   }
 
   /**

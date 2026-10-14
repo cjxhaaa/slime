@@ -436,8 +436,8 @@ function render(): void {
   }
   wayGrid.replaceChildren(...cells);
 
-  el<HTMLSpanElement>('arena-arm-label').textContent = w.draft.arm;
-  el<HTMLSpanElement>('arena-way-label').textContent = w.draft.way;
+  el<HTMLSpanElement>('arena-arm-label').textContent = w.kit.arm;
+  el<HTMLSpanElement>('arena-way-label').textContent = w.kit.way;
   el<HTMLSpanElement>('arena-depth-label').textContent = w.settings.yardDepth;
   el<HTMLSpanElement>('arena-way-count').textContent = fill(w.settings.yardTally, {
     have: walked.length,

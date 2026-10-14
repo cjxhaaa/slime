@@ -121,41 +121,21 @@ export interface Dictionary {
   /** 五行: the ten ways, by their key. */
   ways: Record<Way, Named>;
 
-  draft: {
-    /** The heading over the three cards. */
-    choose: string;
-    /** The four kinds of card. */
-    newSchool: string;
-    raise: string;
-    evolve: string;
-    /** What kind of card this is, and what swapping a weapon costs. */
+  /** The two headings over the yard's pickers in Settings: weapons, and the ten. */
+  kit: {
     arm: string;
     way: string;
-    /** The six 品質, lowest first. Indexed by tier minus one. */
-    grades: string[];
-    /** `{count}` of this thing already carried. */
-    alsoCarry: string;
-    /** What a second copy of a way sums to — `{depth}`. */
-    stacksTo: string;
-    mend: string;
-    /** The title on the mend card. `mend` is the word for the *kind* of card, which is not the same. */
-    mendTitle: string;
-    mendBlurb: string;
-    /** 金钟: the word for the kind of card, its title, and what it does. */
-    shield: string;
-    shieldTitle: string;
-    shieldBlurb: string;
-    /** `{school}` and `{combo}` are substituted. */
-    pairsWith: string;
-    triadWith: string;
   };
 
-  /** The 行囊 panel, opened mid-run. */
-  satchel: {
-    title: string;
-    worn: string;
-    stash: string;
-    fuse: string;
+  /**
+   * 装备栏, along the bottom of a level. The only numbers the mode shows while it is running, and
+   * TOWER.md §4 is where that exception was made: a price you cannot read is not a price.
+   */
+  bar: {
+    /** `{silver}` held. */
+    silver: string;
+    /** The button, with `{price}` on it. */
+    buy: string;
   };
 
   trial: {

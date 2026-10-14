@@ -118,31 +118,14 @@ export const zhHant: Dictionary = {
     土固: { name: '固土', blurb: '身披石甲，挨打不損' },
   },
 
-  draft: {
-    choose: '擇一',
-    newSchool: '新法',
-    raise: '精進',
-    evolve: '★ 進化',
+  kit: {
     arm: '兵器',
     way: '五行',
-    grades: ['淺綠', '藍', '黃', '紅', '白', '彩'],
-    alsoCarry: '已帶 {count} 件',
-    stacksTo: '疊加後 {depth} 重',
-    mend: '調息',
-    mendTitle: '護體',
-    mendBlurb: '恢復三分護體',
-    shield: '金鐘',
-    shieldTitle: '金鐘罩',
-    shieldBlurb: '挨一下不損，碎了盪開四方，過會兒重結',
-    pairsWith: '與{school}合 · {combo}',
-    triadWith: '三合 · {triad}',
   },
 
-  satchel: {
-    title: '行囊',
-    worn: '裝備',
-    stash: '囊中',
-    fuse: '合成',
+  bar: {
+    silver: '銀 {silver}',
+    buy: '買 {price}',
   },
 
   trial: {

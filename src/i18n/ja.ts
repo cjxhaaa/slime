@@ -123,31 +123,14 @@ export const ja: Dictionary = {
     土固: { name: '固土', blurb: '石の甲を身にまとい、一撃を受け止める' },
   },
 
-  draft: {
-    choose: 'ひとつ選ぶ',
-    newSchool: '新法',
-    raise: '精進',
-    evolve: '★ 進化',
+  kit: {
     arm: '兵器',
     way: '五行',
-    grades: ['浅緑', '青', '黄', '赤', '白', '彩'],
-    alsoCarry: '所持 {count} 点',
-    stacksTo: '重ねて {depth} 重',
-    mend: '調息',
-    mendTitle: '護体',
-    mendBlurb: '護体を三つ回復',
-    shield: '金鐘',
-    shieldTitle: '金鐘罩',
-    shieldBlurb: '一撃を受け止める。最後の一枚が砕けると四方へ弾き、やがて組み直る',
-    pairsWith: '{school}と合 · {combo}',
-    triadWith: '三合 · {triad}',
   },
 
-  satchel: {
-    title: '行嚢',
-    worn: '装備',
-    stash: '控え',
-    fuse: '合成',
+  bar: {
+    silver: '銀 {silver}',
+    buy: '買う {price}',
   },
 
   trial: {

@@ -67,6 +67,18 @@ export const MaxDepth = 6;
 /** How many ways can be carried at once. One weapon, three of these. */
 export const Ways = 3;
 
+/** A weapon, and how deep it is carried. The shape `Attacks.equip` and the yard both take. */
+export interface Armed {
+  weapon: Weapon;
+  depth: number;
+}
+
+/** One of the ten, and how deep. */
+export interface Walked {
+  way: Way;
+  depth: number;
+}
+
 /**
  * How a weapon delivers.
  *
