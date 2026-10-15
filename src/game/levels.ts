@@ -113,7 +113,7 @@ export function rankRamp(level: number): number {
 /**
  * How much faster a level reads the breed schedule.
  *
- * At level 1 the last breed (钉煞, due at 0.65) arrives around wave seven. At the top it is there
+ * At level 1 the last breed (the drake, due at 0.72) arrives around wave seven or eight. At the top it is there
  * by wave four. One schedule, read at different speeds — the same idea the realms used, on a
  * longer road.
  */

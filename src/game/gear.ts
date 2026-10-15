@@ -9,11 +9,13 @@
  * ## 品质 is 深浅 with a colour on it
  *
  * `swing`, `span` and every one of the ten take a `depth`. A tier **is** that depth. There is no
- * second set of numbers, no multiplier table, no stat block — a 黄 item is a depth-3 item, and the
- * reason it looks different is that it is drawn in a different colour.
+ * stat block and no table per item — a 黄 item is a depth-3 item, and the reason it looks different
+ * is that it is drawn in a different colour. The one number laid on top, `power`, is read off the
+ * tier and nothing else: what a strike weighs, and how copies of a way add up.
  *
  * Writing it any other way was the obvious trap. Two systems that both mean "how strong" drift
- * apart on the first tuning pass, and the one that drifts is whichever one the player can see.
+ * apart on the first tuning pass, and the one that drifts is whichever one the player can see. A
+ * function of the tier cannot drift from the tier.
  *
  * ## Merging
  *
@@ -21,15 +23,17 @@
  * different kinds become a random one of the five the level was opened with — see `loadout.ts`,
  * which is where the roll lives, because only the level knows what the five are.
  *
- * Note what that trade actually is, because it is not a free upgrade. Two 蓝刀 equipped in two
- * slots carry more weight between them than the one 黄刀 they merge into. What the merge buys is
- * **a slot back**. That is the whole decision.
+ * Each grade is worth **three** of the one below (`PowerPerGrade`), so the trade is not a wash:
+ * two 蓝刀 weigh six 浅绿 between them and the 黄刀 they merge into weighs nine. A merge comes out
+ * ahead **and** hands a slot back, which is what makes it the move rather than the price of room.
  *
  * ## Why what is sold climbs
  *
- * Merging alone would need 32 浅绿 to reach 彩, and a two-minute level does not sell 32 of
- * anything. So what the shop deals gets better as the level goes on, and merging is for
- * consolidating what arrives rather than being the only way up.
+ * Merging alone would need 32 浅绿 to reach 彩, and the shop is not going to sell 32 of anything.
+ * Each purchase is a random one of the five, and the price climbs by its own hundreds
+ * (`purse.ts`): the first purchase of a level costs 10, the thirty-second 1,260 on its own. So the
+ * grade the shop deals rises as the level goes on (`dropTier`), and merging is for consolidating
+ * what arrives rather than being the only way up.
  */
 import { MaxDepth } from './kit.js';
 import type { Way, Weapon } from './kit.js';
@@ -64,11 +68,12 @@ export function tintOf(tier: number): string {
 }
 
 /**
- * What one item of this grade is worth, counted in 浅绿: **it doubles with every grade.**
+ * What one item of this grade is worth, counted in 浅绿: **it triples with every grade.**
  *
  * This is what makes a merge worth making. Two of a grade become one of the next, so with power
- * doubling the merge keeps everything the two were worth and hands back a slot — and a weapon also
- * swings a little faster a grade up (`kit.swing`), so merging two weapons comes out ahead outright.
+ * tripling the merge is worth half as much again as the two that went into it and hands back a
+ * slot — and a weapon also swings a little faster a grade up (`kit.swing`), so merging two weapons
+ * comes out further ahead still.
  * Before this a grade was one more point of depth, two 蓝刀 out-hit the 黄刀 they made, and a merge
  * was a loss you took only for the slot — measured, a build that never merged did as well as one
  * that did.

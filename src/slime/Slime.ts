@@ -404,6 +404,8 @@ export class Slime {
   private vigourTrail = 0;
   /** Counts down after a hit lands. The body's own flinch, so damage is felt and not just shown. */
   private struck = 0;
+  /** 1 the moment 护体 goes back up, falling to 0: the bar's edge glows green for it. */
+  private mended = 0;
   private grabbed = false;
   private grabOffset = { x: 0, y: 0 };
   private trail = { x: 0, y: 0 };
@@ -996,6 +998,7 @@ export class Slime {
       this.pursuit !== null ||
       this.hop !== null ||
       this.struck > 0.01 ||
+      this.mended > 0.01 ||
       (this.vigour !== null && this.vigourTrail - this.vigour > 0.002) ||
       this.devour !== null ||
       // A morph moves the rest shape while the offsets sit quietly at zero, so `energy()` below
@@ -1006,7 +1009,10 @@ export class Slime {
       Math.abs(this.vy) > 0.5 ||
       Math.abs(this.x - this.renderX) > 0.05 ||
       Math.abs(this.y - this.renderY) > 0.05 ||
-      this.blinkPhase > 0.001 ||
+      // Not while asleep: sleep holds the eyes shut by pinning the blink at 1, and counting that
+      // as a blink in progress kept a sleeping pet — most of a desk pet's life — at full frame
+      // rate forever. That was the 31% of a core the idle stand-down was supposed to have removed.
+      (this.blinkPhase > 0.001 && this.mood !== 'asleep') ||
       this.absorbFlash > 0.01 ||
       // A fade is the one thing here that changes the screen without moving anything, so nothing
       // else in this list would catch it.
@@ -1546,6 +1552,7 @@ export class Slime {
       this.vigour = null;
       this.vigourTrail = 0;
       this.struck = 0;
+      this.mended = 0;
       return;
     }
     const left = Math.max(0, Math.min(1, fraction));
@@ -1557,6 +1564,8 @@ export class Slime {
       this.struck = 1;
       this.blob.squash(0.26);
       this.blob.pulse(-120);
+    } else if (left > this.vigour + 1e-6) {
+      this.mended = 1;
     }
     this.vigour = left;
   }
@@ -1793,6 +1802,7 @@ export class Slime {
       if (this.vigourTrail - this.vigour < 0.002) this.vigourTrail = this.vigour;
     }
     this.struck = Math.max(0, this.struck - dt * 3.2);
+    this.mended = Math.max(0, this.mended - dt * 2.5);
 
     this.updateMood(dt, env, ground);
     this.updateFace(dt, env);
@@ -1846,7 +1856,16 @@ export class Slime {
     }
 
     context.lineWidth = 1.2;
-    context.strokeStyle = this.struck > 0.01 ? `rgba(255, 157, 138, ${0.5 + this.struck * 0.5})` : 'rgba(6, 19, 15, 0.7)';
+    context.strokeStyle =
+      this.struck > 0.01
+        ? `rgba(255, 157, 138, ${0.5 + this.struck * 0.5})`
+        : this.mended > 0.01
+          ? `rgba(120, 240, 140, ${0.5 + this.mended * 0.5})`
+          : 'rgba(6, 19, 15, 0.7)';
+    if (this.mended > 0.01 && this.struck <= 0.01) {
+      context.shadowColor = 'rgba(120, 240, 140, 0.9)';
+      context.shadowBlur = 8 * this.mended;
+    }
     context.beginPath();
     context.roundRect(x, y, width, height, height / 2);
     context.stroke();

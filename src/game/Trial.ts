@@ -466,7 +466,7 @@ export class Trial {
       const away = Math.hypot(dx, dy);
       if (away > radius + bulk(m)) continue;
       // **Elites and bosses are not thrown.** Twice this was tried with them throwable and twice
-      // it stalled a level: first a 重煞 boss inside every pillar of an eruption at once went
+      // it stalled a level: first a boss of the old roster's heaviest breed inside every pillar of an eruption at once went
       // fifteen hundred pixels off the screen; then, with the throw divided by its area, a build
       // carrying 土崩 — a shove on *every* hit — still pushed it outward faster than it walks,
       // from 350 pixels to 720 over thirty seconds while taking a hundred and sixty hits. A level
@@ -677,7 +677,13 @@ export class Trial {
         m.burnNext -= dt;
         if (m.burnNext <= 0) {
           m.burnNext = BurnBeat;
-          if (!this.dodged(m)) m.health -= 1;
+          if (!this.dodged(m)) {
+            m.health -= 1;
+            // A beat of the burn lands like a small hit: it flares white, without the knock-back.
+            m.flash = Math.max(m.flash, 0.6);
+            m.joltX = 0;
+            m.joltY = 0;
+          }
           if (m.health <= 0) {
             this.fall(m);
             m.burnLeft = 0;
@@ -906,7 +912,8 @@ export class Trial {
    * How many hits a new one of these takes, at this level.
    *
    * For an elite or a boss the breed's own toughness counts as its square root. Taken whole, a
-   * 重煞 boss was four times a 游魂 boss — two hundred and forty hits at level 25 against sixty —
+   * boss of the old roster's heaviest breed was four times its lightest — two hundred and forty
+   * hits at level 25 against sixty —
    * and since the boss cycles through the breeds, every fifth level had a spike in it that took a
    * level from two minutes to three and a half. Square-rooted, it is still the hardest boss, at
    * twice the others rather than four times.
@@ -1127,6 +1134,9 @@ export class Trial {
       rush: m.kind === 'boar' && m.mode === 2,
       fired: m.fired,
     });
+    // 燎火: on fire, and visibly. It used to change only a number, which made it one of the two
+    // schools you could carry for a whole level without once seeing it work.
+    if (m.burnLeft > 0) drawFlames(context, girth(m) * (0.4 + 0.6 * m.arrival), m.age, Math.min(1, m.burnLeft / 0.3));
     context.restore();
   }
 
@@ -1232,6 +1242,44 @@ export class Trial {
  * time the roster does, and a literal that missed one is the kind of bug that shows up as one kind
  * behaving oddly and nothing else.
  */
+/**
+ * Flames on a burning one, drawn over it at its own origin: three tongues, the middle one tallest,
+ * each flickering on its own clock, orange round a yellow heart and inked like the creature under
+ * them. `fade` brings them down over the last moments of the burn rather than snapping them off.
+ */
+function drawFlames(context: CanvasRenderingContext2D, size: number, t: number, fade: number): void {
+  context.save();
+  context.globalAlpha *= fade * 0.92;
+  context.lineJoin = 'round';
+  const tongue = (x: number, base: number, w: number, h: number, sway: number): void => {
+    context.beginPath();
+    context.moveTo(x - w, base);
+    context.quadraticCurveTo(x - w * 1.1, base - h * 0.55, x + sway, base - h);
+    context.quadraticCurveTo(x + w * 1.1, base - h * 0.55, x + w, base);
+    context.quadraticCurveTo(x, base + w * 0.8, x - w, base);
+    context.closePath();
+  };
+  for (let i = 0; i < 3; i++) {
+    // Low on the body and off to the sides, so the face stays clear: it is on fire, not behind one.
+    const x = (i - 1) * size * 0.55;
+    const flick = Math.sin(t * 17 + i * 2.3) * 0.5 + Math.sin(t * 29 + i * 1.1) * 0.5;
+    const h = size * (i === 1 ? 0.55 : 0.75) * (0.8 + 0.2 * flick);
+    const w = size * (i === 1 ? 0.16 : 0.19);
+    const base = size * (i === 1 ? 0.75 : 0.55);
+    const sway = Math.sin(t * 11 + i * 1.7) * w * 0.6;
+    tongue(x, base, w, h, sway);
+    context.fillStyle = '#ff6a1a';
+    context.fill();
+    context.lineWidth = 1.2;
+    context.strokeStyle = '#2a1206';
+    context.stroke();
+    tongue(x, base - h * 0.08, w * 0.5, h * 0.6, sway * 0.6);
+    context.fillStyle = '#ffd84a';
+    context.fill();
+  }
+  context.restore();
+}
+
 /** Marks one as struck from a point: white, and knocked away from where the hit came in. */
 function struckBy(m: Menace, x: number, y: number): void {
   const dx = m.x - x;

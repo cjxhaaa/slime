@@ -249,6 +249,12 @@ Three things this has to get right, each of which was wrong in the first attempt
 - **Sleep is slow, not static.** The drifting "z" marks never stop, so an asleep slime always needs
   painting — but at 20 Hz, which looks identical and costs a third as much. That is a separate
   question from whether the loop needs full frame rate, so it is a separate flag.
+- **…and for a long time sleep never got it.** Sleep holds the eyes shut by pinning the blink at 1,
+  and `isAnimating` counted any blink in progress as motion — so a sleeping pet, which is most of a
+  desk pet's life, never stood down at all and sat at full frame rate. Measured on a dev build:
+  asleep **46.7%** of a core before, **10.7%** after, the same as awake and idle. Painting the "z" at
+  8 Hz instead of 20 was tried at the same time and measured no different (10.7% against 10.8%), so
+  it stays at 20.
 
 Cursor tracking is also range-gated (520 px). The eyes easing toward a new target counts as
 animating, so following the pointer anywhere on a 2560-wide screen held the loop at full rate
@@ -1243,14 +1249,31 @@ Entering walks the pet to the middle of the window and **turns gravity off** —
 plane. That is not a camera choice. The window is already the whole desktop, so without gravity the
 arena is your entire screen rather than the strip along the bottom of it. `Slime.planar` swaps the
 ground for wherever the body is and the air drag for a much stiffer one (`PlanarDragTau = 0.34`
-against `1.6`), so a shove glides and then stops dead instead of sailing. Dragging is the only
-control, and it is the same gesture that already moved the pet, so the mode adds nothing to learn.
+against `1.6`), so a shove glides and then stops dead instead of sailing. And then it **holds the
+middle**: nothing steers it, not the cursor and not the keys. A tower that can be walked out of the
+way is not a tower, and the one decision this mode has is what to merge.
 
-邪气 drift in from the edges and home in, steered rather than aimed so that a dodge actually works
-— they overshoot instead of turning on the spot. They are **dark, and they are the only dark thing
-in this app**: everything the pet makes is light, so the thing coming for it reads at a glance on
-any wallpaper without anybody having to learn a colour. Talismans fire themselves at the nearest
-one. Ninety seconds.
+It is a tower of **levels 1 to 99**, each of them **ten waves** — elites with the fourth and the
+eighth, a king leading the tenth — and all ten are out within **three minutes** (`Waves.ts`). The
+three minutes are a timetable, not a time limit: clear the field and the next wave is called early,
+and a level ends only when everything that came is dead (passed) or the body's 护体 runs out
+(failed). There is no timeout, and no third ending where the clock runs out on somebody still
+standing.
+
+Before a level you pick **two weapons and three 五行**, and everything the level can hand you is one
+of those five. Kills pay 银, and **买** spends it on one of the five at random. The first purchase
+costs 10, and each one after costs ten more than the last for every hundred the price has reached —
+10, 20 … 100, then 120, 140 … (`purse.ts`) — which is what pushes a level from buying into merging.
+Every fifth purchase adds a slot, from six to twelve. **Two things of the same grade merge into one
+a grade up**: drag one onto the other, or click one and then the other. The same thing stays itself;
+two different things become a random one of the five. A grade is worth three of the one below
+(`gear.power`), so a merge comes out ahead and hands back a slot.
+
+Apart from the roster of 邪气, the subsections that follow, down to 共鸣, were written for the run
+the tower replaced — ninety seconds, nine schools, a three-card draft — and are kept for their
+reasons rather than their numbers. Several carried across whole: the payout is still `harvest`, paid
+on progress rather than on kills, and the mode still costs no charms. [TOWER.md](TOWER.md) is the
+plan the tower was built from.
 
 #### Both sides scale hard, and the door stays ahead of the hand
 
@@ -1414,65 +1437,64 @@ a second at 筑基 and 11.5 at 大乘, 630 to 1030 over a run, on a much steeper
 the open, twenty-six to forty-four at the close). The spread between realms is narrower than the old
 115–1034 table, because the spread moved into the build.
 
-### 邪气: six breeds, and what escalates inside a run
+### 邪气: eight kinds, three orders, three ranks
 
-There used to be one of them — a blot that homed in with a little inertia — and the only thing that
-escalated across ninety seconds was how often they arrived. So the last thirty seconds were the
-first thirty with the tap opened: more of exactly what you had already solved.
+The six breeds that used to be here — 游魂, 奔煞 and the rest, dark blots told apart by silhouette —
+went with the ninety-second run. The tower's roster is eight creatures in three orders, and the
+order is what a kind asks of you (`menaces.ts`):
 
-| | breed | what it does | what it punishes |
+| | kind | order | what it does |
 |---|---|---|---|
-| 游魂 | `drift` | homes in steadily, overshoots when you dodge | nothing; it is the baseline |
-| 奔煞 | `dart` | gathers, then rushes along a heading it cannot correct | kiting in a straight line |
-| 缠魂 | `weave` | circles at 210px, then cuts in | watching the middle, not the edges |
-| 裂魄 | `split` | comes apart into two 奔煞 when killed | clearing a press all at once |
-| 重煞 | `heavy` | slow, twice the size, takes four hits | pointing everything at one thing |
-| 钉煞 | `root` | plants itself and pulses where it stands | standing still, and ignoring things |
+| 哥布林 | `goblin` | melee | the baseline: walks in at a steady pace |
+| 丧尸 | `zombie` | melee | hops in, slow and in bursts, and takes three hits |
+| 蜘蛛 | `spider` | melee | skitters in, quick and zig-zagging |
+| 野猪 | `boar` | melee | trots in, then lowers its head and charges the last stretch |
+| 小蝙蝠 | `bat` | flying | fast and erratic; 30% of hits pass straight through it |
+| 小恶龙 | `drake` | flying | swoops in, tough, and dodges 20% of what is thrown at it |
+| 炮手哥布林 | `gunner` | ranged | slow; once the body is in range it fires a cannonball as it walks |
+| 法师 | `mage` | ranged | slower; a longer range, and a bolt on a slower beat |
 
-Six breeds, six verbs. They are not six rows of different numbers — each is meant to break a habit,
-and a breed you beat the same way you beat the last one is a reskin. They are told apart by
-**silhouette**, not colour: still all dark (the only dark things in the app), still red eyes, but
-one is stretched with a wake, one is a big smooth mass, one is all angles with a telegraph ring. You
-have to be able to read a 奔煞 while looking at something else, which rules out hue.
+- **Melee** walk in at middling speed and do their damage by arriving.
+- **Flying** are quick, and a share of hits **miss** them — the hit leaves an afterimage where the
+  creature was, so a miss reads as a miss and not as a weapon that did nothing.
+- **Ranged** are slow, and once the body is inside their range they fire on a beat — and **keep
+  walking** while they do, at a creep. One that stopped at its range would, against a build whose
+  reach is shorter, be something nothing could ever reach, and a level only clears once everything
+  in it is dead.
 
-#### Three things escalate now, where one did before
+Each kind comes in **three ranks** — 哥布林, 精英哥布林, 哥布林王; 蜘蛛, 精英蜘蛛, 蜘蛛皇后 — at 1.7
+and 2.6 times the size and many times the hits. Elites come with the fourth and eighth waves; a king
+leads the tenth, and which kind it is belongs to the level rather than the moment, cycling through
+all eight, so "the boss of level twelve" is a thing that can be learned. The ranks are **drawn as
+themselves**, not scaled up: iron, horns and glowing eyes on the elite, a 冠 and a slow pulsing aura
+on the king.
 
-1. **How many** — already ramped, and steeply: four a second at the open, 26–44 at the close.
-2. **What** — new. Breeds arrive on a schedule and the baseline's share falls as they do: a run
-   opens as 100% 游魂 and ends with it at **15%**. The composition at eighty seconds is not the
-   composition at ten.
+A kill pays 银 by rank — about 20 for a common, 50 for an elite, 150 for a king, with a fifth either
+way so the purse ticks up unevenly. Elites and kings also leave a **宝箱** where they fell; click it
+and it opens for anywhere from 100 to 1000. The silver a level runs on is mostly kills; the chests
+are the swings.
+
+They are coloured now, which gave up the old rule that the thing coming for the pet is the only dark
+thing in the app. What does that job instead is the **ink**: a thick dark outline round every shape
+and a soft shadow on the ground under each one, so a green goblin on a green wallpaper is still a
+goblin. The world is a 修仙 one — goblins in topknots, the 丧尸 a 僵尸 in a Qing official's hat with
+a talisman on its forehead, the mage a hooded 魔修 (`ui/creatures.ts`).
+
+#### What escalates inside a level
+
+1. **How many** — each wave bigger than the last, and arriving faster.
+2. **What** — a level opens on 哥布林 alone, and the rest join on a schedule while the goblins'
+   share falls. A higher level reads the same schedule faster, so the top of the tower has met all
+   eight by wave four.
 3. **How fast** — a quarter faster by the end, and no more. Speed is the cheapest difficulty curve
-   there is; it makes the same fight harder rather than making it a different fight.
+   there is; it makes the same fight harder rather than making it a different fight, which is what
+   the roster is for.
 
-A realm reads the same schedule faster rather than having its own: 大乘 has met all six by 38% of
-the way in, where 筑基 is still two short and does not meet its last until second 58.
-
-#### The one-hit rule is broken twice, on purpose
-
-"One talisman, one 邪气" was written down with reasons: if *everything* has two hit points the crowd
-just has a longer time-to-kill — in a press something is always already wounded, so every shot kills
-anyway and the second point is invisible — and a bar over a thirteen-pixel blot is a number on the
-screen, which §5 forbids. Neither reason survives contact with **two rare breeds drawn conspicuously
-bigger**. You can see that 重煞 is big. That is the bar. The check pins it: exactly two breeds have
-more than one hit point, and both are at least 16px where the baseline is 13.
-
-This is also why `cull` returns hits landed rather than kills. A talisman that strikes something
-with four hit points has connected, and every projectile in `Attacks` asks "did I hit anything"
-before it detonates — told no, it would sail straight through a 重煞.
-
-#### The roster fixed the difficulty curve that three rounds of tuning could not
-
-The previous pass left a problem: a player who spent their exchanges finished **every realm
-untouched**, so the back half of a run had no tension. Six breeds fixed it with **no number
-retuned**:
-
-- 大乘 with the meter spent went from integrity 1.0 to **0.26**
-- a build drafted and then neglected now loses at **every** realm, where 筑基 used to be survivable
-  on inattention alone — so the exemption that was written for it could be deleted
-
-Worth writing down: three versions of tuning went into the arrival columns trying to buy difficulty,
-and what actually bought it was content. Two thousand arrivals a minute could not do what six
-different behaviours did on the way past.
+Hits above one are carried by the bigger kinds — 丧尸, 野猪, 小恶龙 — and by the two that hang back
+and shoot, which would otherwise be the easiest thing on the screen to clear. Nothing that arrives in
+numbers takes more than one at level one. The lesson the old roster left still stands: three rounds
+of tuning the arrival columns could not buy the difficulty that a handful of different behaviours
+did.
 
 #### What the effects layer learned from the dust
 
@@ -1834,11 +1856,12 @@ breakthrough needed no new animation code at all.
 ### `npm run check`
 
 The numbers in `realms.ts` will be re-tuned repeatedly, and `settle` is the piece most likely to be
-quietly wrong while still looking plausible. 179 assertions, no test framework, two seconds: accrual
+quietly wrong while still looking plausible. Over six hundred assertions, no test framework: accrual
 rate, the bottleneck split, one settle against ten over the same gap, a clock that jumps backwards,
 overflow carried across a breakthrough, a full walk of the ladder that has to land on exactly 72
 breakthroughs and about 3.8 days, the charm odds and the hoard the 御符 throw must not dig into, and
-two whole 历练 runs driven frame by frame against a pinned `Math.random`.
+whole tower levels driven frame by frame against a pinned `Math.random` — by bots that buy, merge
+and open chests, and by one that plays through nothing but clicks on the bar.
 
 It compiles with `--rootDir src` pinned, which is not cosmetic: adding an import from `src/slime`
 once moved tsc's output from `.check/checks.js` to `.check/game/checks.js` while the script went on

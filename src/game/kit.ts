@@ -22,7 +22,7 @@
  * at**, and that you must be able to tell it fired without being told.
  */
 
-/** The five. One equipped at a time, swapped by drafting another. */
+/** The five. Two are picked before a level; the bar can carry any number of copies of each. */
 export const WEAPONS = ['刀', '剑', '盾', '弓', '符'] as const;
 
 export type Weapon = (typeof WEAPONS)[number];

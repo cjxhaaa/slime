@@ -189,6 +189,10 @@ const LeechGift = 0.06;
  * by time instead, it is a steady trickle whatever the level asks of the weapons.
  */
 const LeechPerSecond = 0.06;
+/** 荣木's leaves: how long one takes to fly home, how many can be in the air, the glow on landing. */
+const LeafSeconds = 0.5;
+const MaxLeaves = 14;
+const MendSeconds = 0.45;
 const LeechBank = 1;
 /** 寒水: how wide the patch is and how long it lasts. */
 const ChillReach = 74;
@@ -777,6 +781,10 @@ export class Attacks {
         this.leechRoom -= gift;
         if (gift > 0) battlefield.mend(gift);
         this.spark(x, y, 3, '木', 120, -Math.PI / 2, 1.1);
+        // And it is *seen* coming back: a leaf lifts off the wound and flies home to the body,
+        // which glows green when it lands. Only when something was actually given — a leaf for a
+        // heal the budget refused would be a lie.
+        if (gift > 0) this.sendLeaf(x, y);
       } else if (path.on === 'chill') {
         // 寒水: the ground stays cold. `fields()` reads these back, so the slow is the one the
         // 邪气 already know how to wade through rather than a second system.
@@ -860,6 +868,27 @@ export class Attacks {
     // counter already says.
     this.spark(this.bodyX, this.bodyY, 16, '水', 320);
     return true;
+  }
+
+  /** Which side the next leaf home bows out to, so a stream of them fans rather than stacks. */
+  private leafSide = 1;
+
+  /**
+   * A leaf from a 荣木 hit, flying back to the body on a bowed path. Its start and the bend are
+   * fixed when it leaves; the end is wherever the body is when it gets there.
+   */
+  private sendLeaf(x: number, y: number): void {
+    if (this.live.filter((e) => e.kind === 'leaf').length >= MaxLeaves) return;
+    this.leafSide = -this.leafSide;
+    const dx = this.bodyX - x;
+    const dy = this.bodyY - y;
+    const away = Math.hypot(dx, dy) || 1;
+    const bow = Math.min(90, away * 0.45) * this.leafSide;
+    const leaf = this.push('木', 'leaf', x, y, 0, 0, Math.atan2(dy, dx), LeafSeconds, 8, 0);
+    leaf.path = [
+      { x, y },
+      { x: (x + this.bodyX) / 2 - (dy / away) * bow, y: (y + this.bodyY) / 2 + (dx / away) * bow },
+    ];
   }
 
   /** 荣木's budget: what it can still give back before the trickle refills it. See `LeechPerSecond`. */
@@ -1029,6 +1058,7 @@ export class Attacks {
   /** Moves everything that is still alive, and lets the persistent things bite. */
   private step(dt: number, battlefield: Battlefield): void {
     const alive: Effect[] = [];
+    let landed = 0;
     for (const e of this.live) {
       e.age += dt;
       // A staggered ring starts with a negative age so it opens late. Nothing else should touch it
@@ -1159,12 +1189,28 @@ export class Attacks {
         }
       }
 
+      if (e.kind === 'leaf' && e.path) {
+        // Along its bow to wherever the body is now, quickening as it goes.
+        const t = Math.min(1, e.age / e.life);
+        const k = t * t * (3 - 2 * t);
+        const [from, bend] = e.path;
+        const u = 1 - k;
+        const x = u * u * from.x + 2 * u * k * bend.x + k * k * this.bodyX;
+        const y = u * u * from.y + 2 * u * k * bend.y + k * k * this.bodyY;
+        e.angle = Math.atan2(y - e.y, x - e.x);
+        e.x = x;
+        e.y = y;
+      }
+
       const expired = e.life > 0 && e.age >= e.life;
+      if (expired && e.kind === 'leaf') landed++;
       // Nothing left alive is spent by biting; everything expires on its own clock.
       const spent = false;
       if (!expired && !spent) alive.push(e);
     }
     this.live = alive;
+    // A leaf home: the body glows green for a moment. One glow however many landed this frame.
+    if (landed > 0) this.push('木', 'mend', this.bodyX, this.bodyY, 0, 0, 0, MendSeconds, this.bodyR, 0);
   }
 
   bounds(): { x: number; y: number; width: number; height: number } | null {
@@ -1438,6 +1484,69 @@ export class Attacks {
     const fade = e.life > 0 ? Math.max(0, 1 - e.age / e.life) : 1;
     const grown = e.life > 0 ? Math.min(1, e.age / Math.max(0.0001, e.life * 0.25)) : 1;
 
+
+    if (e.kind === 'leaf') {
+      // 荣木's leaf: green, veined, inked, turning end over end as it flies home.
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 1;
+      context.translate(e.x, e.y);
+      context.rotate(e.angle + Math.sin(e.age * 18) * 0.6);
+      const r = e.reach;
+      context.beginPath();
+      context.moveTo(-r, 0);
+      context.quadraticCurveTo(0, -r * 0.75, r, 0);
+      context.quadraticCurveTo(0, r * 0.75, -r, 0);
+      context.closePath();
+      context.fillStyle = '#5fd36a';
+      context.fill();
+      context.lineWidth = 1.3;
+      context.strokeStyle = '#123317';
+      context.stroke();
+      context.beginPath();
+      context.moveTo(-r * 0.8, 0);
+      context.lineTo(r * 0.7, 0);
+      context.lineWidth = 0.9;
+      context.strokeStyle = '#2b7a34';
+      context.stroke();
+      context.restore();
+      this.bloom(context, e.x, e.y, 10, hue, 0.35);
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'mend') {
+      // A leaf home: a soft green ring swelling off the body and a few motes rising from it.
+      const t = Math.min(1, e.age / Math.max(0.01, e.life));
+      const fade = 1 - t;
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = fade * 0.8;
+      context.lineWidth = 3 * fade + 1;
+      context.strokeStyle = '#5fd36a';
+      context.beginPath();
+      context.arc(e.x, e.y, e.reach * (1.02 + t * 0.35), 0, Math.PI * 2);
+      context.stroke();
+      context.fillStyle = '#9af09f';
+      context.strokeStyle = '#123317';
+      context.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const a = -Math.PI / 2 + (i - 1.5) * 0.55;
+        const out = e.reach * (0.9 + t * 0.6);
+        const mx = e.x + Math.cos(a) * out;
+        const my = e.y + Math.sin(a) * out - t * 16;
+        const arm = 3.2 * fade + 1;
+        // A small plus: the shape of being given something back.
+        context.beginPath();
+        context.rect(mx - arm, my - arm * 0.35, arm * 2, arm * 0.7);
+        context.rect(mx - arm * 0.35, my - arm, arm * 0.7, arm * 2);
+        context.fill();
+      }
+      context.restore();
+      this.bloom(context, e.x, e.y, e.reach * 1.4, hue, 0.25 * fade);
+      context.globalAlpha = 1;
+      return;
+    }
 
     if (e.kind === 'impact') {
       // A four-pointed star, out and gone: the frame a hit lands on.

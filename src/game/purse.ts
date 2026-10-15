@@ -8,8 +8,9 @@
  *
  * ## Where silver comes from
  *
- * Kills. One for a common, twelve for an elite, sixty for the boss (`RANKS`), and a little to start
- * with from the realm. It does not carry from one level to the next (TOWER.md §9.3): carried, the
+ * Kills: about twenty for a common, fifty for an elite, a hundred and fifty for the boss (`RANKS`,
+ * each ±20%), plus the 宝箱 an elite or a boss leaves, which pays a hundred to a thousand when it
+ * is clicked — and a little to start with from the realm. It does not carry from one level to the next (TOWER.md §9.3): carried, the
  * ninety-ninth level would be paid for by the first ninety-eight, and the curve in `levels.ts`
  * would be measuring hoarding rather than play.
  *
@@ -73,7 +74,7 @@ export const OpeningBuys = 4;
  * What a level opens with: four purchases, and a little more for each realm.
  *
  * Four because that is what the opening draft handed over before the first 邪气, and the reason
- * has not changed — a level is two minutes, and earning a build one kill at a time would make the
+ * has not changed — a level is a few minutes, and earning a build one kill at a time would make the
  * first of them the part you sit through. Sized at one purchase it was a single random weapon
  * against the whole first wave, and a measured level-one fight died on wave two with the dice
  * deciding everything.

@@ -25,9 +25,10 @@
  * - **Ways are summed.** Two 蓝火爆 are not two explosions, they are a bigger one — a way is how
  *   strongly something happens, and the only number it has is depth. Capped at `MaxDepth`.
  *
- * Both are weighed by `gear.power`, which doubles with every grade — so a merge keeps everything
- * the two things were worth and hands back a slot. Two 蓝火爆 are exactly one 黄火爆; two 蓝刀 hit
- * as hard as one 黄刀, and the 黄刀 swings faster.
+ * Both are weighed by `gear.power`, which triples with every grade — so a merge is worth more than
+ * the two things that went into it, and hands back a slot as well. Two 蓝火爆 weigh six 浅绿 and
+ * the 黄火爆 they make weighs nine; two 蓝刀 hit for six between them and the 黄刀 hits for nine, and
+ * swings faster.
  */
 import { MaxDepth, type Way, type Weapon } from './kit.js';
 import { type Item, PowerPerGrade, power, sameSort } from './gear.js';
@@ -161,9 +162,9 @@ export class Pack {
    * note at the top.
    *
    * Weighed by `power` rather than by grade: each copy counts for what it is worth in 浅绿, and the
-   * depth is the grade that weight would be — `1 + log2(weight)`, capped at `MaxDepth`. So two 蓝
-   * of a way are exactly one 黄 of it, and merging them gives up nothing. Summing grades instead
-   * made two 蓝 a depth of four and the 黄 they merged into a three.
+   * depth is the grade that weight would be — `1 + log₃(weight)`, capped at `MaxDepth`. So two 蓝
+   * of a way sit between 蓝 and 黄, and the 黄 they merge into runs deeper than both. Summing grades
+   * instead made two 蓝 a depth of four and the 黄 they merged into a three.
    */
   get ways(): { way: Way; depth: number }[] {
     const weights = new Map<Way, number>();

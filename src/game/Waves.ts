@@ -96,8 +96,8 @@ export function rankOf(wave: number): Rank {
  * The boss of a level.
  *
  * Fixed per level rather than rolled, so "the boss of level twelve" is a thing that exists and can
- * be learned. It cycles through the five that are allowed to be one (`Champions`), starting with
- * 游魂 — the first boss anybody meets should be the breed they have already met three hundred of.
+ * be learned. It cycles through all eight kinds (`Champions`), starting with the goblin — the first
+ * boss anybody meets should be the kind they have already met three hundred of.
  */
 export function bossOf(level: number): Kind {
   return Champions[(clampLevel(level) - 1) % Champions.length];
