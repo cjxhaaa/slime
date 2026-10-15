@@ -34,8 +34,11 @@
         "label": "settings",
         "url": "settings.html",
         "title": "Slime settings",
-        "width": 480,
-        "height": 620,
+        "width": 496,
+        "height": 676,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
         "resizable": false,
         "center": true,
         "visible": false

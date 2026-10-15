@@ -154,6 +154,36 @@ interface Effect {
   hits?: number;
 }
 
+/**
+ * The rules that turn a grade into a number, named so the codex in Settings can quote them. The
+ * codex reads these and the constants in `CodexNumbers` rather than keeping its own copy, so what it
+ * tells a player is whatever the fight actually does.
+ */
+/** 刀: 刀气 in one swing. */
+export function slashBlades(depth: number): number {
+  return 2 + Math.floor(depth / 2);
+}
+/** 盾: 罡气 in the ring. */
+export function guardNodes(depth: number): number {
+  return 2 + Math.floor((depth - 1) * 0.75);
+}
+/** 剑: flying swords out at once. */
+export function flyingSwords(depth: number): number {
+  return 1 + (depth >= 3 ? 1 : 0) + (depth >= 5 ? 1 : 0);
+}
+/** A way's reach or duration at a depth, as a multiple of its first. */
+export function wayScale(depth: number): number {
+  return 1 + (depth - 1) * 0.18;
+}
+/** 爆火: how many one burst can take. */
+export function burstMost(depth: number): number {
+  return 1 + Math.floor(depth / 2);
+}
+/** 崩土: rings of stone, the centre one included. */
+export function quakeBands(depth: number): number {
+  return 2 + Math.floor(depth / 2);
+}
+
 /** How long each motion's effect lives, in seconds. */
 const LIFE: Record<string, number> = {
   aimed: 1.4,
@@ -197,6 +227,8 @@ const LeechBank = 1;
 /** 寒水: how wide the patch is and how long it lasts. */
 const ChillReach = 74;
 const ChillSeconds = 2.6;
+/** 寒水: the pace a 邪气 keeps while it wades through one, as a fraction of its own. */
+const ChillFactor = 0.62;
 /** 流水: how far it looks for the next one. */
 const ChainReach = 150;
 /** 燎火: how wide it catches and how long it burns. */
@@ -482,7 +514,7 @@ export class Attacks {
       // Any frost, whoever laid it: 冻土 lays one where the ground opened, 寒水 where a hit
       // landed, and the slow a 邪气 wades through does not care which.
       if (e.kind === 'frost') {
-        out.push({ x: e.x, y: e.y, radius: e.reach, factor: 0.62 });
+        out.push({ x: e.x, y: e.y, radius: e.reach, factor: ChillFactor });
       }
     }
     return out;
@@ -500,7 +532,7 @@ export class Attacks {
    * ground without clearing the field.
    */
   private erupt(x: number, y: number, reach: number, level: number): void {
-    const bands = 2 + Math.floor(level / 2);
+    const bands = quakeBands(level);
     const bite = 1;
     for (let band = 0; band < bands; band++) {
       // The first band is the stone's own crater: one pillar, dead centre.
@@ -651,7 +683,7 @@ export class Attacks {
       const aim = mark
         ? Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX)
         : Math.random() * Math.PI * 2;
-      const blades = 2 + Math.floor(arm.depth / 2);
+      const blades = slashBlades(arm.depth);
       this.push('刀', 'swing', this.bodyX, this.bodyY, 0, 0, aim, SwingSeconds, this.bodyR, 0);
       for (let i = 0; i < blades; i++) {
         const heading = aim + (i - (blades - 1) / 2) * SlashFan;
@@ -674,7 +706,7 @@ export class Attacks {
     if (arm.weapon === '盾') {
       // 罡气 does not get thrown; it is simply there. The swing clock tops the ring up rather than
       // launching anything, so a 盾 build is the one that never has to aim and never stops working.
-      const want = 2 + Math.floor((arm.depth - 1) * 0.75);
+      const want = guardNodes(arm.depth);
       // Its own ring only. See `owner` on `Effect`: counting every guard node on the field would
       // make a second 盾 believe the ring was already full and put out nothing.
       const have = this.live.filter((e) => e.kind === 'guard' && e.owner === owner).length;
@@ -711,7 +743,7 @@ export class Attacks {
     if (arm.weapon === '剑') {
       // One flying sword, and another at the third and fifth depth. It is never spent, so the
       // swing clock only decides whether there is one — after that it keeps itself busy.
-      const want = 1 + (arm.depth >= 3 ? 1 : 0) + (arm.depth >= 5 ? 1 : 0);
+      const want = flyingSwords(arm.depth);
       const have = this.live.filter((e) => e.kind === 'sword').length;
       for (let i = have; i < want; i++) {
         const blade = this.push(
@@ -756,12 +788,12 @@ export class Attacks {
 
       // Deepening widens or lengthens, and never only raises a number. The rule the schools were
       // built on, and the one that keeps a build readable without a stat screen.
-      const more = 1 + (depth - 1) * 0.18;
+      const more = wayScale(depth);
 
       if (path.on === 'burst') {
         // 爆火: a small circle of fire where it hit.
         const radius = BurstReach * more;
-        battlefield.cull(x, y, radius, 1 + Math.floor(depth / 2));
+        battlefield.cull(x, y, radius, burstMost(depth));
         this.push('火', 'burst', x, y, 0, 0, 0, 0.42, radius, 0);
         this.spark(x, y, 7, '火', 260, heading, 2.2);
       } else if (path.on === 'shove') {
@@ -2308,3 +2340,30 @@ function seeded(seed: number): () => number {
 
 
 
+
+/**
+ * What the codex quotes. Gathered here, after everything is declared, so it is a list of the
+ * numbers the fight uses rather than a second set of them.
+ */
+export const CodexNumbers = {
+  slashSpeed: SlashSpeed,
+  slashSeconds: SlashSeconds,
+  shotRange: ShotRange,
+  charmSeconds: 2.4,
+  guardCool: GuardCool,
+  swordFlurry: SwordFlurry,
+  burstReach: BurstReach,
+  ringReach: RingReachWay,
+  rootReach: RootReach,
+  rootSeconds: RootSeconds,
+  leechGift: LeechGift,
+  leechPerSecond: LeechPerSecond,
+  chillReach: ChillReach,
+  chillSeconds: ChillSeconds,
+  chillFactor: ChillFactor,
+  chainReach: ChainReach,
+  burnSeconds: BurnSeconds,
+  quakeReach: QuakeWay,
+  shellBack: ShellBack,
+  shellReach: ShellReach,
+};

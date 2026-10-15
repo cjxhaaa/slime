@@ -126,6 +126,50 @@ export interface Dictionary {
   /** 五行: the ten ways, by their key. */
   ways: Record<Way, Named>;
 
+  /**
+   * 图鉴, in Settings: what every weapon and way does, in plain words with the real numbers, and how
+   * merging works. Written for a player reading a game's codex — the rule and the numbers, nothing
+   * about why. `{name}` placeholders are filled from the same constants the fight uses.
+   */
+  codex: {
+    /** The lines under the grade ladder: how to merge and what comes out. */
+    mergeHow: string[];
+    /** One grade, `{n}`. */
+    grade: string;
+    /** Under each list: the rule that applies to all of them. */
+    armsNote: string;
+    waysNote: string;
+    /** The tooltip's footer. */
+    hoverHint: string;
+    /** `{v}` seconds. */
+    seconds: string;
+    /** Column headings in a tooltip's grade table. */
+    stat: {
+      damage: string;
+      every: string;
+      blades: string;
+      swords: string;
+      nodes: string;
+      ring: string;
+      pierce: string;
+      knock: string;
+      hold: string;
+      heal: string;
+      patch: string;
+      jump: string;
+      burn: string;
+      blast: string;
+      targets: string;
+      rings: string;
+      reach: string;
+      layers: string;
+    };
+    /** What each weapon does, at its first grade. */
+    arms: Record<Weapon, string>;
+    /** What each way does, at its first grade. */
+    ways: Record<Way, string>;
+  };
+
   /** The two headings over the yard's pickers in Settings: weapons, and the ten. */
   kit: {
     arm: string;
@@ -200,6 +244,17 @@ export interface Dictionary {
     listSep: string;
     listColon: string;
     languageTitle: string;
+    /** The settings tab that holds the language and the two switches. */
+    generalTitle: string;
+    /** The settings window's own title, on the plaque across its top: the pet's 洞府. */
+    abodeTitle: string;
+    /** The seal on the skin card being worn — one character, or a mark where a script has none. */
+    skinWorn: string;
+
+    /** 图鉴: the settings tab listing every weapon and way, and the grades they come in. */
+    codexTitle: string;
+    /** The heading over the grade ladder. */
+    codexGrades: string;
     /** Appended to the blurb while nothing has been chosen and the system is being followed. */
     languageAuto: string;
     quitLabel: string;

@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   ELEMENTS,
   MaxDepth,
@@ -21,6 +22,15 @@ import {
   words,
 } from './i18n';
 import { type LocalText, pickText } from './skins/manifest';
+import { Slime } from './slime/Slime';
+import type { Skin } from './slime/skin';
+import { listSkins, loadSkin } from './skins/catalog';
+import { lookFor } from './game/appearance';
+import { Cultivation } from './game/cultivation';
+import { drawWayIcon, drawWeaponIcon, wayTint } from './ui/icons';
+import { type Sheet, armsNote, waySheet, weaponSheet } from './ui/codex';
+import { GRADES, Tiers, tintOf } from './game/gear';
+import type { Mood } from './slime/Slime';
 
 // A settings page that fails silently is indistinguishable from one that never loaded, which is
 // exactly the hole this fell into: a blank white window with no way to tell whether the document,
@@ -49,6 +59,23 @@ ${message}`;
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
+/**
+ * The window has no system frame, so it closes itself: the seal in the plaque's corner, or Esc.
+ * Closing only hides it — Rust turns the close into a hide, because the window is made once at
+ * startup and could not be made again (see `toggle_settings` in lib.rs).
+ */
+function closeWindow(): void {
+  try {
+    void getCurrentWindow().close().catch(() => {});
+  } catch {
+    /* Not inside Tauri. */
+  }
+}
+el<HTMLButtonElement>('close').addEventListener('click', closeWindow);
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeWindow();
+});
+
 const quitButton = el<HTMLButtonElement>('quit');
 quitButton.addEventListener('click', () => void invoke('quit_app'));
 
@@ -64,7 +91,7 @@ const rebirthWarn = el<HTMLParagraphElement>('rebirth-warn');
  * for a thing you cannot do for four days is exactly the kind of furniture the rest of this app
  * refuses to put on screen.
  */
-void listen<{ ascended: boolean; ascensions: number; realm: string; feats: string[] }>(
+const petStateHeard = listen<{ ascended: boolean; ascensions: number; realm: string; realmLevel?: number; feats: string[] }>(
   'pet-state',
   (event) => {
     const state = event.payload;
@@ -72,6 +99,11 @@ void listen<{ ascended: boolean; ascensions: number; realm: string; feats: strin
     saveState = state;
     earned = new Set(state.feats ?? []);
     armed = false;
+    el<HTMLParagraphElement>('hero-realm').textContent = state.realm;
+    if (typeof state.realmLevel === 'number' && state.realmLevel !== realmLevel) {
+      realmLevel = state.realmLevel;
+      paintPets();
+    }
     paintRebirth();
     paintFeats();
   },
@@ -90,27 +122,39 @@ let earned = new Set<string>();
 function paintFeats(): void {
   const w = words();
   el<HTMLHeadingElement>('feats-title').textContent = w.settings.featsTitle;
+  const done = FEAT_IDS.filter((id) => earned.has(id)).length;
   el<HTMLParagraphElement>('feats-count').textContent = fill(w.settings.featsCount, {
-    done: FEAT_IDS.filter((id) => earned.has(id)).length,
+    done,
     all: FEAT_IDS.length,
   });
+  el<HTMLElement>('feats-meter').style.width = `${(100 * done) / Math.max(1, FEAT_IDS.length)}%`;
+  // Earned first, so the wall opens on what has been done rather than on a field of gaps.
+  const order = [...FEAT_IDS].sort((a, b) => Number(earned.has(b)) - Number(earned.has(a)));
   el<HTMLDivElement>('feats-list').replaceChildren(
-    ...FEAT_IDS.map((id) => {
+    ...order.map((id) => {
       const row = document.createElement('div');
       const got = earned.has(id);
       row.className = got ? 'feat' : 'feat todo';
+      // A medal with the feat's first character on it — gold when earned, a grey disc when not.
+      const medal = document.createElement('i');
+      medal.className = 'medal';
+      medal.textContent = Array.from(featName(id))[0] ?? '';
       const name = document.createElement('b');
       name.textContent = featName(id);
+      name.title = featName(id);
       const blurb = document.createElement('span');
-      // An unearned row still shows what it is called. Hiding the name behind question marks
-      // would turn the list into a puzzle to be solved, which is the nagging this has to avoid.
+      // An unearned one still shows what it is called. Hiding the name behind question marks
+      // would turn the wall into a puzzle to be solved, which is the nagging this has to avoid.
       blurb.textContent = got ? featBlurb(id) : w.settings.featsLocked;
-      row.append(name, blurb);
+      row.append(medal, name, blurb);
       return row;
     }),
   );
 }
-void emit('want-state');
+// Asked only once the answer has somewhere to land: `listen` registers asynchronously, and a
+// question sent before it has finished is answered to nobody — the window then opened on a blank
+// realm and an empty record until something else happened to change.
+void petStateHeard.then(() => emit('want-state')).catch(() => {});
 
 /**
  * Two clicks, because this is the one irreversible thing in the app.
@@ -322,18 +366,27 @@ function paintSkins(): void {
     ...rows
       .filter((row) => row.error === null)
       .map((row) => {
-        const chip = document.createElement('button');
-        chip.className = 'chip';
-        chip.type = 'button';
-        chip.textContent = skinName(row);
-        if (row.author) chip.title = fill(w.settings.skinBy, { author: row.author });
+        // A card with the slime drawn in it, wearing that skin — the thing being chosen, rather
+        // than its name in a pill.
+        const card = document.createElement('button');
+        card.className = 'skin';
+        card.type = 'button';
+        const worn = row.id === skinState?.worn;
+        const thumb = document.createElement('canvas');
+        thumb.dataset.skin = row.id;
+        const label = document.createElement('span');
+        label.textContent = skinName(row);
+        card.append(thumb, label);
+        if (row.author) card.title = fill(w.settings.skinBy, { author: row.author });
         // What is on the pet, not what was asked for: the two differ while a skin is loading, and
         // for good when the one asked for turned out to be broken.
-        chip.setAttribute('aria-pressed', String(row.id === skinState?.worn));
-        chip.addEventListener('click', () => tell('skin-changed', row.id));
-        return chip;
+        card.setAttribute('aria-pressed', String(worn));
+        card.dataset.worn = w.settings.skinWorn;
+        card.addEventListener('click', () => tell('skin-changed', row.id));
+        return card;
       }),
   );
+  paintPets();
   el<HTMLDivElement>('skin-broken').replaceChildren(
     ...rows
       .filter((row) => row.error !== null)
@@ -354,11 +407,11 @@ el<HTMLButtonElement>('skin-folder').addEventListener('click', () => {
 });
 el<HTMLButtonElement>('skin-rescan').addEventListener('click', () => tell('skins-rescan'));
 
-void listen<{ chosen: string; worn: string; skins: SkinRow[] }>('skin-state', (event) => {
+const skinStateHeard = listen<{ chosen: string; worn: string; skins: SkinRow[] }>('skin-state', (event) => {
   skinState = event.payload;
   paintSkins();
 });
-tell('want-skins');
+void skinStateHeard.then(() => tell('want-skins')).catch(() => {});
 
 /** The arena's headings and buttons, which are static markup in every other section. */
 function paintArena(): void {
@@ -369,19 +422,308 @@ function paintArena(): void {
   el<HTMLButtonElement>('quit').textContent = w.settings.quitLabel;
 }
 
+// ---------------------------------------------------------------------------------------------
+// The pet, drawn here: the hero at the top and a slime on every skin card.
+//
+// The same `Slime` the overlay draws, held still rather than simulated — what a card has to show is
+// what the skin looks like, and the hero only has to answer a hover and a poke. Skins are loaded
+// once each, by id, from the same catalogue the overlay reads.
+
+let realmLevel = 0;
+const skinCache = new Map<string, Promise<Skin | null>>();
+let skinIds: Promise<Map<string, Awaited<ReturnType<typeof listSkins>>[number]>> | null = null;
+
+function skinFor(id: string): Promise<Skin | null> {
+  let found = skinCache.get(id);
+  if (!found) {
+    skinIds ??= listSkins().then((all) => new Map(all.map((entry) => [entry.id, entry])));
+    found = skinIds
+      .then((all) => {
+        const entry = all.get(id);
+        return entry && !entry.error ? loadSkin(entry) : null;
+      })
+      .catch(() => null);
+    skinCache.set(id, found);
+  }
+  return found;
+}
+
+/**
+ * One slime into a canvas: sized to the canvas's CSS box, scaled by `zoom`, standing a little below
+ * the middle so the ears and the hats some skins wear have room above it.
+ */
+function drawPet(canvas: HTMLCanvasElement, skin: Skin, mood: Mood, zoom: number): void {
+  const box = canvas.getBoundingClientRect();
+  const width = box.width || canvas.width;
+  const height = box.height || canvas.height;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0);
+  context.clearRect(0, 0, width / zoom, height / zoom);
+  const pet = new Cultivation(0);
+  pet.realm = realmLevel;
+  const slime = new Slime(width / 2 / zoom, (height * 0.62) / zoom);
+  slime.setSkin(skin);
+  slime.setLook(lookFor(pet, skin.realms));
+  slime.mood = mood;
+  slime.beginFrame(1);
+  slime.draw(context);
+}
+
+const heroCanvas = el<HTMLCanvasElement>('hero-pet');
+let heroMood: Mood = 'idle';
+let heroPoke: number | null = null;
+
+function paintHero(): void {
+  const worn = skinState?.worn;
+  if (!worn) return;
+  void skinFor(worn).then((skin) => {
+    if (skin) drawPet(heroCanvas, skin, heroMood, 0.55);
+  });
+}
+
+function paintPets(): void {
+  paintHero();
+  for (const thumb of document.querySelectorAll<HTMLCanvasElement>('canvas[data-skin]')) {
+    const id = thumb.dataset.skin ?? '';
+    void skinFor(id).then((skin) => {
+      if (skin) drawPet(thumb, skin, id === skinState?.worn ? 'happy' : 'idle', 0.5);
+    });
+  }
+}
+
+// It notices you: happy under the pointer, startled by a poke, back to itself when you leave.
+heroCanvas.addEventListener('pointerenter', () => {
+  heroMood = 'happy';
+  paintHero();
+});
+heroCanvas.addEventListener('pointerleave', () => {
+  heroMood = 'idle';
+  paintHero();
+});
+heroCanvas.addEventListener('click', () => {
+  heroMood = 'surprised';
+  heroCanvas.classList.remove('poked');
+  void heroCanvas.offsetWidth;
+  heroCanvas.classList.add('poked');
+  paintHero();
+  if (heroPoke !== null) window.clearTimeout(heroPoke);
+  heroPoke = window.setTimeout(() => {
+    heroMood = heroCanvas.matches(':hover') ? 'happy' : 'idle';
+    paintHero();
+  }, 700);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Tabs. Remembered per machine, because opening on the tab you were last in is what a settings
+// window that gets opened twice a week should do; forgotten without complaint where storage is not
+// there.
+
+type Tab = 'look' | 'general' | 'codex' | 'record' | 'yard';
+/**
+ * 演武场 only in a dev build. It is a tool for looking at one effect over and over, which is a
+ * developer's job; what a player wants from this window is the codex.
+ */
+const ShowYard = import.meta.env.DEV;
+const Tabs: Tab[] = ShowYard ? ['look', 'general', 'codex', 'record', 'yard'] : ['look', 'general', 'codex', 'record'];
+el<HTMLButtonElement>('tab-yard').hidden = !ShowYard;
+document.querySelector<HTMLElement>('.tabs')?.style.setProperty('grid-template-columns', `repeat(${Tabs.length}, 1fr)`);
+let tab: Tab = 'look';
+try {
+  const kept = localStorage.getItem('settings-tab');
+  if (kept && (Tabs as string[]).includes(kept)) tab = kept as Tab;
+} catch {
+  /* No storage; open on the first tab. */
+}
+
+function showTab(next: Tab): void {
+  tab = next;
+  for (const button of document.querySelectorAll<HTMLButtonElement>('.tabs button')) {
+    button.setAttribute('aria-selected', String(button.dataset.tab === next));
+  }
+  for (const panel of document.querySelectorAll<HTMLElement>('.panel')) {
+    panel.hidden = panel.dataset.panel !== next;
+  }
+  hideTip();
+  // Each hall opens at its top, not wherever the last one was scrolled to.
+  document.querySelector('main')?.scrollTo(0, 0);
+  try {
+    localStorage.setItem('settings-tab', next);
+  } catch {
+    /* Not remembered, which is fine. */
+  }
+  // A canvas in a hidden panel has no size to draw at, so the cards are drawn when they show.
+  if (next === 'look') paintPets();
+}
+
+for (const button of document.querySelectorAll<HTMLButtonElement>('.tabs button')) {
+  button.addEventListener('click', () => showTab(button.dataset.tab as Tab));
+}
+
+/** Every section title wears a seal of its own first character. Drawn by CSS from this attribute. */
+function sealTitles(): void {
+  for (const title of document.querySelectorAll<HTMLElement>('h2')) {
+    title.dataset.seal = Array.from(title.textContent ?? '')[0] ?? '';
+  }
+}
+
+function paintTabs(): void {
+  const w = words();
+  el<HTMLElement>('abode-title').textContent = w.settings.abodeTitle;
+  el<HTMLButtonElement>('tab-look').textContent = w.settings.skinTitle;
+  el<HTMLButtonElement>('tab-general').textContent = w.settings.generalTitle;
+  el<HTMLButtonElement>('tab-yard').textContent = w.settings.arenaTitle;
+  el<HTMLButtonElement>('tab-codex').textContent = w.settings.codexTitle;
+  el<HTMLButtonElement>('tab-record').textContent = w.settings.featsTitle;
+}
+
 /** Everything in this window that has words in it. */
 function paintAll(): void {
   // Tells the browser what it is laying out, which is what picks the right CJK glyph forms when a
   // font has to be fallen back to — the shapes of 直 and 類 are not the same in all three.
   document.documentElement.lang = locale();
+  paintTabs();
   paintLanguage();
   paintSkins();
   paintRebirth();
   paintArena();
   paintSwitches();
   paintFeats();
+  paintCodex();
   render();
+  sealTitles();
 }
+
+/**
+ * 图鉴. Every weapon and every way: its icon, its name and what it does in plain words with the
+ * real numbers; above them the grade ladder and the merge rules, written as instructions. Hovering
+ * an entry (or focusing it) shows how it grows, grade by grade, in a table.
+ */
+function paintCodex(): void {
+  const w = words();
+  el<HTMLHeadingElement>('codex-grades-title').textContent = w.settings.codexGrades;
+  el<HTMLHeadingElement>('codex-arms-title').textContent = w.kit.arm;
+  el<HTMLHeadingElement>('codex-ways-title').textContent = w.kit.way;
+  el<HTMLParagraphElement>('codex-arms-note').textContent = armsNote();
+  el<HTMLParagraphElement>('codex-ways-note').textContent = w.codex.waysNote;
+
+  const ladder: HTMLElement[] = [];
+  for (let tier = 1; tier <= Tiers; tier++) {
+    if (tier > 1) {
+      const step = document.createElement('i');
+      step.className = 'step';
+      ladder.push(step);
+    }
+    const rung = document.createElement('span');
+    rung.className = 'rung';
+    rung.style.setProperty('--grade', GRADES[tier - 1].tint);
+    rung.title = fill(w.codex.grade, { n: tier });
+    const label = document.createElement('small');
+    label.textContent = fill(w.codex.grade, { n: tier });
+    rung.append(icon((context, size) => drawWeaponIcon(context, '剑', size, tintOf(tier)), 30), label);
+    ladder.push(rung);
+  }
+  el<HTMLDivElement>('codex-ladder').replaceChildren(...ladder);
+  el<HTMLOListElement>('codex-merge').replaceChildren(
+    ...w.codex.mergeHow.map((line) => {
+      const item = document.createElement('li');
+      item.textContent = line;
+      return item;
+    }),
+  );
+
+  const card = (art: HTMLCanvasElement, name: string, sheet: Sheet): HTMLElement => {
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    entry.tabIndex = 0;
+    const title = document.createElement('b');
+    title.textContent = name;
+    const line = document.createElement('span');
+    line.textContent = sheet.text;
+    entry.append(art, title, line);
+    const show = () => showTip(entry, name, sheet);
+    entry.addEventListener('pointerenter', show);
+    entry.addEventListener('focus', show);
+    entry.addEventListener('pointerleave', hideTip);
+    entry.addEventListener('blur', hideTip);
+    return entry;
+  };
+  el<HTMLDivElement>('codex-arms').replaceChildren(
+    ...WEAPONS.map((key) =>
+      card(icon((context, size) => drawWeaponIcon(context, key, size, tintOf(1)), 40), w.arms[key].name, weaponSheet(key)),
+    ),
+  );
+  const ways: HTMLElement[] = [];
+  for (const of of ELEMENTS) {
+    const seal = document.createElement('span');
+    seal.className = 'of';
+    seal.textContent = w.elements[of];
+    ways.push(seal);
+    for (const key of waysOf(of)) {
+      ways.push(card(icon((context, size) => drawWayIcon(context, key, size, wayTint(key)), 32), w.ways[key].name, waySheet(key)));
+    }
+  }
+  el<HTMLDivElement>('codex-ways').replaceChildren(...ways);
+}
+
+const tip = el<HTMLDivElement>('codex-tip');
+
+/**
+ * The grade table for one entry, floated beside it: a row a grade, with the grade's colour in the
+ * first column — the same colour the item wears on the bar at that grade.
+ */
+function showTip(anchor: HTMLElement, name: string, sheet: Sheet): void {
+  const w = words();
+  const title = document.createElement('b');
+  title.textContent = name;
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  for (const label of ['', ...sheet.columns.map((key) => w.codex.stat[key])]) {
+    const cell = document.createElement('th');
+    cell.textContent = label;
+    head.append(cell);
+  }
+  table.append(head);
+  sheet.rows.forEach((values, i) => {
+    const row = document.createElement('tr');
+    const grade = document.createElement('td');
+    const swatch = document.createElement('i');
+    swatch.style.background = GRADES[i].tint;
+    grade.append(swatch, fill(w.codex.grade, { n: i + 1 }));
+    row.append(grade);
+    for (const value of values) {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.append(cell);
+    }
+    table.append(row);
+  });
+  const foot = document.createElement('small');
+  foot.textContent = w.codex.hoverHint;
+  tip.replaceChildren(title, table, foot);
+  tip.hidden = false;
+
+  // Below the entry if it fits, above it if not, and never off the side of the window.
+  const box = anchor.getBoundingClientRect();
+  const frame = document.querySelector('.frame')?.getBoundingClientRect() ?? document.body.getBoundingClientRect();
+  const width = tip.offsetWidth;
+  const height = tip.offsetHeight;
+  const left = Math.max(frame.left + 8, Math.min(frame.right - width - 8, box.left + box.width / 2 - width / 2));
+  const below = box.bottom + 6;
+  const top = below + height <= frame.bottom - 8 ? below : Math.max(frame.top + 8, box.top - height - 6);
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function hideTip(): void {
+  tip.hidden = true;
+}
+
+// A scroll moves the entry out from under its table; the table goes rather than floating free.
+document.querySelector('main')?.addEventListener('scroll', hideTip, { passive: true });
 
 /**
  * The yard's kit: one weapon and up to three 五行, with a depth each.
@@ -437,6 +779,20 @@ function toggle(way: Way): void {
   render();
 }
 
+/** A small icon for a chip, drawn by the same code the bar draws its items with. */
+function icon(draw: (context: CanvasRenderingContext2D, size: number) => void, size: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(size * dpr);
+  canvas.height = Math.round(size * dpr);
+  const context = canvas.getContext('2d');
+  if (context) {
+    context.setTransform(dpr, 0, 0, dpr, (size * dpr) / 2, (size * dpr) / 2);
+    draw(context, size);
+  }
+  return canvas;
+}
+
 /** A depth slider with its readout, which both rows want and neither wants twice. */
 function depthRow(label: string, depth: number, onChange: (next: number) => void): HTMLDivElement {
   const row = document.createElement('div');
@@ -475,7 +831,7 @@ function render(): void {
       const chip = document.createElement('button');
       chip.className = 'chip';
       chip.type = 'button';
-      chip.textContent = w.arms[key].name;
+      chip.append(icon((context, size) => drawWeaponIcon(context, key, size, tintOf(1)), 34), w.arms[key].name);
       chip.setAttribute('aria-pressed', String(arm.weapon === key));
       chip.addEventListener('click', () => {
         // One at a time, and swapping keeps the depth — the yard is for comparing deliveries, and
@@ -499,7 +855,7 @@ function render(): void {
       const chip = document.createElement('button');
       chip.className = 'chip';
       chip.type = 'button';
-      chip.textContent = w.ways[key].name;
+      chip.append(icon((context, size) => drawWayIcon(context, key, size, wayTint(key)), 22), w.ways[key].name);
       chip.setAttribute('aria-pressed', String(walks(key)));
       chip.disabled = !walks(key) && walked.length >= Ways;
       chip.addEventListener('click', () => toggle(key));
@@ -557,11 +913,12 @@ render();
  * asks on open and is told on change, so a change made here and a change made anywhere else arrive
  * by the same path.
  */
-void listen<{ locale: Locale; chosen: string | null }>('locale-state', (event) => {
+const localeHeard = listen<{ locale: Locale; chosen: string | null }>('locale-state', (event) => {
   chosen = isLocale(event.payload.chosen) ? event.payload.chosen : null;
   setLocale(event.payload.locale);
   paintAll();
 });
-tell('want-locale');
+void localeHeard.then(() => tell('want-locale')).catch(() => {});
 
 paintAll();
+showTab(tab);

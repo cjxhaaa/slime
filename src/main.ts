@@ -553,6 +553,19 @@ function revealed(now: number): number {
 
 
 let pointerDown = false;
+/**
+ * The press landed on the interface — an open menu or panel, a chest, the bar — rather than on the
+ * pet. Such a press never grabs the body, and its release is a click however long it was held.
+ *
+ * Both of those used to be wrong. The level's picker and its pause panel sit in the middle of the
+ * screen, which is exactly where the slime stands in a level, so a press on a button over it picked
+ * the slime up instead; and every click on the interface went through the poke test, which drops
+ * any press held longer than a quarter of a second — right for telling a poke from a drag on the
+ * body, and simply a lost click on a menu.
+ */
+let uiPress = false;
+/** How far a press on the interface may wander and still be a click, in pixels. */
+const UI_SLOP_PX = 12;
 let showingPaw = false;
 
 function unionRect(a: Rect | null, b: Rect | null): Rect | null {
@@ -1246,6 +1259,9 @@ function emitPetState(): void {
     ascended: cultivation.ascended,
     ascensions: cultivation.ascensions,
     realm: cultivation.describe(),
+    // The number as well as the words, so the settings window can draw its slime in the colour and
+    // size this one is wearing.
+    realmLevel: cultivation.realm,
     // Settings keeps no copy of the save; it renders what this window says, same as everything
     // else over there. Sent with the rest rather than on its own channel because they change at
     // the same moments and one message is one fewer thing that can arrive out of order.
@@ -1852,6 +1868,65 @@ function frame(now: number): void {
 }
 
 
+/**
+ * Whether a press here is the interface's rather than the pet's. An open menu, the pause and the
+ * level's picker take every press — a press outside a menu is how it is dismissed — and in a level
+ * so do a chest and the bar.
+ */
+function overInterface(x: number, y: number): boolean {
+  if (pause.isOpen || picker.isOpen || menu.isOpen) return true;
+  return inTrial && arena === null && (trial.chestAt(x, y) >= 0 || bar.contains(x, y));
+}
+
+/** A click on the interface, wherever it landed. See `uiPress`. */
+function tapInterface(x: number, y: number): void {
+  // The pause first: while it is up the level is stopped, and the one thing worth clicking is the
+  // way back in or out.
+  if (pause.isOpen) {
+    const choice = pause.click(x, y);
+    if (choice === 'resume') pause.hide();
+    else if (choice === 'leave') leaveTrial();
+    paw.ping(x, y);
+    return;
+  }
+  if (picker.isOpen) {
+    const pick = picker.click(x, y);
+    const chosen = picker.choice;
+    if (pick === 'start' && chosen) beginLevel(chosen);
+    else if (pick === 'leave') leaveTrial();
+    paw.ping(x, y);
+    return;
+  }
+  if (menu.isOpen) {
+    const picked = menu.click(x, y);
+    // An `inert` hit is a disabled row, and it leaves the menu up: closing it would look as though
+    // the click had worked.
+    if (picked.kind === 'dismiss') {
+      menu.hide();
+      fullRepaint = true;
+    } else if (picked.kind === 'chose') {
+      chooseFromMenu(picked.id);
+    }
+    return;
+  }
+  if (inTrial && arena === null) {
+    // 宝箱 first: it sits on the field, and a click on it is never meant for anything else.
+    const chest = trial.chestAt(x, y);
+    if (chest >= 0) {
+      trial.openChest(chest);
+      paw.ping(x, y);
+      fullRepaint = true;
+      return;
+    }
+    const hit = bar.click(x, y);
+    if (hit) {
+      if (hit.kind === 'buy') buyOne();
+      else if (hit.kind === 'slot') pressSlot(hit.index);
+      paw.ping(x, y);
+    }
+  }
+}
+
 function wirePointer(): void {
   canvas.addEventListener('pointerdown', (event) => {
     pressedAt = performance.now();
@@ -1861,6 +1936,7 @@ function wirePointer(): void {
     cursor = { x: event.clientX, y: event.clientY };
     // An item on the bar, taken in hand: it may become a drag onto another (a merge), or it may be
     // let go where it was, which is a click. Either way the press is the bar's and nothing else's.
+    uiPress = false;
     if (inTrial && arena === null && !pause.isOpen && !picker.isOpen && !menu.isOpen) {
       if (bar.grab(event.clientX, event.clientY, pack)) {
         try {
@@ -1871,6 +1947,10 @@ function wirePointer(): void {
         fullRepaint = true;
         return;
       }
+    }
+    if (overInterface(event.clientX, event.clientY)) {
+      uiPress = true;
+      return;
     }
     if (slime.hitTest(event.clientX, event.clientY)) {
       if (slime.devourPhase !== null) {
@@ -1967,6 +2047,11 @@ function wirePointer(): void {
       paw.ping(event.clientX, event.clientY);
       return;
     }
+    if (uiPress) {
+      uiPress = false;
+      if (moved < UI_SLOP_PX) tapInterface(event.clientX, event.clientY);
+      return;
+    }
     if (pullPending) {
       pullPending = false;
       if (canvas.hasPointerCapture(event.pointerId)) {
@@ -2022,52 +2107,6 @@ function wirePointer(): void {
     }
     // A short press that barely moved is a poke, not a throw.
     if (heldFor < 260 && moved < 6) {
-      // The pause first: while it is up the level is stopped, and the one thing worth clicking is
-      // the way back in or out.
-      if (pause.isOpen) {
-        const choice = pause.click(event.clientX, event.clientY);
-        if (choice === 'resume') pause.hide();
-        else if (choice === 'leave') leaveTrial();
-        paw.ping(event.clientX, event.clientY);
-        return;
-      }
-      if (picker.isOpen) {
-        const pick = picker.click(event.clientX, event.clientY);
-        const chosen = picker.choice;
-        if (pick === 'start' && chosen) beginLevel(chosen);
-        else if (pick === 'leave') leaveTrial();
-        paw.ping(event.clientX, event.clientY);
-        return;
-      }
-      if (inTrial && arena === null) {
-        // 宝箱 first: it sits on the field, and a click on it is never meant for anything else.
-        const chest = trial.chestAt(event.clientX, event.clientY);
-        if (chest >= 0) {
-          trial.openChest(chest);
-          paw.ping(event.clientX, event.clientY);
-          fullRepaint = true;
-          return;
-        }
-        const hit = bar.click(event.clientX, event.clientY);
-        if (hit) {
-          if (hit.kind === 'buy') buyOne();
-          else if (hit.kind === 'slot') pressSlot(hit.index);
-          paw.ping(event.clientX, event.clientY);
-          return;
-        }
-      }
-      if (menu.isOpen) {
-        const picked = menu.click(event.clientX, event.clientY);
-        // An `inert` hit is a disabled row, and it leaves the menu up: closing it would look as
-        // though the click had worked.
-        if (picked.kind === 'dismiss') {
-          menu.hide();
-          fullRepaint = true;
-        } else if (picked.kind === 'chose') {
-          chooseFromMenu(picked.id);
-        }
-        return;
-      }
       if (slime.hasLiveAlert) {
         // The bubble is part of the alert's target, so a click anywhere on it answers it.
         slime.poke(event.clientX, event.clientY);

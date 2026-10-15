@@ -1,22 +1,52 @@
+/*
+ * 洞府 — the pet's own hall, in the look of a cultivation sect rather than a system dialog: rice
+ * paper and ink, a lacquered plaque across the top, cinnabar seals on every heading, jade for what
+ * is chosen and gold for what is earned. Night is the same hall in lacquer and gold leaf.
+ *
+ * Every colour is a token, so the dark theme is the same page in different light rather than a
+ * second design to keep in step.
+ */
 :root {
   color-scheme: light dark;
-  --bg: #faf9f7;
-  --panel: #ffffff;
-  --ink: #14201d;
-  --muted: #6b7370;
-  --line: #e6e4e0;
-  --accent: #1d9c85;
-  --danger: #c0483f;
+  --paper: #f4ead3;
+  --paper-2: #efe1c2;
+  --card: #fbf5e6;
+  --card-soft: #f3e8cd;
+  --ink: #2a211b;
+  --muted: #7b6a58;
+  --line: #d8c5a0;
+  --line-strong: #b89a64;
+  --jade: #3f8f7a;
+  --jade-2: #6cc2a6;
+  --jade-ink: #0e2c24;
+  --cinnabar: #b8322a;
+  --cinnabar-2: #d5523f;
+  --gold: #c9a24a;
+  --gold-2: #e8cf8a;
+  --lacquer: #3b1d16;
+  --lacquer-2: #5a2a1e;
+  --mountain: rgba(60, 50, 40, 0.1);
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 2px 8px rgba(80, 55, 25, 0.12);
+  --title: 'KaiTi', 'STKaiti', 'Kaiti SC', 'BiauKai', 'SimKai', 'Noto Serif CJK SC', serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #12161a;
-    --panel: #1a1f24;
-    --ink: #e8ecea;
-    --muted: #99a3a0;
-    --line: #2a3138;
-    --accent: #4fd6b8;
+    --paper: #17120f;
+    --paper-2: #1f1813;
+    --card: #231b16;
+    --card-soft: #2b221b;
+    --ink: #eadfc8;
+    --muted: #a8977c;
+    --line: #4a3a2a;
+    --line-strong: #7a5f38;
+    --jade: #4fb497;
+    --jade-2: #7fdcbc;
+    --jade-ink: #08231c;
+    --cinnabar: #c9443a;
+    --cinnabar-2: #e2604f;
+    --mountain: rgba(232, 207, 138, 0.06);
+    --shadow: 0 1px 0 rgba(255, 230, 180, 0.05) inset, 0 2px 10px rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -24,79 +54,448 @@
   box-sizing: border-box;
 }
 
+html,
 body {
+  height: 100%;
   margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font: 14px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
 }
+
+/* The window is transparent and frameless; the frame below is all there is of it. */
+body {
+  background: transparent;
+  color: var(--ink);
+  font: 14px/1.55 'Microsoft YaHei UI', 'PingFang SC', 'Segoe UI', system-ui, sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+.frame {
+  position: absolute;
+  inset: 8px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1.5px solid var(--line-strong);
+  /* Rice paper: a warm wash, a faint fibre, and ink-wash mountains along the foot of the page. */
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 480 120' preserveAspectRatio='none'%3E%3Cpath d='M0 120V78l40-20 30 14 46-38 40 28 34-16 52 34 40-22 44 18 50-40 44 30 60-12v74Z' fill='%23000' fill-opacity='.08'/%3E%3Cpath d='M0 120V96l56-18 44 12 60-26 52 22 70-20 60 24 58-14 80 16v28Z' fill='%23000' fill-opacity='.07'/%3E%3C/svg%3E")
+      bottom / 100% 120px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .4 0 0 0 0 .3 0 0 0 0 .2 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(120% 70% at 50% 0%, var(--paper) 0%, var(--paper-2) 100%);
+  box-shadow: 0 6px 18px rgba(40, 25, 10, 0.35), 0 0 0 4px rgba(201, 162, 74, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  .frame {
+    border-color: var(--gold);
+  }
+}
+
+/* ---- the plaque ------------------------------------------------------------------------ */
+
+.titlebar {
+  position: relative;
+  flex: none;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, var(--lacquer-2), var(--lacquer));
+  border-bottom: 2px solid var(--gold);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 220, 160, 0.15);
+  cursor: grab;
+}
+
+.plaque {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 18px;
+  border: 1px solid rgba(232, 207, 138, 0.55);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 2px rgba(59, 29, 22, 0.9), inset 0 0 0 3px rgba(232, 207, 138, 0.3);
+}
+
+.plaque b {
+  font-family: var(--title);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  margin-right: -0.5em;
+  color: var(--gold-2);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+/* A little diamond knot either side of the name, the way a hall's board is hung. */
+.knot {
+  width: 6px;
+  height: 6px;
+  transform: rotate(45deg);
+  background: var(--gold);
+}
+
+.close {
+  position: absolute;
+  right: 8px;
+  top: 7px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid rgba(232, 207, 138, 0.5);
+  background: var(--cinnabar);
+  color: #fff3e0;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--cinnabar-2);
+}
+
+/* ---- the pet ---------------------------------------------------------------------------- */
+
+.hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px 6px 16px;
+  flex: none;
+}
+
+/* A jade moon behind the slime, ringed in gold. */
+.moon {
+  flex: none;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 40% 35%, rgba(255, 255, 255, 0.75), rgba(108, 194, 166, 0.35) 55%, rgba(63, 143, 122, 0.25) 100%);
+  box-shadow: inset 0 0 0 2px rgba(201, 162, 74, 0.55), inset 0 0 0 6px rgba(255, 255, 255, 0.25), 0 2px 8px rgba(63, 143, 122, 0.25);
+}
+
+#hero-pet {
+  width: 120px;
+  height: 112px;
+  margin-top: -14px;
+  cursor: pointer;
+  transform-origin: 50% 82%;
+  animation: breathe 3.4s ease-in-out infinite;
+}
+
+/* A poke: squashed, then up and wobbling back. */
+#hero-pet.poked {
+  animation: boing 0.55s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.025, 0.975);
+  }
+}
+
+@keyframes boing {
+  0% {
+    transform: scale(1.18, 0.8);
+  }
+  40% {
+    transform: translateY(-8px) scale(0.92, 1.1);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.hero-text {
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* The name is Latin, which a 楷体 sets wide and flat; an old-style serif sits with it instead. */
+h1 {
+  font-family: 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  font-size: 32px;
+  font-weight: 700;
+  font-style: italic;
+  margin: 0 0 6px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+/* The realm, hung beside the name as a cinnabar banner with a gold edge. */
+.hero-realm {
+  margin: 0;
+  display: inline-block;
+  padding: 3px 12px 3px 10px;
+  background: var(--cinnabar);
+  color: #fff3e0;
+  font-family: var(--title);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--gold);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 50%, 100% 100%, 0 100%);
+  padding-right: 18px;
+}
+
+.hero-realm:empty {
+  display: none;
+}
+
+/* 祥云, drifting in the corner. */
+.clouds {
+  position: absolute;
+  right: 10px;
+  top: 6px;
+  width: 150px;
+  height: 66px;
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.3;
+  opacity: 0.55;
+  animation: drift 9s ease-in-out infinite;
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #hero-pet,
+  #hero-pet.poked,
+  .clouds {
+    animation: none;
+  }
+}
+
+/* ---- the four halls ---------------------------------------------------------------------- */
+
+/* Jade tokens on a cord: the one picked hangs lower and glows. */
+.tabs {
+  flex: none;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 4px 16px 8px;
+  padding-top: 6px;
+}
+
+.tabs::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--cinnabar);
+  opacity: 0.8;
+}
+
+.tabs button {
+  position: relative;
+  font-family: var(--title);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 7px 4px 6px;
+  border-radius: 4px 4px 10px 10px;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, var(--card), var(--card-soft));
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s, color 0.15s;
+}
+
+/* The cord each token hangs from. */
+.tabs button::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  width: 2px;
+  height: 6px;
+  background: var(--cinnabar);
+}
+
+.tabs button:hover {
+  color: var(--ink);
+}
+
+.tabs button[aria-selected='true'] {
+  transform: translateY(3px);
+  color: #f4fff9;
+  border-color: var(--gold);
+  background: radial-gradient(circle at 40% 25%, var(--jade-2), var(--jade) 70%);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 3px 8px rgba(63, 143, 122, 0.4);
+}
+
+/* ---- the scrolling part ------------------------------------------------------------------ */
 
 main {
-  padding: 20px 22px 28px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 16px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
-h1 {
-  font-size: 20px;
-  margin: 0 0 18px;
+.panel[hidden] {
+  display: none;
 }
 
+.panel {
+  animation: unroll 0.2s ease-out;
+}
+
+@keyframes unroll {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Each section a sheet laid on the paper, with a thin double rule and corner brackets. */
+section {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow), inset 0 0 0 3px var(--card), inset 0 0 0 4px var(--line);
+}
+
+section::before,
+section::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: var(--gold);
+  border-style: solid;
+  pointer-events: none;
+}
+
+section::before {
+  left: 4px;
+  top: 4px;
+  border-width: 2px 0 0 2px;
+}
+
+section::after {
+  right: 4px;
+  bottom: 4px;
+  border-width: 0 2px 2px 0;
+}
+
+/* A section title with a cinnabar seal of its first character in front of it. */
 h2 {
-  font-size: 13px;
-  text-transform: uppercase;
+  font-family: var(--title);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   letter-spacing: 0.06em;
-  color: var(--muted);
+}
+
+h2::before {
+  content: attr(data-seal);
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  line-height: 1;
+  color: #fff3e0;
+  background: var(--cinnabar);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 243, 224, 0.55);
+  letter-spacing: 0;
+}
+
+p {
   margin: 0 0 10px;
 }
 
-section {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
+p:empty {
+  display: none;
 }
 
+section > p.muted:last-child {
+  margin-bottom: 0;
+}
+
+/* Lacquered cinnabar, gold-edged: the one thing on a sheet that does something. */
 button {
   font: inherit;
-  font-weight: 600;
-  padding: 9px 14px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: var(--accent);
-  color: #05231d;
+  font-weight: 700;
+  padding: 8px 18px;
+  border-radius: 4px;
+  border: 1px solid var(--gold);
+  background: linear-gradient(180deg, var(--cinnabar-2), var(--cinnabar));
+  color: #fff3e0;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 4px rgba(120, 30, 20, 0.3);
+  letter-spacing: 0.08em;
+  transition: transform 0.08s, filter 0.15s;
+}
+
+button:hover {
+  filter: brightness(1.06);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button.secondary {
+  background: var(--card-soft);
+  border-color: var(--line-strong);
+  color: var(--ink);
+  box-shadow: none;
 }
 
 button.link {
   background: none;
   border: none;
+  box-shadow: none;
   color: var(--muted);
-  padding: 8px 0;
+  padding: 6px 0;
   text-decoration: underline;
+  text-underline-offset: 3px;
+  letter-spacing: 0;
 }
 
 button.link.danger {
-  color: var(--danger);
-}
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-weight: 600;
-  margin-bottom: 10px;
-  cursor: pointer;
-}
-
-.check input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-  cursor: pointer;
+  color: var(--cinnabar);
 }
 
 .muted {
   color: var(--muted);
+  font-size: 13px;
 }
 
 footer {
@@ -104,6 +503,7 @@ footer {
   align-items: baseline;
   justify-content: center;
   gap: 10px;
+  padding: 2px 0 8px;
 }
 
 /* The one thing in here that is worth knowing and cannot be discovered by trying it. */
@@ -112,36 +512,210 @@ footer {
   color: var(--muted);
 }
 
-/* 演武场 */
+/* ---- switches: a jade bead in an ink groove ---------------------------------------------- */
+
+.check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-direction: row-reverse;
+  gap: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  padding: 9px 12px;
+  border-radius: 4px;
+  border: 1px dashed var(--line);
+  background: var(--card-soft);
+  cursor: pointer;
+}
+
+.check input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  position: relative;
+  width: 44px;
+  height: 22px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--line);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.check input::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #d9cdb5 70%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s cubic-bezier(0.3, 1.4, 0.6, 1), background 0.2s;
+}
+
+.check input:checked {
+  background: var(--lacquer);
+}
+
+.check input:checked::before {
+  transform: translateX(22px);
+  background: radial-gradient(circle at 35% 30%, #e9fff6, var(--jade-2) 45%, var(--jade) 90%);
+}
+
+.check input:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- chips ------------------------------------------------------------------------------- */
 
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 7px;
+  margin-bottom: 10px;
 }
 
 .chip {
   font: inherit;
-  font-weight: 600;
-  padding: 6px 11px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: none;
+  font-weight: 700;
+  padding: 6px 13px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--card-soft);
   color: var(--ink);
   cursor: pointer;
+  box-shadow: none;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.chip:hover {
+  border-color: var(--jade);
 }
 
 .chip[aria-pressed='true'] {
-  border-color: transparent;
-  background: var(--accent);
-  color: #05231d;
+  border-color: var(--gold);
+  background: radial-gradient(circle at 40% 25%, var(--jade-2), var(--jade) 75%);
+  color: #f4fff9;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 2px 5px rgba(63, 143, 122, 0.35);
 }
 
 .chip:disabled {
   opacity: 0.4;
   cursor: default;
 }
+
+.chip:disabled:hover {
+  border-color: var(--line-strong);
+}
+
+/* A weapon's or a way's icon in its chip, drawn by the same code the bar draws them with. */
+.chip canvas {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin-left: -5px;
+}
+
+.arms {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.arms .chip {
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px 6px;
+}
+
+.arms .chip canvas {
+  width: 34px;
+  height: 34px;
+  margin: 0;
+}
+
+/* ---- 形象 --------------------------------------------------------------------------------- */
+
+.skins {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* Each skin on a small hanging scroll. */
+.skin {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px 9px;
+  border-radius: 3px;
+  border: 1px solid var(--line-strong);
+  border-top: 5px solid var(--lacquer-2);
+  border-bottom: 5px solid var(--lacquer-2);
+  background: var(--card-soft);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-family: var(--title);
+  font-size: 16px;
+  letter-spacing: 0.06em;
+}
+
+.skin canvas {
+  width: 100px;
+  height: 84px;
+}
+
+.skin:hover {
+  border-color: var(--jade);
+  border-top-color: var(--lacquer-2);
+  border-bottom-color: var(--lacquer-2);
+}
+
+/* Worn: a cinnabar seal in the corner. */
+.skin[aria-pressed='true'] {
+  border-color: var(--gold);
+  border-top-color: var(--lacquer-2);
+  border-bottom-color: var(--lacquer-2);
+  background: radial-gradient(circle at 50% 35%, rgba(108, 194, 166, 0.3), var(--card-soft) 70%);
+}
+
+.skin[aria-pressed='true']::after {
+  content: attr(data-worn);
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: #fff3e0;
+  background: var(--cinnabar);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 243, 224, 0.5);
+  transform: rotate(-8deg);
+}
+
+/* 形象: skins in the folder that cannot be worn, and why. Paths and file names break anywhere. */
+.broken p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* ---- 演武场 -------------------------------------------------------------------------------- */
 
 /*
  * A labelled block inside a section. The yard has two rules in it — one weapon, three 五行 — and
@@ -155,36 +729,51 @@ footer {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  font-size: 11px;
-  letter-spacing: 0.05em;
+  font-family: var(--title);
+  font-size: 15px;
+  font-weight: 700;
   color: var(--muted);
-  margin-bottom: 7px;
+  margin-bottom: 6px;
+  letter-spacing: 0.08em;
 }
 
 /* How many of the three are spent. The only count on this screen, and it earns its place: the
    chips go flat when it is full and this is the sentence that says why. */
 .tally {
+  font-family: 'Microsoft YaHei UI', system-ui, sans-serif;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  letter-spacing: 0;
 }
 
 /* Five phases, two ways each. A grid rather than five flex rows so the two columns line up down
    the whole block — which is what makes it read as a table of pairs instead of five lists. */
 .phases {
   display: grid;
-  grid-template-columns: 1.6em 1fr 1fr;
+  grid-template-columns: 1.8em 1fr 1fr;
   align-items: center;
-  gap: 5px 7px;
+  gap: 6px 7px;
 }
 
+/* The phase itself, as a small round seal. */
 .phases .of {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-family: var(--title);
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .phases .chip {
   width: 100%;
-  text-align: center;
 }
 
 .picked {
@@ -195,28 +784,31 @@ footer {
 
 .slot {
   display: grid;
-  grid-template-columns: 3.4em 1fr 2.2em auto;
+  grid-template-columns: 3.4em 1fr 2.2em;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  padding: 7px 12px;
+  border-radius: 4px;
+  border: 1px dashed var(--line);
+  background: var(--card-soft);
 }
 
 .slot b {
-  font-size: 13px;
+  font-family: var(--title);
+  font-size: 15px;
 }
 
 .slot input[type='range'] {
-  accent-color: var(--accent);
+  accent-color: var(--cinnabar);
   width: 100%;
 }
 
 .slot .lv {
-  color: var(--muted);
+  color: var(--cinnabar);
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   text-align: right;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .combos {
@@ -229,9 +821,8 @@ footer {
 .row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
 }
 
 .field {
@@ -244,74 +835,343 @@ footer {
 .field select {
   font: inherit;
   padding: 7px 9px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--card);
   color: var(--ink);
 }
 
-.check.inline {
-  margin-bottom: 0;
-}
-
-button.secondary {
-  background: none;
-  border-color: var(--line);
-  color: var(--ink);
-}
+/* ---- 见闻 ---------------------------------------------------------------------------------- */
 
 /*
- * 见闻. A list, which this app otherwise refuses to have — so it is built to be ignorable: no
- * badge, no colour that reads as "attention", and an unearned row that recedes rather than nags.
- * Nothing outside this section ever says how many are left.
- *
- * Written against the file's own tokens rather than literal colours. The first version used
- * hex values picked for a dark panel, which inverted the whole point in the light theme: the
- * earned rows came out nearly invisible and the unearned ones read as the emphasised ones.
+ * A record of seals, which this app otherwise refuses to have — so it is built to be ignorable:
+ * nothing outside this hall ever says how many are left, and an unearned one is a faint outline
+ * rather than a nag. It still shows what it is called; hiding the name would turn the record into a
+ * puzzle to be solved.
  */
-.feats {
+.record-head {
   display: flex;
-  flex-direction: column;
-  margin-top: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.record-head p {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Incense burnt down: how much of the record is filled. */
+.meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--card-soft);
+  box-shadow: inset 0 0 0 1px var(--line);
   overflow: hidden;
+  margin: 2px 0 14px;
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--gold), var(--cinnabar));
+  transition: width 0.4s ease-out;
+}
+
+.feats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .feat {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 7px 11px;
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 9px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--card-soft);
   font-size: 12px;
-  border-top: 1px solid var(--line);
+  min-width: 0;
 }
 
-.feat:first-child {
-  border-top: 0;
+/* Earned: a cinnabar seal with the feat's first character, pressed a little crooked. */
+.feat .medal {
+  grid-row: span 2;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  font-family: var(--title);
+  font-style: normal;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff3e0;
+  background: var(--cinnabar);
+  box-shadow: inset 0 0 0 2px rgba(255, 243, 224, 0.5);
+  transform: rotate(-6deg);
 }
 
 .feat b {
-  font-weight: 600;
-  min-width: 118px;
+  font-family: var(--title);
+  font-weight: 700;
+  font-size: 15px;
   color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .feat span {
   color: var(--muted);
+  line-height: 1.35;
 }
 
-/* Unearned: the whole row recedes. It is a gap in a record, not a task. */
+/* Unearned: only the outline of the seal, waiting to be pressed. */
+.feat.todo {
+  background: none;
+  border-style: dashed;
+}
+
+.feat.todo .medal {
+  background: none;
+  color: var(--line-strong);
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  transform: none;
+}
+
 .feat.todo b,
 .feat.todo span {
   color: var(--muted);
-  opacity: 0.55;
-  font-weight: 400;
+  opacity: 0.8;
 }
 
-/* 形象: skins in the folder that cannot be worn, and why. Paths and file names break anywhere. */
-.broken p {
-  margin: 0 0 6px;
+/* ---- 图鉴 ---------------------------------------------------------------------------------- */
+
+/* One weapon in every grade's colour, low to high, with a small arrow between each. */
+.ladder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 2px 0 10px;
+}
+
+.ladder .rung {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  padding: 4px 0 2px;
+  border-radius: 6px;
+  background: var(--card-soft);
+  box-shadow: inset 0 0 0 2px var(--grade);
+}
+
+.ladder .rung canvas {
+  width: 30px;
+  height: 30px;
+}
+
+.ladder .rung small {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The merge rules, as numbered steps. */
+.merge {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.merge li {
+  margin-bottom: 4px;
+}
+
+.merge li::marker {
+  color: var(--cinnabar);
+  font-weight: 800;
+}
+
+/* The rule that holds for a whole list, under it. */
+.note {
+  margin: 10px 0 0;
+  padding: 7px 10px;
+  border-left: 3px solid var(--gold);
+  background: var(--card-soft);
   font-size: 12px;
-  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+.entry {
+  cursor: help;
+  outline: none;
+}
+
+.entry:hover,
+.entry:focus-visible {
+  border-color: var(--jade);
+  background: var(--card);
+}
+
+/* The grade table, floated beside the entry it belongs to. */
+.tip {
+  position: fixed;
+  z-index: 10;
+  min-width: 200px;
+  max-width: 300px;
+  padding: 9px 11px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--gold);
+  background: var(--lacquer);
+  color: #f3e6c8;
+  box-shadow: 0 6px 18px rgba(30, 15, 5, 0.45);
+  pointer-events: none;
+  font-size: 12px;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip b {
+  display: block;
+  font-family: var(--title);
+  font-size: 16px;
+  color: var(--gold-2);
+  margin-bottom: 5px;
+  letter-spacing: 0.06em;
+}
+
+.tip table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.tip th {
+  font-weight: 700;
+  color: var(--gold-2);
+  text-align: right;
+  padding: 2px 4px 4px;
+  border-bottom: 1px solid rgba(232, 207, 138, 0.35);
+  white-space: nowrap;
+}
+
+.tip td {
+  text-align: right;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+
+.tip th:first-child,
+.tip td:first-child {
+  text-align: left;
+}
+
+.tip td i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: 0;
+}
+
+.tip small {
+  display: block;
+  margin-top: 5px;
+  color: rgba(243, 230, 200, 0.6);
+  font-size: 11px;
+}
+
+.ladder .step {
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid var(--line-strong);
+}
+
+.codex {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+/* An entry: the icon, the name in the brush hand, and what it does. */
+.entry {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--card-soft);
+}
+
+.entry canvas {
+  grid-row: span 2;
+  width: 40px;
+  height: 40px;
+}
+
+.entry b {
+  font-family: var(--title);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.entry span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+/* The ways: a phase seal down the side of its two ways, one under the other. */
+.codex.ways {
+  grid-template-columns: 26px 1fr;
+  align-items: stretch;
+}
+
+.codex.ways .of {
+  grid-row: span 2;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--cinnabar);
+  color: var(--cinnabar);
+  font-family: var(--title);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.codex.ways .entry {
+  grid-template-columns: 32px 1fr;
+  padding: 6px 8px;
+}
+
+.codex.ways .entry canvas {
+  width: 32px;
+  height: 32px;
+}
+
+.codex.ways .entry b {
+  font-size: 15px;
+}
+
+.codex.ways .entry span {
+  font-size: 12px;
 }

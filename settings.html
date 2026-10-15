@@ -6,105 +6,180 @@
     <link rel="stylesheet" href="/src/settings.css" />
   </head>
   <body>
-    <main>
-      <h1>Slime</h1>
+    <!--
+      The window draws its own frame. The system title bar was a Windows dialog wearing the pet's
+      name; this is the pet's 洞府, a lacquered plaque across the top that you drag the window by
+      and a seal in its corner that closes it. Closing only hides — the window is made once at
+      startup and kept (see `toggle_settings` in lib.rs).
+    -->
+    <div class="frame">
+      <div class="titlebar" data-tauri-drag-region>
+        <span class="plaque" data-tauri-drag-region>
+          <i class="knot" data-tauri-drag-region></i>
+          <b id="abode-title" data-tauri-drag-region></b>
+          <i class="knot" data-tauri-drag-region></i>
+        </span>
+        <button id="close" class="close" type="button" aria-label="Close">✕</button>
+      </div>
 
       <!--
-        Ordered by what a thing *is*, which is the one ordering a reader can predict: what the
-        window is in, then the two switches that change how the pet behaves, then the record, then
-        the workshop, and the one irreversible thing last.
-
-        It used to open on 演武场 — a practice yard nobody visits twice a week — above the language
-        window and the privacy switches.
+        The pet first, because this is the pet's window: a live slime in whatever it is wearing,
+        sitting on a moon of jade, with its realm hung beside it. It answers a hover and a poke the
+        way the one on the desktop does.
       -->
-      <section id="language-box">
-        <h2 id="language-title"></h2>
-        <div id="language-chips" class="chips"></div>
-        <p id="language-auto" class="muted"></p>
-      </section>
-
-      <!-- What the pet looks like, which is about the pet rather than how it behaves. -->
-      <section id="skin-box">
-        <h2 id="skin-title"></h2>
-        <div id="skin-chips" class="chips"></div>
-        <p id="skin-note" class="muted"></p>
-        <div id="skin-broken" class="broken"></div>
-        <div class="row">
-          <button id="skin-folder" class="secondary"></button>
-          <button id="skin-rescan" class="secondary"></button>
+      <header class="hero">
+        <div class="moon">
+          <canvas id="hero-pet" width="120" height="112" aria-hidden="true"></canvas>
         </div>
-      </section>
+        <div class="hero-text">
+          <h1>Slime</h1>
+          <p id="hero-realm" class="hero-realm"></p>
+        </div>
+        <svg class="clouds" viewBox="0 0 160 70" aria-hidden="true">
+          <path d="M14 44c-8 0-10-10-2-12 0-9 12-11 16-4 4-8 18-6 18 3 9-1 11 10 3 13Z" />
+          <path d="M92 26c-7 0-9-8-2-10 0-8 10-9 14-3 3-7 16-5 16 3 8-1 9 9 2 10Z" />
+          <path d="M118 58c-5 0-6-6-1-7 0-6 8-7 10-2 3-5 12-4 12 2 6 0 7 7 1 7Z" />
+        </svg>
+      </header>
 
-      <section>
-        <h2 id="quiet-title"></h2>
-        <label class="check">
-          <input id="quiet" type="checkbox" />
-          <span id="quiet-label"></span>
-        </label>
-        <p id="quiet-note" class="muted"></p>
-      </section>
+      <!--
+        Four halls, ordered by what a thing *is*: what the pet looks like, how it lives day to day
+        and in what language, what a level can hand you, and the record — with the one irreversible
+        thing at the very end of it.
+      -->
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="look" id="tab-look"></button>
+        <button role="tab" data-tab="general" id="tab-general"></button>
+        <button role="tab" data-tab="codex" id="tab-codex"></button>
+        <button role="tab" data-tab="record" id="tab-record"></button>
+        <!-- 演武场 is a developer's tool for looking at effects, and only a dev build shows it. -->
+        <button role="tab" data-tab="yard" id="tab-yard" hidden></button>
+      </nav>
 
-      <section>
-        <h2 id="lielow-title"></h2>
-        <label class="check">
-          <input id="lielow" type="checkbox" />
-          <span id="lielow-label"></span>
-        </label>
-        <p id="lielow-note" class="muted"></p>
-      </section>
+      <main>
+        <div class="panel" data-panel="look">
+          <section id="skin-box">
+            <h2 id="skin-title"></h2>
+            <div id="skin-chips" class="skins"></div>
+            <p id="skin-note" class="muted"></p>
+            <div id="skin-broken" class="broken"></div>
+            <div class="row">
+              <button id="skin-folder" class="secondary"></button>
+              <button id="skin-rescan" class="secondary"></button>
+            </div>
+          </section>
+        </div>
 
-      <section id="arena-box">
-        <h2 id="arena-title"></h2>
+        <div class="panel" data-panel="general">
+          <section id="language-box">
+            <h2 id="language-title"></h2>
+            <div id="language-chips" class="chips"></div>
+            <p id="language-auto" class="muted"></p>
+          </section>
+
+          <section>
+            <h2 id="quiet-title"></h2>
+            <label class="check">
+              <input id="quiet" type="checkbox" />
+              <span id="quiet-label"></span>
+            </label>
+            <p id="quiet-note" class="muted"></p>
+          </section>
+
+          <section>
+            <h2 id="lielow-title"></h2>
+            <label class="check">
+              <input id="lielow" type="checkbox" />
+              <span id="lielow-label"></span>
+            </label>
+            <p id="lielow-note" class="muted"></p>
+          </section>
+        </div>
 
         <!--
-          Two groups, because there are two rules. One weapon, up to three 五行 — shown as one row
-          of five and five rows of two, so the shape of the choice is visible before any of it is
-          read. Fifteen identical pills in one row was the version before this.
+          图鉴: everything a level can sell you, and the one rule for putting two of them together.
+          Read-only — it is what the bar and the picker never stop to explain.
         -->
-        <div class="group">
-          <div class="subhead"><span id="arena-arm-label"></span></div>
-          <div id="arena-arms" class="chips"></div>
+        <div class="panel" data-panel="codex">
+          <section>
+            <h2 id="codex-grades-title"></h2>
+            <div id="codex-ladder" class="ladder"></div>
+            <ol id="codex-merge" class="merge"></ol>
+          </section>
+          <section>
+            <h2 id="codex-arms-title"></h2>
+            <div id="codex-arms" class="codex"></div>
+            <p id="codex-arms-note" class="note"></p>
+          </section>
+          <section>
+            <h2 id="codex-ways-title"></h2>
+            <div id="codex-ways" class="codex ways"></div>
+            <p id="codex-ways-note" class="note"></p>
+          </section>
         </div>
 
-        <div class="group">
-          <div class="subhead">
-            <span id="arena-way-label"></span>
-            <span id="arena-way-count" class="tally"></span>
-          </div>
-          <div id="arena-ways" class="phases"></div>
+        <div class="panel" data-panel="yard">
+          <section id="arena-box">
+            <h2 id="arena-title"></h2>
+
+            <!--
+              Two groups, because there are two rules. One weapon, up to three 五行 — shown as one
+              row of five and five rows of two, so the shape of the choice is visible before any of
+              it is read. Fifteen identical pills in one row was the version before this.
+            -->
+            <div class="group">
+              <div class="subhead"><span id="arena-arm-label"></span></div>
+              <div id="arena-arms" class="chips arms"></div>
+            </div>
+
+            <div class="group">
+              <div class="subhead">
+                <span id="arena-way-label"></span>
+                <span id="arena-way-count" class="tally"></span>
+              </div>
+              <div id="arena-ways" class="phases"></div>
+            </div>
+
+            <div class="group">
+              <div class="subhead"><span id="arena-depth-label"></span></div>
+              <div id="arena-picked" class="picked"></div>
+            </div>
+
+            <div class="row">
+              <button id="arena-start"></button>
+              <button id="arena-stop" class="secondary"></button>
+            </div>
+          </section>
         </div>
 
-        <div class="group">
-          <div class="subhead"><span id="arena-depth-label"></span></div>
-          <div id="arena-picked" class="picked"></div>
+        <div class="panel" data-panel="record">
+          <section>
+            <div class="record-head">
+              <h2 id="feats-title"></h2>
+              <p id="feats-count" class="muted"></p>
+            </div>
+            <div class="meter" aria-hidden="true"><i id="feats-meter"></i></div>
+            <div id="feats-list" class="feats"></div>
+          </section>
+
+          <section id="rebirth-box" hidden>
+            <h2 id="rebirth-title"></h2>
+            <p id="rebirth-state" class="muted"></p>
+            <div class="row">
+              <button id="rebirth" class="secondary"></button>
+            </div>
+            <p id="rebirth-warn" class="muted"></p>
+          </section>
         </div>
 
-        <div class="row">
-          <button id="arena-start"></button>
-          <button id="arena-stop" class="secondary"></button>
-        </div>
-      </section>
-
-      <section>
-        <h2 id="feats-title"></h2>
-        <p id="feats-count" class="muted"></p>
-        <div id="feats-list" class="feats"></div>
-      </section>
-
-      <section id="rebirth-box" hidden>
-        <h2 id="rebirth-title"></h2>
-        <p id="rebirth-state" class="muted"></p>
-        <div class="row">
-          <button id="rebirth" class="secondary"></button>
-        </div>
-        <p id="rebirth-warn" class="muted"></p>
-      </section>
-
-      <footer>
-        <button id="quit" class="link danger">Quit Slime</button>
-        <code class="hotkey">Ctrl+Alt+Shift+Q</code>
-      </footer>
-    </main>
+        <footer>
+          <button id="quit" class="link danger">Quit Slime</button>
+          <code class="hotkey">Ctrl+Alt+Shift+Q</code>
+        </footer>
+      </main>
+    </div>
+    <!-- The grade table an entry in the codex shows on hover, floated over everything. -->
+    <div id="codex-tip" class="tip" hidden></div>
     <script type="module" src="/src/settings.ts"></script>
   </body>
 </html>

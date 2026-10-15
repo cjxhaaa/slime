@@ -152,6 +152,7 @@ import {
 import { MaxReach, MinReach, Settle, arch, cycleSeconds, pace, planHop } from './pursuit.js';
 import { Limits, faceSlotFor, parseManifest, pickText } from '../skins/manifest.js';
 import { lookFor } from './appearance.js';
+import { armsNote, waySheet, weaponSheet } from '../ui/codex.js';
 
 let failures = 0;
 function check(label: string, actual: number, expected: number, tol = 1e-6): void {
@@ -2828,6 +2829,24 @@ for (const tag of LOCALES) {
     if (id in REALM_FEATS) strayFeats.push(`${tag} ${id} duplicates a realm name`);
   }
 }
+// **The codex leaves nothing unfilled.** Its descriptions are templates filled from the fight's own
+// constants, so a placeholder renamed in one language and not in the code would show a raw
+// `{every}` to a player. And every grade table has a row a grade and a value a column.
+const unfilled: string[] = [];
+for (const tag of LOCALES) {
+  setLocale(tag);
+  const sheets = [
+    ...WEAPONS.map((key) => [key, weaponSheet(key)] as const),
+    ...WAYS.map((key) => [key, waySheet(key)] as const),
+  ];
+  for (const [key, sheet] of sheets) {
+    if (/[{}]/.test(sheet.text) || /[{}]/.test(armsNote())) unfilled.push(`${tag} ${key}`);
+    if (sheet.rows.length !== MaxDepth || sheet.rows.some((row) => row.length !== sheet.columns.length)) {
+      unfilled.push(`${tag} ${key} table`);
+    }
+  }
+}
+check(`every codex entry is filled in, in every language${unfilled.length ? ': ' + unfilled.join(', ') : ''}`, unfilled.length, 0);
 setLocale('zh-Hans');
 check(`every feat is named in every language${namelessFeats.length ? ': ' + namelessFeats.join(', ') : ''}`, namelessFeats.length, 0);
 check(`and the table carries nothing spare${strayFeats.length ? ': ' + strayFeats.join(', ') : ''}`, strayFeats.length, 0);
