@@ -111,7 +111,8 @@ export const ARMS: Record<Weapon, WeaponSpec> = {
     name: '刀',
     blurb: '就地斩出数道刀气',
     motion: 'slash',
-    tint: '#ffd9a0',
+    // 血饮狂刀: blood red, so its sparks and its glow are the colour of what it draws.
+    tint: '#ff3d4a',
     interval: 1.1,
     reach: 150,
     grow: 0.1,

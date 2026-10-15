@@ -317,6 +317,12 @@ const FailSeconds = 1.5;
 const FailDrain = 0.55;
 const FailGrey = '#8d9195';
 
+/** 护体's bar: how wide against the body, how tall, and how far under its middle it hangs. */
+const VigourWidth = 1.5;
+const VigourHeight = 7;
+const VigourBelow = 1.08;
+const VigourGap = 10;
+
 export class Slime {
   x: number;
   y: number;
@@ -1095,9 +1101,11 @@ export class Slime {
       // out with a fixed-size halo on top — which is why this one is in pixels rather than in body
       // radii. A halo that scaled with the body would be a different charm at every realm.
       this.realmBreak ? this.radius * (ArrayReach + 0.2) + HaloReach : 0,
-      // 护体: the arc itself, plus the flinch ring that is thrown 26 further out than it, plus
-      // the widest that ring is ever stroked. Reserved only while there is one to draw.
-      this.vigour !== null ? this.radius * 1.42 + 26 + 6 : 0,
+      // 护体: the bar under the feet, out to its far corner and its shake. Reserved only while
+      // there is one to draw.
+      this.vigour !== null
+        ? Math.hypot(Math.max(44, this.radius * VigourWidth) / 2 + 4, this.radius * VigourBelow + VigourGap + VigourHeight + 2)
+        : 0,
       this.radius *
         (this.ring !== null
           ? RingReach + 0.2
@@ -1792,67 +1800,56 @@ export class Slime {
   }
 
   /**
-   * The 护体 arc, just outside the body.
+   * 护体, as a short bar under the body.
    *
-   * Drawn from the top and clockwise, so what is missing is the gap on the right where it would
-   * have continued — the direction people read a dial in. Two passes: the trail underneath in
-   * the hurt colour, the remainder over it, so the gap between them is exactly what the last hit
-   * took and it closes over about a second.
+   * It used to be a ring all the way round the body, which put a stroke between the pet and
+   * everything coming at it from every side — in a mode where the whole job is watching what is
+   * coming. Under the feet it is out of every line of sight and still on the pet, which is where
+   * the eye is; a gauge in a corner is a gauge nobody looks at until they have already lost.
    *
-   * It follows the body, lift and all, which is the point of drawing it here rather than as a bar
-   * somewhere. In a fight the eye is on the slime; a gauge in a corner is a gauge nobody looks at
-   * until they have already lost.
+   * Two fills: the trail underneath in the hurt colour, the remainder over it, so the gap between
+   * them is exactly what the last hit took and it closes over about a second. A hit also shakes
+   * the bar and flashes its edge — the flinch, without a ring thrown across the field.
    */
   private drawVigour(context: CanvasRenderingContext2D): void {
     if (this.vigour === null) return;
-    const reach = this.radius * 1.42;
-    const start = -Math.PI / 2;
-    const full = Math.PI * 2;
+    const width = Math.max(44, this.radius * VigourWidth);
+    const height = VigourHeight;
+    const shake = this.struck > 0.01 ? Math.sin(this.struck * 40) * this.struck * 3 : 0;
+    const x = this.renderX - width / 2 + shake;
+    const y = this.renderY + this.radius * VigourBelow + VigourGap;
 
     context.save();
-    context.lineCap = 'round';
-    context.lineWidth = 4;
-
-    // The groove, so an almost-empty ring still reads as a ring with nothing in it rather than as
-    // a stray stroke floating beside the pet.
-    context.globalAlpha = 0.18;
-    context.strokeStyle = '#06130f';
+    // The groove: dark, inked, so the empty part reads as empty on any wallpaper.
+    context.fillStyle = 'rgba(10, 14, 18, 0.55)';
     context.beginPath();
-    context.arc(this.renderX, this.renderY, reach, 0, full);
-    context.stroke();
+    context.roundRect(x, y, width, height, height / 2);
+    context.fill();
 
+    const inner = width - 2;
     if (this.vigourTrail > this.vigour + 1e-4) {
-      context.globalAlpha = 0.5;
-      context.strokeStyle = '#e8705c';
+      context.fillStyle = '#e8705c';
       context.beginPath();
-      context.arc(this.renderX, this.renderY, reach, start, start + full * this.vigourTrail);
-      context.stroke();
+      context.roundRect(x + 1, y + 1, Math.max(height - 2, inner * this.vigourTrail), height - 2, (height - 2) / 2);
+      context.fill();
     }
-
     if (this.vigour > 1e-4) {
       // Green while there is room to spare, through amber, to red at the end. The colour is the
       // warning; nothing else on the screen has to shout.
-      const hurt = 1 - this.vigour;
-      const colour =
-        this.vigour > 0.55 ? '#5fe3bd' : this.vigour > 0.28 ? '#ffc766' : '#ff7d68';
-      context.globalAlpha = 0.72 + hurt * 0.2 + this.struck * 0.08;
-      context.strokeStyle = colour;
+      context.fillStyle = this.vigour > 0.55 ? '#5fe3bd' : this.vigour > 0.28 ? '#ffc766' : '#ff7d68';
       context.beginPath();
-      context.arc(this.renderX, this.renderY, reach, start, start + full * this.vigour);
-      context.stroke();
+      context.roundRect(x + 1, y + 1, Math.max(height - 2, inner * this.vigour), height - 2, (height - 2) / 2);
+      context.fill();
+      // A highlight along the top, so it is a bar and not a stripe.
+      context.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      context.fillRect(x + 3, y + 1.5, Math.max(0, inner * this.vigour - 4), 1.2);
     }
 
-    // The flinch: a ring thrown outward at the moment of the hit. Brief, and the only thing in
-    // this mode that moves because something happened *to* the pet rather than because of it.
-    if (this.struck > 0.01) {
-      context.globalAlpha = this.struck * 0.5;
-      context.lineWidth = 2 + this.struck * 3;
-      context.strokeStyle = '#ff9d8a';
-      context.beginPath();
-      context.arc(this.renderX, this.renderY, reach + (1 - this.struck) * 26, 0, full);
-      context.stroke();
-    }
-
+    context.lineWidth = 1.2;
+    context.strokeStyle = this.struck > 0.01 ? `rgba(255, 157, 138, ${0.5 + this.struck * 0.5})` : 'rgba(6, 19, 15, 0.7)';
+    context.beginPath();
+    context.roundRect(x, y, width, height, height / 2);
+    context.stroke();
     context.restore();
   }
 

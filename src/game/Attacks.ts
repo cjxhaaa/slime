@@ -207,6 +207,20 @@ const SlashSeconds = 0.44;
 export const SlashWidth = 46;
 /** How far apart the blades of one swing are fanned, in radians. */
 const SlashFan = 0.34;
+/** The arc swept at the body when the 刀 swings, in radians, and how long it shows. */
+const SwingArc = 2.1;
+const SwingSeconds = 0.17;
+/**
+ * 刀气's own colours: 血饮狂刀, a blade that drinks blood. Pale rose on the leading edge, crimson
+ * through the body, near-black clotted red at the back and in the ink round it.
+ */
+const DaoCore = '#ffd0c8';
+const DaoBody = '#d8142a';
+const DaoRim = '#7c0614';
+const DaoInk = '#2a0308';
+/** The blood a 刀气 throws where it cuts: how long the splash lasts and how big it is. */
+const GoreSeconds = 0.32;
+const GoreReach = 9;
 
 /** 盾: how fast the 罡气 turns, and how long a node waits between bites. */
 const GuardRate = 2.1;
@@ -634,6 +648,7 @@ export class Attacks {
         ? Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX)
         : Math.random() * Math.PI * 2;
       const blades = 2 + Math.floor(arm.depth / 2);
+      this.push('刀', 'swing', this.bodyX, this.bodyY, 0, 0, aim, SwingSeconds, this.bodyR, 0);
       for (let i = 0; i < blades; i++) {
         const heading = aim + (i - (blades - 1) / 2) * SlashFan;
         this.push(
@@ -1063,6 +1078,8 @@ export class Attacks {
           e.bite -= 1;
           this.land(e.x, e.y, battlefield, e.angle, e.power);
           this.spark(e.x, e.y, 4, '刀', 210, e.angle + Math.PI, 2.2);
+          // 血饮: it drinks — and what it cuts bleeds, on along the line of the cut.
+          this.push('刀', 'gore', e.x, e.y, 0, 0, e.angle, GoreSeconds, GoreReach * Math.sqrt(e.power ?? 1), 0);
         }
       } else if (e.kind === 'guard') {
         // 罡气. It turns with the body rather than being thrown from it, so it is drawn from the
@@ -1486,46 +1503,193 @@ export class Attacks {
     }
 
     if (e.kind === 'slash') {
-      // 刀气: a crescent lying along its travel, thinning as it spends itself. Drawn from the
-      // heading rather than rotated into place, so a fan of them opens outward correctly.
+      // 刀气: a crescent of qi thrown off the edge of a cut — thick in the middle, tapering to two
+      // sharp horns swept back, bowed the way it travels. Three fading copies of itself trail
+      // behind and speed lines run back off the horns, so it reads as something *moving fast*
+      // rather than a shape that happens to be in a new place each frame.
+      //
+      // Solid and inked first, so it is there on a white wallpaper; the light goes on last. It
+      // widens a little as it flies and thins as it spends itself, the way a wave of anything does.
       const run = Math.min(1, e.age / Math.max(0.001, e.life));
-      const thin = 1 - run * 0.55;
+      const heavy = 1 + Math.log(e.power ?? 1) / Math.log(9) * 0.35;
+      const half = SlashWidth * 0.5 * (1 + run * 0.3) * heavy;
+      const thick = half * 0.3 * (1 - run * 0.4);
+      const fade = 1 - run * run;
+      // A blade of qi: the leading edge an arc of a circle, a third of the way round; the back
+      // edge a flatter arc through the same two horns, so the wave is thick in the middle and
+      // tapers to two thin, sharp points.
+      const apex = half * 0.35;
+      const sweep = 1.25;
+      const lune = (back: number, scale: number): { ix: number; ir: number } => {
+        const r = (half * scale) / Math.sin(sweep);
+        const front = apex * scale - back;
+        const cx = front - r;
+        const tipX = cx + r * Math.cos(sweep);
+        const tipY = r * Math.sin(sweep);
+        // The circle through both horns and the middle of the back edge.
+        const f = front - thick * scale;
+        const ix = (f * f - tipX * tipX - tipY * tipY) / (2 * (f - tipX));
+        const ir = f - ix;
+        const inHorn = Math.atan2(tipY, tipX - ix);
+        context.beginPath();
+        context.arc(cx, 0, r, -sweep, sweep);
+        context.arc(ix, 0, ir, inHorn, -inHorn, true);
+        context.closePath();
+        return { ix, ir };
+      };
+      const tipsBack = half / Math.sin(sweep) * (1 - Math.cos(sweep)) - apex;
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle);
-      // The solid crescent first, edged in ink, so the cut is there on any wallpaper; the light goes
-      // over it.
+      context.globalCompositeOperation = 'source-over';
+      context.lineJoin = 'round';
+
+      // The afterimages, furthest and faintest first.
+      for (let k = 3; k >= 1; k--) {
+        context.globalAlpha = fade * (0.46 - k * 0.12);
+        context.fillStyle = k === 1 ? DaoBody : DaoRim;
+        lune(k * 10, 1 - k * 0.06);
+        context.fill();
+      }
+
+      // Speed lines off the horns.
+      context.globalAlpha = fade * 0.75;
+      context.strokeStyle = DaoRim;
+      context.lineCap = 'round';
+      context.lineWidth = 1.6;
+      context.beginPath();
+      for (const side of [-1, 1]) {
+        const y = side * half * 0.9;
+        context.moveTo(-tipsBack, y);
+        context.lineTo(-tipsBack - 22 - run * 12, y);
+      }
+      context.stroke();
+
+      // 狂: tongues of blood-qi streaming off the back of the wave — long tapering wisps, each
+      // waving on its own clock, longest through the middle. Drawn before the blade so the blade
+      // covers their roots and they read as coming off it.
+      context.globalAlpha = fade;
+      const { ix, ir } = lune(0, 1);
+      context.lineWidth = 1.5;
+      context.strokeStyle = DaoInk;
+      for (let j = 0; j < 4; j++) {
+        const y = ((j - 1.5) / 1.5) * half * 0.62;
+        const root = ix + Math.sqrt(Math.max(0, ir * ir - y * y)) + 2;
+        const middle = 1 - Math.abs(y) / half;
+        const long = half * (0.75 + 0.25 * Math.sin(e.age * 31 + j * 2.4)) * (0.55 + middle * 0.7);
+        const wide = thick * 0.5 * (0.7 + middle * 0.5);
+        const sway = Math.sin(e.age * 24 + j * 1.3) * wide * 1.4;
+        const streak = context.createLinearGradient(root, 0, root - long, 0);
+        streak.addColorStop(0, DaoBody);
+        streak.addColorStop(1, DaoRim);
+        context.beginPath();
+        context.moveTo(root, y - wide);
+        context.quadraticCurveTo(root - long * 0.5, y - wide * 0.6 + sway, root - long, y + sway * 0.6);
+        context.quadraticCurveTo(root - long * 0.5, y + wide * 0.6 + sway, root, y + wide);
+        context.closePath();
+        context.fillStyle = streak;
+        context.fill();
+        context.stroke();
+      }
+
+      // The wave itself: inked in clotted red, pale along the edge that cuts, crimson behind it.
+      const across = context.createLinearGradient(apex, 0, apex - thick, 0);
+      across.addColorStop(0, DaoCore);
+      across.addColorStop(0.3, DaoBody);
+      across.addColorStop(1, DaoRim);
+      lune(0, 1);
+      context.fillStyle = across;
+      context.fill();
+      context.strokeStyle = DaoInk;
+      context.lineWidth = 2;
+      context.stroke();
+      // A hot thin line along the cutting edge.
+      context.globalAlpha = fade * 0.9;
+      context.strokeStyle = '#fff4f0';
+      context.lineWidth = 1.2;
+      context.beginPath();
+      const edgeR = half / Math.sin(sweep);
+      context.arc(apex - edgeR - 1.2, 0, edgeR, -sweep * 0.7, sweep * 0.7);
+      context.stroke();
+      context.restore();
+
+      // The light: a glow over the middle of the wave.
+      this.bloom(context, e.x + Math.cos(e.angle) * apex * 0.5, e.y + Math.sin(e.angle) * apex * 0.5, half * 0.9, hue, 0.4 * fade);
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'gore') {
+      // Blood where a 刀气 cut: a splash at the wound and droplets flung on along the cut, each
+      // inked so it reads on white. Positions come from the effect's own heading, not from a
+      // random draw, so it does not shimmer between frames.
+      const t = Math.min(1, e.age / Math.max(0.001, e.life));
       context.save();
       context.globalCompositeOperation = 'source-over';
-      context.globalAlpha = 1 - run * run;
-      const crescent = (): void => {
+      context.globalAlpha = 1 - t * t;
+      // One wet shape: a round splash with lumps on it, and drops flung on along the cut. Every
+      // circle is inked first and filled after, so where they overlap there is no line between them.
+      const splash = e.reach * (0.6 + 0.4 * Math.min(1, t * 4)) * (1 - t * 0.4);
+      const blobs: [number, number, number][] = [[e.x, e.y, splash]];
+      for (let i = 0; i < 5; i++) {
+        const a = e.angle + i * 1.26 + Math.sin(e.angle * 5 + i) * 0.3;
+        blobs.push([e.x + Math.cos(a) * splash * 0.8, e.y + Math.sin(a) * splash * 0.8, splash * (0.42 + (i % 2) * 0.12)]);
+      }
+      for (let i = 0; i < 6; i++) {
+        const a = e.angle + (i - 2.5) * 0.4 + Math.sin(e.angle * 13 + i * 2.3) * 0.2;
+        const out = e.reach * (1.1 + t * (2.6 + (i % 3) * 0.9));
+        const drop = e.reach * (0.3 - (i % 3) * 0.06) * (1 - t * 0.6);
+        blobs.push([e.x + Math.cos(a) * out, e.y + Math.sin(a) * out + t * t * 14, drop]);
+      }
+      context.fillStyle = DaoInk;
+      for (const [x, y, r] of blobs) {
         context.beginPath();
-        context.moveTo(-10, -SlashWidth * 0.5 * thin);
-        context.quadraticCurveTo(10, 0, -10, SlashWidth * 0.5 * thin);
-      };
-      crescent();
-      context.strokeStyle = Ink;
-      context.lineWidth = 3.5 * thin + 3;
-      context.stroke();
-      crescent();
-      context.strokeStyle = hue.body;
-      context.lineWidth = 3.5 * thin;
-      context.stroke();
-      context.restore();
-      context.globalAlpha = 0.85 * (1 - run * run);
-      const edge = context.createLinearGradient(-SlashWidth * 0.5, 0, SlashWidth * 0.5, 0);
-      edge.addColorStop(0, clear(hue.body));
-      edge.addColorStop(0.5, hue.core);
-      edge.addColorStop(1, clear(hue.body));
-      context.strokeStyle = edge;
-      context.lineWidth = 3.5 * thin;
+        context.arc(x, y, r + 1.3, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.fillStyle = DaoBody;
+      for (const [x, y, r] of blobs) {
+        context.beginPath();
+        context.arc(x, y, r, 0, Math.PI * 2);
+        context.fill();
+      }
+      // A glint on the splash, so it looks wet rather than painted.
+      context.fillStyle = 'rgba(255, 220, 220, 0.8)';
       context.beginPath();
-      // Bowed backward along the travel: a straight bar is a plank, a bow is a cut.
-      context.moveTo(-10, -SlashWidth * 0.5 * thin);
-      context.quadraticCurveTo(10, 0, -10, SlashWidth * 0.5 * thin);
+      context.arc(e.x - splash * 0.35, e.y - splash * 0.35, splash * 0.22, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'swing') {
+      // The cut itself, at the body: one sweep of a bright arc round the side it was swung to,
+      // opening and gone in a few frames. What the 刀气 come off.
+      const t = Math.min(1, e.age / Math.max(0.001, e.life));
+      const sweep = SwingArc * (0.35 + 0.65 * Math.min(1, t * 2.5));
+      const from = e.angle - SwingArc / 2;
+      const to = from + sweep;
+      const inner = e.reach * 1.05;
+      const outer = e.reach * (1.45 + t * 0.15);
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 1 - t * t;
+      context.beginPath();
+      context.arc(e.x, e.y, outer, from, to);
+      // Back along the inside, pinched at the start so the band tapers in from a point.
+      context.arc(e.x, e.y, inner, to, from + sweep * 0.15, true);
+      context.closePath();
+      const band = context.createRadialGradient(e.x, e.y, inner, e.x, e.y, outer);
+      band.addColorStop(0, DaoRim);
+      band.addColorStop(0.55, DaoBody);
+      band.addColorStop(1, DaoCore);
+      context.fillStyle = band;
+      context.fill();
+      context.strokeStyle = DaoInk;
+      context.lineWidth = 1.8;
       context.stroke();
       context.restore();
-      this.bloom(context, e.x, e.y, 18 * thin, hue, 0.3 * (1 - run));
       context.globalAlpha = 1;
       return;
     }
