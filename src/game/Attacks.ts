@@ -274,6 +274,62 @@ const SwordBeat = 0.11;
 /** How long it rests after a flurry before it goes looking again. */
 const SwordRest = 0.3;
 
+/**
+ * The four other weapons' own colours, for the parts of them that are **paint** rather than light.
+ *
+ * Their tints in `kit` are pale on purpose — they are glow colours, and a glow added to a navy
+ * wallpaper wants to be pale. Painted solid on a cream one the same pale is not there, which is
+ * why 刀 got a palette of its own and why these do too: a deeper stop off each weapon's hue for the
+ * body, a darker one for the rim, and the tint left to do the light.
+ */
+/** 弓: jade, off its celadon tint. */
+const GongCore = '#f2ffe2';
+const GongBody = '#6cc23e';
+const GongRim = '#2c6a1a';
+/** 剑: 剑光, white-hot along the edge and cyan behind it. */
+const JianCore = '#f4feff';
+const JianBody = '#48cdf5';
+const JianRim = '#106a9c';
+/** 符: the paper's gold, the gold gone brown at the edges, and the cinnabar of the rune. */
+const FuGold = '#ffd24a';
+const FuDeep = '#a86a00';
+const FuRed = '#d02a2a';
+/** 盾: 罡气 as steel-blue, off its pale frost tint. */
+const DunCore = '#f4f9ff';
+const DunBody = '#7cb2e6';
+const DunRim = '#2d5c8f';
+/** The same, as the palettes `bloom` takes, so a weapon's light and its paint are one colour. */
+const GongHue: Palette = { core: GongCore, body: GongBody, edge: GongRim };
+const JianHue: Palette = { core: JianCore, body: JianBody, edge: JianRim };
+const FuHue: Palette = { core: '#fff6c8', body: FuGold, edge: FuDeep };
+
+/** 弓 on release: the string's snap at the body, and how long it shows. */
+const TwangSeconds = 0.14;
+/** 弓 on a hit: the splinters it throws on through the wound, how long and how far. */
+const ShatterSeconds = 0.26;
+const ShatterReach = 26;
+/**
+ * 剑: one cut of the flurry, drawn where it lands. Its reach is the length of the stroke, a little
+ * longer than the sword's own bite so the cut visibly goes *through* what it hit.
+ */
+const CutSeconds = 0.2;
+const CutReach = SwordBite * 1.3;
+/** 符 on a hit: the seal it stamps as it goes up, how long and how wide. */
+const SealSeconds = 0.34;
+const SealReach = 30;
+/**
+ * 符 in flight: the paper motes it sheds. How far apart they are dropped and how many are still
+ * showing — together they have to stay inside the talisman's own reach, which is what `bounds`
+ * repaints round it.
+ */
+const MoteGap = 8;
+const Motes = 4;
+/** 盾 on contact: the shockwave off the node, how long and how wide. */
+const ClangSeconds = 0.22;
+const ClangReach = 22;
+/** 盾: how long a node stays lit after it bites, out of its `GuardCool`. */
+const ClangFlash = 0.1;
+
 /** Seconds between the stone landing and the first pillar. */
 export const QuakeTell = 0.5;
 /** Seconds between one band of pillars and the next, outward. */
@@ -674,6 +730,23 @@ export class Attacks {
         Touch + reach,
         ARMS[arm.weapon].bite + this.pierce(),
       );
+      // The string's snap, off the edge of the body the way the arrow went. Light enough to go
+      // without when the field is full; the arrow is the thing that matters.
+      if (this.live.length < MaxLive) {
+        const aim = Math.atan2(mark.y - this.bodyY, mark.x - this.bodyX);
+        this.push(
+          '弓',
+          'twang',
+          this.bodyX + Math.cos(aim) * this.bodyR * 0.85,
+          this.bodyY + Math.sin(aim) * this.bodyR * 0.85,
+          0,
+          0,
+          aim,
+          TwangSeconds,
+          this.bodyR * 0.6,
+          0,
+        );
+      }
       return;
     }
     if (arm.weapon === '刀') {
@@ -1122,8 +1195,13 @@ export class Attacks {
         if (battlefield.cull(e.x, e.y, Touch, 1, e.power) > 0) {
           const aim = Math.atan2(e.vy, e.vx);
           this.land(e.x, e.y, battlefield, aim, e.power);
-          this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
-          this.spark(e.x, e.y, 5, '符', 180, aim, 2.1);
+          this.push('弓', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
+          this.spark(e.x, e.y, 5, '弓', 180, aim, 2.1);
+          // Splinters thrown on through the wound, the way the arrow was going: what says *an
+          // arrow went in here* rather than *something touched it*.
+          if (this.live.length < MaxLive) {
+            this.push('弓', 'shatter', e.x, e.y, 0, 0, aim, ShatterSeconds, ShatterReach, 0);
+          }
           // 锐金 is why this is a count rather than a `continue`: without it the arrow is spent
           // on the first thing it reaches, and with it it keeps going.
           e.bite -= 1;
@@ -1155,6 +1233,11 @@ export class Attacks {
           e.cool = GuardCool;
           this.land(e.x, e.y, battlefield, at + Math.PI / 2, e.power);
           this.spark(e.x, e.y, 4, '盾', 180, at + Math.PI / 2, 1.5);
+          // The shockwave off the node, left where it struck rather than carried round with it —
+          // the node goes on turning, and the ring is what says *this is where it hit*.
+          if (this.live.length < MaxLive) {
+            this.push('盾', 'clang', e.x, e.y, 0, 0, at, ClangSeconds, ClangReach, 0);
+          }
         }
       } else if (e.kind === 'charm') {
         // It bends toward what it is chasing rather than turning on the spot, so a target that
@@ -1176,6 +1259,11 @@ export class Attacks {
           this.land(e.x, e.y, battlefield, e.angle, e.power);
           this.push('符', 'pop', e.x, e.y, 0, 0, 0, 0.24, 26, 0);
           this.spark(e.x, e.y, 6, '符', 190, e.angle, 2.1);
+          // The paper goes up as a seal stamped where it struck. Turned by the heading it arrived
+          // on, so two seals side by side are not the same stamp twice.
+          if (this.live.length < MaxLive) {
+            this.push('符', 'seal', e.x, e.y, 0, 0, e.angle, SealSeconds, SealReach, 0);
+          }
           e.bite -= 1;
           if (e.bite <= 0) continue;
           e.cool = 0.08;
@@ -1184,6 +1272,9 @@ export class Attacks {
         // 飞剑. Two states and no flag for them: a positive `hits` means it is in the middle of a
         // flurry, and anything else means it is looking for the next thing to be in the middle of.
         if ((e.hits ?? 0) > 0) {
+          // Standing still while it works, which is what the 剑光 behind it reads. See below.
+          e.vx = 0;
+          e.vy = 0;
           e.cool -= dt;
           if (e.cool <= 0) {
             e.hits = (e.hits ?? 0) - 1;
@@ -1191,6 +1282,12 @@ export class Attacks {
             battlefield.cull(e.x, e.y, SwordBite, 1, e.power);
             this.land(e.x, e.y, battlefield, e.angle, e.power);
             this.spark(e.x, e.y, 3, '剑', 240, e.angle, 1.6);
+            // The cut itself, as a stroke of 剑光 across the target. Each one turns by the same
+            // 1.9 the sword does, so four of them cross into a star of cuts rather than one line
+            // drawn four times.
+            if (this.live.length < MaxLive) {
+              this.push('剑', 'cut', e.x, e.y, 0, 0, e.angle, CutSeconds, CutReach, 0);
+            }
             // `cool` is the beat between cuts while there are cuts left, and the rest after the
             // last one. One timer, two jobs, and which job it is doing is `hits`.
             //
@@ -1205,8 +1302,17 @@ export class Attacks {
           const mark = battlefield.closest(e.x, e.y, 1200);
           const goal = mark ?? { x: this.bodyX, y: this.bodyY };
           const away = Math.hypot(goal.x - e.x, goal.y - e.y) || 1;
-          e.x += ((goal.x - e.x) / away) * SwordSpeed * dt;
-          e.y += ((goal.y - e.y) / away) * SwordSpeed * dt;
+          const ux = (goal.x - e.x) / away;
+          const uy = (goal.y - e.y) / away;
+          e.x += ux * SwordSpeed * dt;
+          e.y += uy * SwordSpeed * dt;
+          // Nothing integrates a sword's velocity — it steers itself above — so these are only
+          // written for the drawing, which trails 剑光 behind it by how fast it is going. Eased
+          // off over the last stretch, or a sword sitting on its mark (it overshoots by a frame
+          // each way) would flick a full-length trail back and forth across it.
+          const glide = Math.min(1, away / 24);
+          e.vx = ux * SwordSpeed * glide;
+          e.vy = uy * SwordSpeed * glide;
           e.angle = Math.atan2(goal.y - e.y, goal.x - e.x);
           // Close enough, rested, and there is something to cut: it stops and goes to work.
           if (mark && away <= SwordBite && e.cool <= 0) e.hits = SwordFlurry;
@@ -1272,6 +1378,9 @@ export class Attacks {
     for (const e of this.live) {
       take(e.x, e.y, Math.max(e.reach, 40));
       if (e.path) for (const p of e.path) take(p.x, p.y, 30);
+      // 盾's track is a whole circle round the body, and the nodes on it only cover the circle
+      // between them when one of them happens to sit at its widest point.
+      if (e.kind === 'guard') take(this.bodyX, this.bodyY, e.reach + 6);
     }
     // Both ends of a spark's streak, not just the head, or the tail is left smeared on the desktop.
     for (const s of this.sparks) {
@@ -1836,87 +1945,220 @@ export class Attacks {
     }
 
     if (e.kind === 'guard') {
-      // 罡气: a mote on its orbit with a short arc of the orbit drawn behind it, so the ring is
-      // legible as a ring even when only two of them are up.
-      // A long wake rather than a short one, and a faint full circle under it. 盾 is the weapon
-      // whose whole identity is being **always on**, and two small dots going round read as two
-      // small dots — the ring has to be legible as a ring at a glance for the weapon to say what
-      // it is.
-      context.globalAlpha = 0.1;
-      context.strokeStyle = hue.body;
-      context.lineWidth = 1;
+      // 罡气: a node on its orbit with a comet's tail of the orbit drawn behind it, over a track
+      // for the whole ring. 盾 is the weapon whose whole identity is being **always on**, and two
+      // small dots going round read as two small dots — the ring has to be legible as a ring at a
+      // glance for the weapon to say what it is.
+      //
+      // The track was a faint circle of added light, which on a white wallpaper is no circle at
+      // all. It is ink now, dashed, and the dashes turn at the nodes' own pace so the ring reads as
+      // one thing going round rather than as a drawn guide. Once a ring, off its first node — one
+      // circle per node stacked them into a hard line.
+      if (e.index === 0) {
+        context.save();
+        context.globalCompositeOperation = 'source-over';
+        context.setLineDash([5, 9]);
+        context.lineDashOffset = -this.clock * GuardRate * e.reach;
+        context.beginPath();
+        context.arc(this.bodyX, this.bodyY, e.reach, 0, Math.PI * 2);
+        context.globalAlpha = 0.45;
+        context.strokeStyle = Ink;
+        context.lineWidth = 2.4;
+        context.stroke();
+        context.globalAlpha = 0.7;
+        context.strokeStyle = DunBody;
+        context.lineWidth = 1.1;
+        context.stroke();
+        context.restore();
+      }
+
+      // The tail: a band along the orbit, a point at the far end and a node's width at this one,
+      // painted solid so it is there on white. Traced round the circle rather than as a straight
+      // wedge, or a fast ring of them would be a ring of spokes.
+      const Tail = 1.25;
+      const steps = 10;
+      const tailX = this.bodyX + Math.cos(e.angle - Tail) * e.reach;
+      const tailY = this.bodyY + Math.sin(e.angle - Tail) * e.reach;
+      context.save();
+      context.globalCompositeOperation = 'source-over';
       context.beginPath();
-      context.arc(this.bodyX, this.bodyY, e.reach, 0, Math.PI * 2);
+      for (let j = 0; j <= steps; j++) {
+        const at = e.angle - Tail * (1 - j / steps);
+        const out = e.reach + 5 * Math.pow(j / steps, 1.6);
+        const x = this.bodyX + Math.cos(at) * out;
+        const y = this.bodyY + Math.sin(at) * out;
+        if (j === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      for (let j = steps; j >= 0; j--) {
+        const at = e.angle - Tail * (1 - j / steps);
+        const out = e.reach - 5 * Math.pow(j / steps, 1.6);
+        context.lineTo(this.bodyX + Math.cos(at) * out, this.bodyY + Math.sin(at) * out);
+      }
+      context.closePath();
+      const comet = context.createLinearGradient(tailX, tailY, e.x, e.y);
+      comet.addColorStop(0, clear(DunRim));
+      comet.addColorStop(1, DunBody);
+      context.globalAlpha = 0.9;
+      context.fillStyle = comet;
+      context.fill();
+      context.globalAlpha = 0.5;
+      context.strokeStyle = Ink;
+      context.lineWidth = 1.1;
       context.stroke();
-      const wake = context.createLinearGradient(
-        this.bodyX + Math.cos(e.angle - 1.1) * e.reach,
-        this.bodyY + Math.sin(e.angle - 1.1) * e.reach,
-        e.x,
-        e.y,
-      );
+      context.restore();
+
+      // The light down the middle of the tail, and round the node.
+      const wake = context.createLinearGradient(tailX, tailY, e.x, e.y);
       wake.addColorStop(0, clear(hue.body));
       wake.addColorStop(1, hue.core);
       context.globalAlpha = 0.75;
       context.strokeStyle = wake;
-      context.lineWidth = 3.5;
+      context.lineWidth = 2;
       context.beginPath();
-      context.arc(this.bodyX, this.bodyY, e.reach, e.angle - 1.1, e.angle);
+      context.arc(this.bodyX, this.bodyY, e.reach, e.angle - Tail, e.angle);
       context.stroke();
       this.bloom(context, e.x, e.y, 19, hue, 0.6);
-      // The node itself, solid and inked, over its light.
+
+      // The node itself, solid and inked, over its light — and swollen and white-hot for a beat
+      // after it bites, read straight off its own cooldown so nothing has to remember the hit.
+      const flash = Math.max(0, (e.cool - (GuardCool - ClangFlash)) / ClangFlash);
+      const size = 6.5 * (1 + 0.35 * flash);
       context.save();
       context.globalCompositeOperation = 'source-over';
       context.globalAlpha = 1;
-      context.fillStyle = hue.body;
+      context.fillStyle = flash > 0 ? mix(DunBody, '#ffffff', flash) : DunBody;
       context.strokeStyle = Ink;
       context.lineWidth = 1.8;
       context.beginPath();
-      context.arc(e.x, e.y, 6.5, 0, Math.PI * 2);
+      context.arc(e.x, e.y, size, 0, Math.PI * 2);
       context.fill();
       context.stroke();
-      context.fillStyle = hue.core;
+      context.fillStyle = DunCore;
       context.beginPath();
-      context.arc(e.x - 1.6, e.y - 1.6, 2.4, 0, Math.PI * 2);
+      context.arc(e.x - size * 0.25, e.y - size * 0.25, size * 0.37, 0, Math.PI * 2);
       context.fill();
       context.restore();
       context.globalAlpha = 1;
       return;
     }
 
+    if (e.kind === 'clang') {
+      // Where a 罡气 node bit: a ring knocked outward and a crown of short spikes off it, inked.
+      // Small and quick — a ring of six nodes bites often, and a big ring per bite would bury the
+      // fight in circles.
+      const t = Math.min(1, e.age / Math.max(0.001, e.life));
+      const ease = 1 - (1 - t) * (1 - t);
+      const r = e.reach * (0.3 + 0.7 * ease);
+      const left = 1 - t;
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 1 - t * t;
+      context.beginPath();
+      context.arc(e.x, e.y, r, 0, Math.PI * 2);
+      context.strokeStyle = Ink;
+      context.lineWidth = 1.4 + 3 * left;
+      context.stroke();
+      context.strokeStyle = DunBody;
+      context.lineWidth = 0.8 + 2 * left;
+      context.stroke();
+      context.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = e.angle + (i / 6) * Math.PI * 2;
+        const foot = r + 1.5;
+        const tip = foot + 7 * left;
+        context.moveTo(e.x + Math.cos(a) * foot, e.y + Math.sin(a) * foot);
+        context.lineTo(e.x + Math.cos(a) * tip, e.y + Math.sin(a) * tip);
+      }
+      context.strokeStyle = Ink;
+      context.lineWidth = 2.6;
+      context.stroke();
+      context.strokeStyle = DunCore;
+      context.lineWidth = 1.1;
+      context.stroke();
+      context.restore();
+      // One flat disc of light for the first frames, not a bloom: this is the effect a 盾 build puts
+      // out most of, and three gradients each would be the bill for it.
+      if (t < 0.4) {
+        context.globalAlpha = (1 - t / 0.4) * 0.5;
+        context.fillStyle = DunCore;
+        context.beginPath();
+        context.arc(e.x, e.y, r * 0.7, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.globalAlpha = 1;
+      return;
+    }
+
     if (e.kind === 'charm') {
-      // The charm itself, turned to face where it is going, with a short wake. It is slow enough
-      // that the shape is actually seen.
+      // 符 in flight: a paper talisman that flutters, turning a little about its heading and
+      // flipping edge-on and back, so it reads as paper thrown rather than a tile sliding.
+      const lit = Math.min(1, e.age * 12);
       context.save();
       context.translate(e.x, e.y);
       context.rotate(e.angle);
-      context.globalAlpha = 0.4;
+      // A ribbon of gold light behind it.
+      context.globalAlpha = 0.4 * lit;
       context.strokeStyle = hue.body;
       context.lineWidth = 2;
       context.beginPath();
-      context.moveTo(-22, 0);
+      context.moveTo(-9 - Motes * MoteGap * 0.8, 0);
       context.lineTo(-7, 0);
       context.stroke();
-      // A paper talisman, solid and inked: yellow, a red rune down it, and the weapon's colour on
-      // its two edges.
+
       context.globalCompositeOperation = 'source-over';
+      // The motes it sheds. Each is dropped every `MoteGap` of travel and **left where it fell**:
+      // its distance behind is the travel so far modulo the gap, plus whole gaps, which is a fixed
+      // point on the ground for as long as the flight is straight. Drawn here off the talisman's own
+      // age rather than pushed as effects of their own, so a sky full of charms is not a list full of
+      // flecks. A mote's spin and its sway are hashed from which drop it was, so it keeps them.
+      const flown = e.age * CharmSpeed;
+      const shed = flown % MoteGap;
+      context.strokeStyle = Ink;
+      context.lineWidth = 1;
+      for (let k = 0; k < Motes; k++) {
+        const back = 9 + shed + k * MoteGap;
+        // None behind the point it was thrown from: that is the body, not the trail.
+        if (back > flown) break;
+        const drop = Math.floor(flown / MoteGap) - k;
+        const left = 1 - (back - 9) / (Motes * MoteGap);
+        const s = 0.9 + 1.8 * left;
+        context.save();
+        context.translate(-back, Math.sin(drop * 2.3) * 3.5);
+        context.rotate(drop * 1.7 + e.age * 7);
+        context.globalAlpha = left * lit;
+        context.fillStyle = drop % 2 === 0 ? FuGold : '#fff0a8';
+        context.beginPath();
+        context.rect(-s, -s * 0.7, s * 2, s * 1.4);
+        context.fill();
+        context.stroke();
+        context.restore();
+      }
+
+      // The talisman itself, solid and inked: yellow, a cinnabar rune down it, and its two edges
+      // browned. Its height is what flips — drawn at that height rather than scaled, so the ink
+      // round it stays one weight however edge-on it is.
+      context.rotate(Math.sin(e.age * 13) * 0.28);
+      const flip = 0.55 + 0.45 * Math.abs(Math.cos(e.age * 9));
+      const h = 5.5 * flip;
       context.globalAlpha = 1;
       context.fillStyle = '#f6d65a';
       context.strokeStyle = Ink;
       context.lineWidth = 1.6;
       context.beginPath();
-      context.rect(-8, -5.5, 16, 11);
+      context.rect(-8, -h, 16, h * 2);
       context.fill();
       context.stroke();
-      context.fillStyle = hue.body;
-      context.fillRect(-8, -5.5, 16, 2);
-      context.fillRect(-8, 3.5, 16, 2);
-      context.strokeStyle = '#d02a2a';
+      context.fillStyle = FuDeep;
+      context.fillRect(-8, -h, 16, 1.8 * flip);
+      context.fillRect(-8, h - 1.8 * flip, 16, 1.8 * flip);
+      context.strokeStyle = FuRed;
       context.lineWidth = 1.2;
       context.beginPath();
       context.moveTo(-4, 0);
-      context.lineTo(4, -1.5);
-      context.moveTo(-3, 1.6);
-      context.lineTo(3, 1.6);
+      context.lineTo(4, -1.5 * flip);
+      context.moveTo(-3, 1.6 * flip);
+      context.lineTo(3, 1.6 * flip);
       context.stroke();
       context.restore();
       this.bloom(context, e.x, e.y, 16, hue, 0.4);
@@ -1924,44 +2166,154 @@ export class Attacks {
       return;
     }
 
+    if (e.kind === 'seal') {
+      // Where a 符 struck: the paper goes up as a seal. A ring of gold with a second inside it and
+      // cinnabar 符文 marks between them, a red stamp popping in at the middle, all turning as it
+      // spreads — and the shreds of the paper flung off round it. Every line inked, so the seal is
+      // a seal on white and not a smudge of yellow.
+      const t = Math.min(1, e.age / Math.max(0.001, e.life));
+      const ease = 1 - (1 - t) * (1 - t) * (1 - t);
+      const r = e.reach * (0.3 + 0.5 * ease);
+      const fade = t < 0.5 ? 1 : 1 - ((t - 0.5) / 0.5) * ((t - 0.5) / 0.5);
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = fade;
+      context.translate(e.x, e.y);
+      context.rotate(e.angle + ease * 0.9);
+      context.beginPath();
+      context.arc(0, 0, r, 0, Math.PI * 2);
+      context.strokeStyle = Ink;
+      context.lineWidth = 3.6;
+      context.stroke();
+      context.strokeStyle = FuGold;
+      context.lineWidth = 1.9;
+      context.stroke();
+      context.beginPath();
+      context.arc(0, 0, r * 0.66, 0, Math.PI * 2);
+      context.strokeStyle = Ink;
+      context.lineWidth = 2.4;
+      context.stroke();
+      context.strokeStyle = FuGold;
+      context.lineWidth = 1.1;
+      context.stroke();
+      context.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const to = r * (i % 2 === 0 ? 0.94 : 0.84);
+        context.moveTo(Math.cos(a) * r * 0.72, Math.sin(a) * r * 0.72);
+        context.lineTo(Math.cos(a) * to, Math.sin(a) * to);
+      }
+      context.strokeStyle = FuRed;
+      context.lineWidth = 1.5;
+      context.stroke();
+      // The stamp: slammed in a little too big and settling, which is what makes it land.
+      const pop = t < 0.18 ? (t / 0.18) * 1.25 : 1.25 - 0.25 * Math.min(1, (t - 0.18) / 0.2);
+      const s = e.reach * 0.2 * pop;
+      if (s > 0.2) {
+        context.rotate(Math.PI / 4);
+        context.beginPath();
+        context.rect(-s, -s, s * 2, s * 2);
+        context.fillStyle = FuRed;
+        context.fill();
+        context.strokeStyle = Ink;
+        context.lineWidth = 1.4;
+        context.stroke();
+        context.rotate(-Math.PI / 4);
+        context.beginPath();
+        context.moveTo(-s * 0.55, 0);
+        context.lineTo(s * 0.55, 0);
+        context.moveTo(0, -s * 0.55);
+        context.lineTo(0, s * 0.55);
+        context.strokeStyle = FuGold;
+        context.lineWidth = 1.3;
+        context.stroke();
+      }
+      context.restore();
+      // The shreds, outside the turning frame so they fly straight out and fall a little.
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 1 - t * t;
+      context.fillStyle = '#f6d65a';
+      context.strokeStyle = Ink;
+      context.lineWidth = 1;
+      for (let i = 0; i < 5; i++) {
+        const a = e.angle + i * 1.2566 + 0.3;
+        const out = e.reach * (0.3 + 0.62 * ease);
+        const size = 1.2 + 2.4 * (1 - t);
+        context.save();
+        context.translate(e.x + Math.cos(a) * out, e.y + Math.sin(a) * out + t * t * 6);
+        context.rotate(a + t * 5 + i);
+        context.beginPath();
+        context.rect(-size, -size * 0.7, size * 2, size * 1.4);
+        context.fill();
+        context.stroke();
+        context.restore();
+      }
+      context.restore();
+      this.bloom(context, e.x, e.y, r * 1.2, FuHue, 0.5 * (1 - t));
+      context.globalAlpha = 1;
+      return;
+    }
+
     if (e.kind === 'sword') {
-      // 飞剑: a blade pointing the way it is going, and a flurry drawn as the cuts themselves
-      // rather than as the sword moving — at four cuts in half a second, a sword that travelled
-      // between them would be a blur with no cuts in it.
+      // 飞剑: a blade pointing the way it is going, with 剑光 streaming off it while it flies. The
+      // flurry is drawn as the cuts themselves (`cut`) rather than as the sword moving — at four
+      // cuts in half a second, a sword that travelled between them would be a blur with no cuts in
+      // it — but the blade does jab forward on each one, so it is seen doing the cutting.
       const cutting = (e.hits ?? 0) > 0;
-      if (cutting) {
-        context.globalAlpha = 0.75;
-        context.strokeStyle = hue.core;
-        context.lineWidth = 2.5;
-        for (let i = 0; i < 2; i++) {
-          const at = e.angle - i * 1.1;
-          context.beginPath();
-          context.moveTo(e.x - Math.cos(at) * SwordBite, e.y - Math.sin(at) * SwordBite);
-          context.lineTo(e.x + Math.cos(at) * SwordBite, e.y + Math.sin(at) * SwordBite);
-          context.stroke();
+      const moving = cutting ? 0 : Math.min(1, Math.hypot(e.vx, e.vy) / SwordSpeed);
+      const lunge = cutting ? Math.pow(Math.max(0, Math.min(1, e.cool / SwordBeat)), 2) * 6 : 0;
+      this.bloom(context, e.x, e.y, cutting ? 26 : 16, hue, cutting ? 0.6 : 0.35);
+      const steel = (dx: number) => {
+        context.beginPath();
+        context.moveTo(19 + dx, 0);
+        context.lineTo(dx, -3.6);
+        context.lineTo(dx - 6, -3.6);
+        context.lineTo(dx - 6, 3.6);
+        context.lineTo(dx, 3.6);
+        context.closePath();
+      };
+      context.save();
+      context.translate(e.x + Math.cos(e.angle) * lunge, e.y + Math.sin(e.angle) * lunge);
+      context.rotate(e.angle);
+      context.globalCompositeOperation = 'source-over';
+      if (moving > 0.05) {
+        // 剑光: a long tapering streak off the whole blade, painted under it so the blade covers
+        // its root, and two ghosts of the blade along it — what was a sword sliding is a sword
+        // *flying*.
+        const long = 36 * moving;
+        const streak = context.createLinearGradient(-13 - long, 0, 4, 0);
+        streak.addColorStop(0, clear(JianBody));
+        streak.addColorStop(1, JianBody);
+        context.globalAlpha = 0.85 * moving;
+        context.beginPath();
+        context.moveTo(-13 - long, 0);
+        context.lineTo(4, -4.6);
+        context.lineTo(4, 4.6);
+        context.closePath();
+        context.fillStyle = streak;
+        context.fill();
+        context.globalAlpha = 0.35 * moving;
+        context.strokeStyle = Ink;
+        context.lineWidth = 1;
+        context.stroke();
+        for (let g = 2; g >= 1; g--) {
+          context.globalAlpha = (0.42 - g * 0.13) * moving;
+          context.fillStyle = g === 1 ? JianBody : JianRim;
+          steel(-g * 11);
+          context.fill();
         }
       }
-      this.bloom(context, e.x, e.y, cutting ? 26 : 16, hue, cutting ? 0.6 : 0.35);
-      context.save();
-      context.translate(e.x, e.y);
-      context.rotate(e.angle);
-      // A blade you can see on white: steel, inked, with a gold guard and the weapon's colour down
-      // its spine.
-      context.globalCompositeOperation = 'source-over';
+      // A blade you can see on white: steel, inked, with a gold guard and 剑光's cyan down its
+      // spine.
       context.globalAlpha = 1;
       context.fillStyle = '#eef3fb';
       context.strokeStyle = Ink;
       context.lineWidth = 1.6;
-      context.beginPath();
-      context.moveTo(19, 0);
-      context.lineTo(0, -3.6);
-      context.lineTo(-6, -3.6);
-      context.lineTo(-6, 3.6);
-      context.lineTo(0, 3.6);
-      context.closePath();
+      steel(0);
       context.fill();
       context.stroke();
-      context.strokeStyle = hue.body;
+      context.strokeStyle = JianBody;
       context.lineWidth = 1.1;
       context.beginPath();
       context.moveTo(-5, 0);
@@ -1981,32 +2333,133 @@ export class Attacks {
       context.lineTo(-13, 0);
       context.stroke();
       context.restore();
+      context.globalAlpha = 1;
+      return;
+    }
+
+    if (e.kind === 'cut') {
+      // One cut of a 剑 flurry: a stroke of 剑光 drawn through the target — it whips out along its
+      // length, then its tail chases its head and it is gone. Bowed a little to one side, so it is
+      // a cut and not a ruled line, and edged in ink so a white-hot stroke still shows on white.
+      // Four of them, each turned by the sword's 1.9, cross into a star over whatever they hit.
+      const t = Math.min(1, e.age / Math.max(0.001, e.life));
+      // Short of the reach by the ink and the bow, so what `bounds` repaints covers the stroke.
+      const long = e.reach * 0.88;
+      const reveal = 1 - (1 - Math.min(1, t / 0.3)) * (1 - Math.min(1, t / 0.3));
+      const head = -long + 2 * long * reveal;
+      const tail = -long + 2 * long * Math.pow(Math.max(0, (t - 0.35) / 0.65), 1.5);
+      const wide = 3.6 * (1 - t * 0.5);
+      const stroke = (bow: number) => {
+        const mid = (head + tail) / 2;
+        context.beginPath();
+        context.moveTo(tail, 0);
+        context.quadraticCurveTo(mid, -bow * 2, head, 0);
+        context.quadraticCurveTo(mid, bow * 0.6, tail, 0);
+        context.closePath();
+      };
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.globalAlpha = 1;
+      if (head - tail > 0.5) {
+        stroke(wide);
+        context.fillStyle = JianBody;
+        context.fill();
+        context.strokeStyle = Ink;
+        context.lineWidth = 1.6;
+        context.stroke();
+        stroke(wide * 0.45);
+        context.fillStyle = JianCore;
+        context.fill();
+      }
+      // Sparks off the cut, two to a side, splayed. Fixed angles in the cut's own frame, so they
+      // are the same sparks every frame and the cut's turn is what varies them.
+      const ease = 1 - (1 - t) * (1 - t);
+      const out = 5 + 15 * ease;
+      const size = 0.4 + 2.6 * (1 - t);
+      context.fillStyle = JianCore;
+      context.strokeStyle = Ink;
+      context.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const a = (i < 2 ? -1 : 1) * Math.PI / 2 + (i % 2 === 0 ? -0.45 : 0.45);
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        context.beginPath();
+        context.moveTo(ca * (out + size * 1.6), sa * (out + size * 1.6));
+        context.lineTo(ca * out - sa * size * 0.6, sa * out + ca * size * 0.6);
+        context.lineTo(ca * (out - size * 0.8), sa * (out - size * 0.8));
+        context.lineTo(ca * out + sa * size * 0.6, sa * out - ca * size * 0.6);
+        context.closePath();
+        context.fill();
+        context.stroke();
+      }
+      context.restore();
+      this.bloom(context, e.x, e.y, 15, JianHue, 0.55 * (1 - t));
+      context.globalAlpha = 1;
       return;
     }
 
     if (e.kind === 'arrow') {
       // 弓. A streak along its own heading, with a small inked arrow at its head. The streak alone
-      // was light added to the wallpaper, and on a white one it was not there at all.
+      // was light added to the wallpaper, and on a white one it was not there at all — so it is
+      // paint first now, a jade wedge tapering back off the shaft with an ink edge fading out
+      // along it, and two speed lines either side, with the light laid over that.
+      //
+      // Never longer than the arrow's own reach: `bounds` repaints that far round it and no further.
       const lit = Math.min(1, e.age * 14);
-      const back = 26 + Math.min(16, e.age * 90);
+      const back = 26 + Math.min(14, e.age * 90);
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.beginPath();
+      context.moveTo(-back, 0);
+      context.lineTo(-8, -3.4);
+      context.lineTo(-8, 3.4);
+      context.closePath();
+      const wedge = context.createLinearGradient(-back, 0, -8, 0);
+      wedge.addColorStop(0, clear(GongBody));
+      wedge.addColorStop(1, GongBody);
+      context.globalAlpha = 0.9 * lit;
+      context.fillStyle = wedge;
+      context.fill();
+      const edge = context.createLinearGradient(-back, 0, -8, 0);
+      edge.addColorStop(0, clear(Ink));
+      edge.addColorStop(1, Ink);
+      context.strokeStyle = edge;
+      context.lineWidth = 1.2;
+      context.stroke();
+      context.globalAlpha = 0.7 * lit;
+      context.strokeStyle = GongRim;
+      context.lineCap = 'round';
+      context.lineWidth = 1.3;
+      context.beginPath();
+      for (const side of [-1, 1]) {
+        context.moveTo(-12, side * 7);
+        context.lineTo(-12 - 10 - back * 0.25, side * 7);
+      }
+      context.stroke();
+      context.restore();
+
       const tail = context.createLinearGradient(
-        e.x - Math.cos(e.angle) * back,
-        e.y - Math.sin(e.angle) * back,
+        e.x - Math.cos(e.angle) * back * 0.8,
+        e.y - Math.sin(e.angle) * back * 0.8,
         e.x,
         e.y,
       );
-      tail.addColorStop(0, clear(hue.body));
-      tail.addColorStop(1, hue.core);
+      tail.addColorStop(0, clear(GongBody));
+      tail.addColorStop(1, GongCore);
       context.globalAlpha = lit;
       context.strokeStyle = tail;
-      context.lineWidth = 2.6;
+      context.lineWidth = 2;
       context.beginPath();
-      context.moveTo(e.x - Math.cos(e.angle) * back, e.y - Math.sin(e.angle) * back);
+      context.moveTo(e.x - Math.cos(e.angle) * back * 0.8, e.y - Math.sin(e.angle) * back * 0.8);
       context.lineTo(e.x, e.y);
       context.stroke();
-      this.bloom(context, e.x, e.y, 13, hue, 0.5 * lit);
+      this.bloom(context, e.x, e.y, 13, GongHue, 0.5 * lit);
       // The arrow itself, solid and inked, over its streak — painted last, since the streak is
-      // added light and would wash out anything under it: a shaft, a head, two fletchings.
+      // added light and would wash out anything under it: a shaft, a head, two jade fletchings.
       context.save();
       context.globalCompositeOperation = 'source-over';
       context.translate(e.x, e.y);
@@ -2035,7 +2488,7 @@ export class Attacks {
       context.closePath();
       context.fill();
       context.stroke();
-      context.fillStyle = hue.body;
+      context.fillStyle = GongBody;
       for (const side of [-1, 1]) {
         context.beginPath();
         context.moveTo(-15, 0);
@@ -2050,7 +2503,98 @@ export class Attacks {
       return;
     }
 
+    if (e.kind === 'twang') {
+      // 弓 on release: the string's snap, as half a squashed ring thrown off the body the way the
+      // arrow went, and three short lines out ahead of it. A bow that fires with nothing at the
+      // body reads as an arrow appearing from nowhere.
+      const t = Math.min(1, e.age / Math.max(0.001, e.life));
+      const swell = 1 - (1 - t) * (1 - t);
+      const r = e.reach * (0.45 + 0.55 * swell);
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.globalAlpha = 1 - t * t;
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.beginPath();
+      context.ellipse(0, 0, r * 0.34, r, 0, -Math.PI / 2, Math.PI / 2);
+      context.strokeStyle = Ink;
+      context.lineWidth = 3.4;
+      context.stroke();
+      context.strokeStyle = GongBody;
+      context.lineWidth = 1.7;
+      context.stroke();
+      context.beginPath();
+      for (const side of [-1, 0, 1]) {
+        const from = r * 0.34 + 3 + swell * 6;
+        context.moveTo(from, side * r * 0.42);
+        context.lineTo(from + 2 + 10 * (1 - t), side * (r * 0.42 + 2));
+      }
+      context.strokeStyle = Ink;
+      context.lineWidth = 3;
+      context.stroke();
+      context.strokeStyle = GongCore;
+      context.lineWidth = 1.3;
+      context.stroke();
+      context.restore();
+      context.globalAlpha = 1;
+      return;
+    }
 
+    if (e.kind === 'shatter') {
+      // Where an arrow went in: for the first frames a bright sliver along the line it passed
+      // through, then splinters of shaft and jade flung on the way it was going. The spread is
+      // hashed from where it landed, the way the impact star's turn is, so two arrows into one
+      // crowd do not splinter identically and no frame re-rolls it.
+      const t = Math.min(1, e.age / Math.max(0.001, e.life));
+      const ease = 1 - (1 - t) * (1 - t);
+      context.save();
+      context.globalCompositeOperation = 'source-over';
+      context.translate(e.x, e.y);
+      context.rotate(e.angle);
+      context.strokeStyle = Ink;
+      if (t < 0.45) {
+        const k = 1 - t / 0.45;
+        const long = e.reach * (0.7 + 0.5 * (1 - k));
+        const wide = 3.2 * k;
+        context.globalAlpha = k;
+        context.beginPath();
+        context.moveTo(-long * 0.6, 0);
+        context.quadraticCurveTo(0, -wide * 2, long, 0);
+        context.quadraticCurveTo(0, wide * 2, -long * 0.6, 0);
+        context.closePath();
+        context.fillStyle = GongCore;
+        context.fill();
+        context.lineWidth = 1.3;
+        context.stroke();
+      }
+      const wob = (e.x * 0.37 + e.y * 0.11) % 0.8;
+      context.globalAlpha = 1 - t * t;
+      context.lineWidth = 1.1;
+      for (let i = 0; i < 6; i++) {
+        const a = (i - 2.5) * 0.38 + Math.sin(wob * 7 + i * 2.1) * 0.18;
+        const out = e.reach * (0.2 + 0.75 * ease) * (0.75 + 0.125 * ((i * 7) % 3));
+        const long = 7 * (1 - t * 0.5) * (i % 2 === 0 ? 1 : 0.75);
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        context.beginPath();
+        context.moveTo(ca * (out + long), sa * (out + long));
+        context.lineTo(ca * out - sa * 1.6, sa * out + ca * 1.6);
+        context.lineTo(ca * out + sa * 1.6, sa * out - ca * 1.6);
+        context.closePath();
+        context.fillStyle = i % 2 === 0 ? GongBody : '#c8995a';
+        context.fill();
+        context.stroke();
+      }
+      context.restore();
+      // A flat disc of light at the wound: arrows land often enough that a bloom each adds up.
+      context.globalAlpha = 0.4 * (1 - t);
+      context.fillStyle = GongCore;
+      context.beginPath();
+      context.arc(e.x, e.y, 3 + 8 * (1 - t), 0, Math.PI * 2);
+      context.fill();
+      context.globalAlpha = 1;
+      return;
+    }
 
     if (e.kind === 'pillar') {
       // A stone shoved up out of the ground, drawn for a tilted overhead view.

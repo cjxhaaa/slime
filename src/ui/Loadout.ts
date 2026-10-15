@@ -19,6 +19,7 @@ import { words } from '../i18n/index.js';
 import { drawWayIcon, drawWeaponIcon, wayTint } from './icons.js';
 import type { Rect } from './Pause.js';
 import { wrap } from './text.js';
+import { BodyFace, Sect, TitleFace, paperPanel, plaque, seal, sealButton, veil } from './sect.js';
 
 /** One tile, the column it sits in, and the room under it for a name of up to two lines. */
 const Tile = 52;
@@ -29,10 +30,8 @@ const PanelWidth = Margin * 2 + Pitch * 5;
 const ButtonHeight = 38;
 const ButtonGap = 10;
 
-const TitleFont = '600 20px system-ui, sans-serif';
-const LabelFont = '500 12px system-ui, sans-serif';
-export const NameFont = '12px system-ui, sans-serif';
-const ButtonFont = '600 14px system-ui, sans-serif';
+const LabelFont = `700 13px ${TitleFace}`;
+export const NameFont = `12px ${BodyFace}`;
 
 export type Pick = 'start' | 'leave';
 
@@ -140,37 +139,26 @@ export class LoadoutPanel {
     const { x, y, height: panelHeight } = this.panel;
 
     context.save();
-    context.fillStyle = 'rgba(10, 16, 28, 0.34)';
-    context.fillRect(0, 0, width, height);
+    veil(context, width, height);
     context.globalAlpha = rise;
     context.translate(0, (1 - rise) * 18);
 
-    context.shadowColor = 'rgba(0, 0, 0, 0.45)';
-    context.shadowBlur = 24;
-    context.shadowOffsetY = 6;
-    context.fillStyle = 'rgba(18, 24, 36, 0.96)';
-    context.beginPath();
-    context.roundRect(x, y, PanelWidth, panelHeight, 14);
-    context.fill();
-    context.shadowColor = 'transparent';
-    context.shadowBlur = 0;
-    context.shadowOffsetY = 0;
-    context.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-    context.lineWidth = 1;
-    context.stroke();
-
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.font = TitleFont;
-    context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    context.fillText(w.loadout.title, x + PanelWidth / 2, y + Margin + 14);
+    // A sheet of the sect's paper with the question hung across its top on a lacquered board.
+    paperPanel(context, { x, y, width: PanelWidth, height: panelHeight }, 8);
+    plaque(context, w.loadout.title, x + PanelWidth / 2, y + Margin + 12, 18);
 
     context.textAlign = 'left';
+    context.textBaseline = 'middle';
     context.font = LabelFont;
-    context.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    context.fillStyle = Sect.ink;
     const armsTop = y + Margin + 28 + 18 + 22;
-    context.fillText(w.loadout.arms, x + Margin, armsTop - 12);
-    context.fillText(w.loadout.ways, x + Margin, armsTop + RowHeight + 22 - 12);
+    for (const [label, top] of [
+      [w.loadout.arms, armsTop - 12],
+      [w.loadout.ways, armsTop + RowHeight + 22 - 12],
+    ] as const) {
+      seal(context, Array.from(label)[0] ?? '', x + Margin, top - 8, 16);
+      context.fillText(label, x + Margin + 22, top + 1);
+    }
 
     for (const { target, box } of this.targets) {
       if (target.kind === 'start' || target.kind === 'leave') {
@@ -180,24 +168,39 @@ export class LoadoutPanel {
       const picked =
         target.kind === 'arm' ? this.arms.includes(target.weapon) : this.ways.includes(target.way);
       const hot = this.hot !== null && sameTarget(this.hot, target);
+      if (picked) {
+        // Picked: a jade glow behind it, so the five read as chosen from across the panel.
+        context.save();
+        context.globalAlpha = rise * 0.55;
+        const glow = context.createRadialGradient(
+          box.x + Tile / 2, box.y + Tile / 2, Tile * 0.2,
+          box.x + Tile / 2, box.y + Tile / 2, Tile * 0.85,
+        );
+        glow.addColorStop(0, 'rgba(108, 194, 166, 0.9)');
+        glow.addColorStop(1, 'rgba(108, 194, 166, 0)');
+        context.fillStyle = glow;
+        context.fillRect(box.x - Tile * 0.4, box.y - Tile * 0.4, Tile * 1.8, Tile * 1.8);
+        context.restore();
+      }
       context.save();
       // What is not picked is drawn faded rather than greyed: it is still a thing you could take.
-      context.globalAlpha = rise * (picked ? 1 : hot ? 0.75 : 0.42);
+      context.globalAlpha = rise * (picked ? 1 : hot ? 0.8 : 0.5);
       context.translate(box.x + Tile / 2, box.y + Tile / 2);
       if (target.kind === 'arm') drawWeaponIcon(context, target.weapon, Tile, tintOf(1));
       else drawWayIcon(context, target.way, Tile, wayTint(target.way));
       context.restore();
       if (picked) {
-        context.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+        // A gold frame round what is picked.
+        context.strokeStyle = Sect.gold;
         context.lineWidth = 2.5;
         context.beginPath();
-        context.roundRect(box.x - 4, box.y - 4, Tile + 8, Tile + 8, 12);
+        context.roundRect(box.x - 4, box.y - 4, Tile + 8, Tile + 8, 6);
         context.stroke();
       }
       const name = target.kind === 'arm' ? w.arms[target.weapon].name : w.ways[target.way].name;
       context.font = NameFont;
       context.textAlign = 'center';
-      context.fillStyle = picked ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.5)';
+      context.fillStyle = picked ? Sect.ink : Sect.muted;
       const lines = wrap(name, Pitch - 4, (text) => context.measureText(text).width).slice(0, 2);
       lines.forEach((line, i) => context.fillText(line, box.x + Tile / 2, box.y + Tile + 14 + i * 14));
     }
@@ -209,35 +212,12 @@ export class LoadoutPanel {
   private drawButton(context: CanvasRenderingContext2D, kind: Pick, box: Rect): void {
     const w = words();
     const hot = this.hot?.kind === kind;
-    const ready = this.choice !== null;
-    const leaving = kind === 'leave';
-    context.fillStyle = leaving
-      ? hot
-        ? 'rgba(198, 86, 72, 0.22)'
-        : 'rgba(255, 255, 255, 0.04)'
-      : ready
-        ? hot
-          ? 'rgba(51, 198, 166, 0.34)'
-          : 'rgba(51, 198, 166, 0.2)'
-        : 'rgba(255, 255, 255, 0.04)';
-    context.beginPath();
-    context.roundRect(box.x, box.y, box.width, box.height, 9);
-    context.fill();
-    context.lineWidth = 1;
-    context.strokeStyle = leaving
-      ? 'rgba(255, 255, 255, 0.16)'
-      : ready
-        ? 'rgba(96, 222, 192, 0.7)'
-        : 'rgba(255, 255, 255, 0.12)';
-    context.stroke();
-    context.font = ButtonFont;
-    context.textAlign = 'center';
-    context.fillStyle = leaving
-      ? 'rgba(255, 210, 200, 0.82)'
-      : ready
-        ? '#b9f6e4'
-        : 'rgba(255, 255, 255, 0.3)';
-    context.fillText(leaving ? w.trial.pauseLeave : w.loadout.start, box.x + box.width / 2, box.y + box.height / 2 + 1);
+    if (kind === 'leave') {
+      sealButton(context, box, w.trial.pauseLeave, 'paper', { hot });
+      return;
+    }
+    // Lacquered once all five are picked; faded until then, because it does nothing until then.
+    sealButton(context, box, w.loadout.start, 'cinnabar', { hot, disabled: this.choice === null });
   }
 }
 

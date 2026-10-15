@@ -11,6 +11,7 @@
  */
 import type { Rect } from '../game/Trial.js';
 import { BossWave, EliteWaves, WavesPerLevel } from '../game/Waves.js';
+import { lacquerPlate } from './sect.js';
 
 const Top = 16;
 const Height = 30;
@@ -36,18 +37,16 @@ export function drawWaveRow(context: CanvasRenderingContext2D, width: number, ma
   const y = Top + Height / 2;
   context.save();
 
-  // The same plate the yard's readout sits on, for the same reason: the overlay is transparent and
-  // pale dots on a pale wallpaper are not there.
-  context.fillStyle = 'rgba(10, 12, 18, 0.55)';
-  context.beginPath();
-  context.roundRect(left, Top, Width, Height, Height / 2);
-  context.fill();
+  // On a strip of lacquer, like the bar: the overlay is transparent and pale dots on a pale
+  // wallpaper are not there.
+  lacquerPlate(context, { x: left, y: Top, width: Width, height: Height }, Height / 2, 0.88);
 
   for (let i = 0; i < WavesPerLevel; i++) {
     const x = left + 10 + Pitch * (i + 0.5);
     const r = radiusOf(i);
     const boss = i === BossWave;
-    const ink = boss ? '255, 190, 120' : '255, 255, 255';
+    // Gold for the waves, cinnabar for the king's.
+    const ink = boss ? '226, 96, 79' : '232, 207, 138';
 
     const mark = marks[i] ?? -1;
     if (mark >= 1) {

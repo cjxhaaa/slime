@@ -10,6 +10,8 @@
  * matter of continuing to renew while it is open, which is a caller decision and needs no change on
  * the Rust side.
  */
+import { BodyFace, Sect } from './sect.js';
+
 export interface MenuItem {
   id: string;
   label: string;
@@ -31,9 +33,9 @@ const PadY = 9;
 const RowHeight = 30;
 const NoteHeight = 15;
 const MinWidth = 132;
-const Radius = 9;
-const LabelFont = '13px system-ui, sans-serif';
-const NoteFont = '11px system-ui, sans-serif';
+const Radius = 7;
+const LabelFont = `600 13px ${BodyFace}`;
+const NoteFont = `11px ${BodyFace}`;
 /**
  * How far down and right of the click the menu opens.
  *
@@ -160,25 +162,31 @@ export class Menu {
     return { kind: 'dismiss' };
   }
 
+  /**
+   * A slip of rice paper with a lacquer rim, like everything else in a level. The row under the
+   * pointer is washed in jade with a cinnabar mark at its edge.
+   */
   draw(context: CanvasRenderingContext2D): void {
     if (!this.box) return;
     const { x, y, width, height } = this.box;
     context.save();
-
-    // A shadow, because this floats over an unknown desktop and needs an edge that does not depend
-    // on what is behind it.
-    context.shadowColor = 'rgba(0, 0, 0, 0.3)';
+    context.shadowColor = 'rgba(30, 15, 5, 0.4)';
     context.shadowBlur = 16;
     context.shadowOffsetY = 3;
-    context.fillStyle = 'rgba(252, 253, 254, 0.97)';
+    context.fillStyle = Sect.card;
     context.beginPath();
     context.roundRect(x, y, width, height, Radius);
     context.fill();
     context.shadowColor = 'transparent';
     context.shadowBlur = 0;
     context.shadowOffsetY = 0;
+    context.lineWidth = 1.5;
+    context.strokeStyle = Sect.lacquerLight;
+    context.stroke();
     context.lineWidth = 1;
-    context.strokeStyle = 'rgba(15, 30, 45, 0.14)';
+    context.strokeStyle = 'rgba(201, 162, 74, 0.6)';
+    context.beginPath();
+    context.roundRect(x + 3, y + 3, width - 6, height - 6, Radius - 3);
     context.stroke();
 
     const rows = this.rows();
@@ -186,19 +194,21 @@ export class Menu {
       const item = this.items[i];
       const row = rows[i];
       if (i === this.hot) {
-        context.fillStyle = 'rgba(28, 130, 190, 0.13)';
+        context.fillStyle = 'rgba(108, 194, 166, 0.22)';
         context.beginPath();
-        context.roundRect(row.x, row.y + 1, row.width, row.height - 2, 6);
+        context.roundRect(row.x, row.y + 1, row.width, row.height - 2, 4);
         context.fill();
+        context.fillStyle = Sect.cinnabar;
+        context.fillRect(row.x, row.y + 6, 3, row.height - 12);
       }
       context.textAlign = 'left';
       context.textBaseline = 'middle';
       context.font = LabelFont;
-      context.fillStyle = item.enabled ? '#14202b' : 'rgba(20, 32, 43, 0.38)';
+      context.fillStyle = item.enabled ? Sect.ink : 'rgba(42, 33, 27, 0.38)';
       context.fillText(item.label, x + PadX, row.y + RowHeight / 2);
       if (item.note) {
         context.font = NoteFont;
-        context.fillStyle = 'rgba(20, 32, 43, 0.42)';
+        context.fillStyle = Sect.muted;
         context.fillText(item.note, x + PadX, row.y + RowHeight + NoteHeight / 2 - 4);
       }
     }

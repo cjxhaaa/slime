@@ -22,6 +22,7 @@
  * was actually given, so nothing accrues while this is up. Pausing cannot be farmed.
  */
 import { words } from '../i18n/index.js';
+import { BodyFace, Sect, paperPanel, plaque, sealButton, veil } from './sect.js';
 
 export interface Rect {
   x: number;
@@ -36,11 +37,9 @@ const PanelWidth = 300;
 const PanelHeight = 158;
 const ButtonHeight = 38;
 const ButtonGap = 10;
-const Radius = 14;
+const Radius = 8;
 
-const TitleFont = '600 22px system-ui, sans-serif';
-const NoteFont = '13px system-ui, sans-serif';
-const ButtonFont = '600 14px system-ui, sans-serif';
+const NoteFont = `13px ${BodyFace}`;
 
 export class Pause {
   private open = false;
@@ -119,77 +118,31 @@ export class Pause {
     const rise = 1 - (1 - this.age) * (1 - this.age);
 
     context.save();
-    // The same light wash the draft uses. This is a transparent overlay and the desktop under it
-    // is the user's own, not a backdrop to be blacked out.
-    context.fillStyle = 'rgba(10, 16, 28, 0.34)';
-    context.fillRect(0, 0, width, height);
+    // A light warm wash. This is a transparent overlay and the desktop under it is the user's own,
+    // not a backdrop to be blacked out.
+    veil(context, width, height);
 
     const { x, y } = this.panel;
-    const lift = (1 - rise) * 18;
     context.globalAlpha = rise;
-    context.translate(0, lift);
+    context.translate(0, (1 - rise) * 18);
 
-    context.shadowColor = 'rgba(0, 0, 0, 0.45)';
-    context.shadowBlur = 24;
-    context.shadowOffsetY = 6;
-    context.fillStyle = 'rgba(18, 24, 36, 0.96)';
-    context.beginPath();
-    context.roundRect(x, y, PanelWidth, PanelHeight, Radius);
-    context.fill();
-    context.shadowColor = 'transparent';
-    context.shadowBlur = 0;
-    context.shadowOffsetY = 0;
-
-    context.lineWidth = 1;
-    context.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-    context.beginPath();
-    context.roundRect(x, y, PanelWidth, PanelHeight, Radius);
-    context.stroke();
-
+    paperPanel(context, { x, y, width: PanelWidth, height: PanelHeight }, Radius);
     const middle = x + PanelWidth / 2;
+    plaque(context, w.pauseTitle, middle, y + 30, 18);
+
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-
-    context.font = TitleFont;
-    context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    context.fillText(w.pauseTitle, middle, y + 40);
-
     context.font = NoteFont;
-    context.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    context.fillText(w.pauseNote, middle, y + 72);
+    context.fillStyle = Sect.muted;
+    context.fillText(w.pauseNote, middle, y + 70);
 
     for (const { choice, box } of this.buttons) {
-      const hot = this.hot === choice;
-      // Resume is the filled one. Leaving a run throws it away, so it does not get to be the
+      // Resume is the lacquered one. Leaving a run throws it away, so it does not get to be the
       // button the eye lands on first.
       const leaving = choice === 'leave';
-      context.fillStyle = hot
-        ? leaving
-          ? 'rgba(198, 86, 72, 0.22)'
-          : 'rgba(51, 198, 166, 0.3)'
-        : leaving
-          ? 'rgba(255, 255, 255, 0.04)'
-          : 'rgba(51, 198, 166, 0.18)';
-      context.beginPath();
-      context.roundRect(box.x, box.y, box.width, box.height, 9);
-      context.fill();
-      context.lineWidth = hot ? 1.6 : 1;
-      context.strokeStyle = leaving
-        ? hot
-          ? 'rgba(226, 122, 106, 0.75)'
-          : 'rgba(255, 255, 255, 0.16)'
-        : 'rgba(96, 222, 192, 0.7)';
-      context.beginPath();
-      context.roundRect(box.x, box.y, box.width, box.height, 9);
-      context.stroke();
-
-      context.font = ButtonFont;
-      context.fillStyle = leaving ? 'rgba(255, 210, 200, 0.82)' : '#b9f6e4';
-      context.fillText(
-        leaving ? w.pauseLeave : w.pauseResume,
-        box.x + box.width / 2,
-        box.y + box.height / 2 + 1,
-      );
+      sealButton(context, box, leaving ? w.pauseLeave : w.pauseResume, leaving ? 'paper' : 'jade', {
+        hot: this.hot === choice,
+      });
     }
 
     context.globalAlpha = 1;

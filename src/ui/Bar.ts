@@ -53,6 +53,7 @@ import { BuysPerSlot, MostSlots } from '../game/purse.js';
 import { type Loadout, fuseOnBar } from '../game/loadout.js';
 import { fill, words } from '../i18n/index.js';
 import { drawItemIcon } from './icons.js';
+import { BodyFace, Sect, lacquerPlate } from './sect.js';
 
 /** The strip the slots share, whatever their number. Sized so twelve are still big enough to hit. */
 export const SlotRun = MostSlots * 42;
@@ -337,12 +338,9 @@ export class Bar {
     const icon = Math.min(MostIcon, cell - (Ring + RingGap) * 2 - 2);
     context.save();
 
-    // The one plate there is: the bar's own. The overlay is transparent, and pale icons on a pale
-    // wallpaper are not there.
-    context.fillStyle = 'rgba(10, 12, 18, 0.6)';
-    context.beginPath();
-    context.roundRect(b.x, b.y, b.width, b.height, 14);
-    context.fill();
+    // The one plate there is: the bar's own, in lacquer with a gold edge. The overlay is
+    // transparent, and pale icons on a pale wallpaper are not there.
+    lacquerPlate(context, b, 12, 0.9);
 
     for (let i = 0; i < this.count; i++) {
       const centre = this.slotCentre(i);
@@ -353,11 +351,11 @@ export class Bar {
 
       // The cell, always, so the slots can be counted at a glance.
       context.globalAlpha = arriving;
-      context.fillStyle = 'rgba(0, 0, 0, 0.38)';
+      context.fillStyle = 'rgba(0, 0, 0, 0.4)';
       context.beginPath();
-      context.roundRect(centre.x - cell / 2, centre.y - cell / 2, cell, cell, 9);
+      context.roundRect(centre.x - cell / 2, centre.y - cell / 2, cell, cell, 6);
       context.fill();
-      context.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+      context.strokeStyle = 'rgba(232, 207, 138, 0.22)';
       context.lineWidth = 1;
       context.stroke();
       if (!item) continue;
@@ -458,31 +456,42 @@ export class Bar {
     // the screen that can start the fight, and nothing else says so.
     const waiting = open && pack.unarmed;
     const glow = waiting ? 0.5 + 0.5 * Math.sin(now / 260) : 0;
-    context.fillStyle = open ? `rgba(255, 210, 120, ${0.85 + 0.15 * glow})` : 'rgba(255, 255, 255, 0.12)';
+    // Cinnabar lacquer with a gold edge while it can be pressed; a dark dead board when not.
+    if (open) {
+      const ramp = context.createLinearGradient(0, button.y, 0, button.y + button.height);
+      ramp.addColorStop(0, Sect.cinnabarLight);
+      ramp.addColorStop(1, Sect.cinnabar);
+      context.fillStyle = ramp;
+    } else {
+      context.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    }
     if (waiting) {
-      context.shadowColor = 'rgba(255, 210, 120, 0.9)';
+      context.shadowColor = 'rgba(232, 120, 90, 0.9)';
       context.shadowBlur = 8 + 10 * glow;
     }
     context.beginPath();
-    context.roundRect(button.x, button.y, button.width, button.height, 9);
+    context.roundRect(button.x, button.y, button.width, button.height, 5);
     context.fill();
     context.shadowBlur = 0;
+    context.lineWidth = 1.2;
+    context.strokeStyle = open ? Sect.gold : 'rgba(232, 207, 138, 0.2)';
+    context.stroke();
 
     context.textAlign = 'center';
     context.textBaseline = 'middle';
     context.font = BarFont;
-    context.fillStyle = open ? '#2a1a08' : 'rgba(255, 255, 255, 0.4)';
+    context.fillStyle = open ? '#fff3e0' : 'rgba(255, 255, 255, 0.4)';
     context.fillText(fill(w.buy, { price: purse.price }), button.x + button.width / 2, button.y + button.height / 2 + 1);
 
     context.font = SilverFont;
-    context.fillStyle = 'rgba(255, 230, 170, 0.9)';
+    context.fillStyle = Sect.goldLight;
     context.fillText(fill(w.silver, { silver: purse.silver }), button.x + button.width / 2, b.y + Pad + 7);
 
     // Toward the next slot: one pip a purchase, five to a slot. Gone once there are twelve.
     if (pack.size < MostSlots) {
       const toward = purse.bought % BuysPerSlot;
       for (let i = 0; i < BuysPerSlot; i++) {
-        context.fillStyle = i < toward ? 'rgba(255, 210, 120, 0.95)' : 'rgba(255, 255, 255, 0.18)';
+        context.fillStyle = i < toward ? Sect.gold : 'rgba(232, 207, 138, 0.2)';
         context.beginPath();
         context.arc(button.x + button.width / 2 + (i - (BuysPerSlot - 1) / 2) * 11, b.y + Pad + 21, 3, 0, Math.PI * 2);
         context.fill();
@@ -527,5 +536,5 @@ function prism(context: CanvasRenderingContext2D, x: number, y: number, reach: n
 }
 
 /** Exported so the checks can measure the strings against the button they are drawn on. */
-export const BarFont = '600 13px system-ui, sans-serif';
-export const SilverFont = '500 12px system-ui, sans-serif';
+export const BarFont = `700 13px ${BodyFace}`;
+export const SilverFont = `600 12px ${BodyFace}`;
