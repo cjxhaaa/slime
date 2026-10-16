@@ -1824,8 +1824,10 @@ function frame(now: number): void {
       if (arena !== null) arena.dummies.draw(context);
       else trial.draw(context);
     }
-    motes.draw(context, slime.bodyColour);
-    glyphs.draw(context, slime.bodyColour);
+    // In the colour of its light rather than its body, which for a pale skin is a colour that can
+    // actually be seen drifting across a white desktop.
+    motes.draw(context, slime.lightColour);
+    glyphs.draw(context, slime.lightColour);
     if (inTrial) {
       // **The yard is in this too.** It was left out at first, on the grounds that posts do not
       // move — and since the stones had been taken out of the additive pass and only put back in

@@ -50,3 +50,15 @@ export function mix(a: string, b: string, t: number): string {
       .padStart(2, '0');
   return `#${at(0)}${at(1)}${at(2)}`;
 }
+
+/**
+ * How light a `#rrggbb` colour reads, 0 for black to 1 for white — relative luminance, so a yellow
+ * counts as light and a blue of the same numbers does not, the way an eye sees them.
+ */
+export function lightness(hex: string): number {
+  const linear = (index: number) => {
+    const value = parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * linear(0) + 0.7152 * linear(1) + 0.0722 * linear(2);
+}

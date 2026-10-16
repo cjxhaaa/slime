@@ -18,7 +18,7 @@ import {
 import { HaloReach } from '../game/Glyphs.js';
 import { type Hop, arch, planHop } from '../game/pursuit.js';
 import { BreakthroughSpread, StageSpread } from '../game/Motes.js';
-import { clear, mix } from './colour.js';
+import { clear, lightness, mix } from './colour.js';
 import { Classic, type FaceFrame, type Skin } from './skin.js';
 import { smooth } from './ease.js';
 
@@ -238,6 +238,51 @@ export interface BodyLook {
  */
 const AURA_HUES = ['#ff5f5a', '#ff9d3d', '#f5d63f', '#63dd77', '#45d6d0', '#5b8cf0', '#a86fe8'];
 export const MaxAura = AURA_HUES.length;
+
+/** 霞光's comets: how far round its orbit a comet's trail of mist reaches, in radians. */
+const CometSweep = 0.55;
+/** How much bigger a comet is at the near point of its orbit than at the middle, and smaller far. */
+const CometDepth = 0.28;
+/** How wide a comet's flame is at its root, in body radii. Kept slight: it is a halo, not a costume. */
+const CometWidth = 0.12;
+/** How far out, in body radii, the furthest comet and its glow can reach. Reserved by `bounds`. */
+// The outermost orbit (2.39), plus the flame lifted off it and the embers floating up from it
+// (about 0.75 together), plus the ball's glow at its nearest.
+const CometReach = 3.3;
+
+/**
+ * Where comet `index` is: the orbit's size, its tilt (`lean`, the ellipse's short axis over its
+ * long), the screen angle it is turned to, its direction, and the head's angle along it now.
+ *
+ * Every comet differs in all of these, by index, so the seven never line up: the tilts step
+ * through three values, the turns spread round the clock and drift very slowly, and alternate
+ * comets go the other way round.
+ */
+function cometOrbit(index: number, radius: number, clock: number) {
+  const turn = index % 2 === 0 ? 1 : -1;
+  const angle = -0.4 + index * 0.95 + clock * 0.015;
+  return {
+    radius: radius * (1.55 + index * 0.14),
+    lean: 0.3 + (index % 3) * 0.1,
+    cos: Math.cos(angle),
+    sin: Math.sin(angle),
+    turn,
+    // Brisk enough that the flame streams back off it, slow enough to stay a halo and not a blur.
+    head: clock * (0.62 + index * 0.05) * turn + index * 1.7,
+  };
+}
+
+/**
+ * Above this lightness a body's own colour is too pale to draw light in — see `lightPalette`. Set
+ * between 金丹's `#ffe9a8`, which still reads on white, and the cream of a pudding, which does not.
+ */
+const PaleLight = 0.85;
+
+/** A palette fit to draw light in: itself, or, when too pale, shifted one step deeper. */
+function lit(palette: Palette): Palette {
+  if (lightness(palette.core) <= PaleLight) return palette;
+  return { core: palette.edge, edge: palette.rim, rim: mix(palette.rim, '#000000', 0.3) };
+}
 
 /** The calm body before any look has been handed in. Alert, nudge and sleep belong to the skin. */
 const CalmPalette: Palette = { core: '#8ff0d4', edge: '#33c6a6', rim: '#1d9c85' };
@@ -1053,6 +1098,25 @@ export class Slime {
     return this.bodyLook.palette.core;
   }
 
+  /**
+   * The colours its light is drawn in — the breakthroughs' array, charms, column and shockwave, the
+   * halo, the qi drifting in.
+   *
+   * The body's own, unless the body is too pale for light in its colour to be seen. The realm ramp
+   * never is, short of 飞升; a skin that brings its own colours can be (布丁's cream is `#fff1b8`),
+   * and a breakthrough drawn in cream on somebody's white desktop played in full and could not be
+   * seen at all. A pale body lends its light the deeper colours it already has at its edge and rim,
+   * so the light is still the skin's own and not a colour from nowhere.
+   */
+  get lightPalette(): Palette {
+    return lit(this.bodyLook.palette);
+  }
+
+  /** `lightPalette`'s core, for the things drawn outside the body that only take one colour. */
+  get lightColour(): string {
+    return this.lightPalette.core;
+  }
+
   /** True while an alert is still standing, acknowledged or not. */
   get hasLiveAlert(): boolean {
     return this.alertText !== null;
@@ -1116,7 +1180,8 @@ export class Slime {
         (this.ring !== null
           ? RingReach + 0.2
           : this.bodyLook.aura > 0
-            ? 2.5
+            ? // The outermost comet's orbit, plus its head's glow at its nearest and largest.
+              CometReach
             : 2.2),
     );
     // The bud closes well above the body, so while one is out the top of the damaged region is set
@@ -2192,7 +2257,7 @@ export class Slime {
       radius: this.radius,
       // Under the body rather than on the floor — see `OrdealShape.groundY`.
       groundY: this.renderY + this.radius * 0.8,
-      palette: this.bodyLook.palette,
+      palette: this.lightPalette,
       spin: this.realmBreak?.spin ?? 0,
     };
   }
@@ -2242,7 +2307,7 @@ export class Slime {
     // draws a hard ring around the light — on a pale desktop it looked like a soap bubble.
     context.save();
     for (const [reach, stop, colour, alpha] of [
-      [2.4, 0, this.bodyLook.palette.core, 0.6],
+      [2.4, 0, this.lightPalette.core, 0.6],
       // Just wide enough: opaque out to 1.15 body radii and no further. At 1.9 it was washing the
       // bud's own colour out of the one frame that is supposed to be the most saturated.
       [1.75, 0.66, '#ffffff', 1.15],
@@ -2302,7 +2367,7 @@ export class Slime {
       // for under half its travel — it read as a blink at the body rather than as a wave leaving.
       context.globalAlpha = 0.58 * (1 - t) * weight;
       context.lineWidth = 7 * (1 - t) + 1.2;
-      context.strokeStyle = this.bodyLook.palette.edge;
+      context.strokeStyle = this.lightPalette.edge;
       context.beginPath();
       context.arc(this.renderX, this.renderY, radius, 0, Math.PI * 2);
       context.stroke();
@@ -2311,34 +2376,221 @@ export class Slime {
   }
 
   /**
-   * The bands of light an ascended pet trails, drawn behind everything else.
+   * 霞光 — one comet for every ascension, in orbit round the pet.
    *
-   * Each is stroked twice — wide and faint, then narrow and brighter — because a single stroke
-   * reads as a wireframe ring and two read as light. Cheaper and more predictable than a shadow
-   * blur, which is the other way to get this and costs far more per frame.
+   * These were flat arcs once: a band of colour turning in the plane of the screen, which read as a
+   * loading spinner rather than as anything in orbit. Each is a comet now, on an orbit tilted away
+   * from the viewer — an ellipse on the screen, with a near half and a far half. On the far half it
+   * is drawn **behind** the body, smaller and dimmer; on the near half **in front** of it, larger and
+   * brighter. That crossing behind and then over the body is what makes it read as going round
+   * something rather than as a ring painted on top of it. Seven of them sit at different tilts and
+   * turn in alternating directions, so the full set is a small orbital system, not a rosette.
    *
-   * They turn at different speeds and alternate direction, so seven of them weave instead of
-   * sitting in a fixed rosette.
+   * Called twice a frame: once with `side` -1 before the body, for whatever is on the far side, and
+   * once with 1 after it, for whatever is on the near side. Each pass draws only its own half, so a
+   * comet slips behind the body and comes back round in front without anything being sorted.
+   *
+   * Strokes rather than blurs, as before: a wide faint pass and a narrow bright one read as light
+   * and cost a fraction of a shadow blur.
    */
-  private drawAura(context: CanvasRenderingContext2D): void {
+  private drawAura(context: CanvasRenderingContext2D, side: -1 | 1): void {
     const layers = Math.min(MaxAura, Math.floor(this.bodyLook.aura));
     if (layers <= 0 || this.devour) return;
     context.save();
-    context.lineCap = 'round';
+    // Butt ends, not round: the tail is a run of short strokes, and round caps overlapping at every
+    // joint drew it as a string of beads.
+    context.lineCap = 'butt';
     for (let i = 0; i < layers; i++) {
-      const radius = this.radius * (1.45 + i * 0.12);
-      const direction = i % 2 === 0 ? 1 : -1;
-      const start = this.clock * (0.24 + i * 0.06) * direction + i * 0.92;
-      context.strokeStyle = AURA_HUES[i];
-      for (const [width, alpha] of [
-        [9, 0.11],
-        [3, 0.36],
-      ]) {
-        context.lineWidth = width;
-        context.globalAlpha = alpha;
+      const orbit = cometOrbit(i, this.radius, this.clock);
+      const hue = AURA_HUES[i];
+      const at = (angle: number) => {
+        // A circle in the orbit's own plane, tipped away by the tilt, then turned on the screen.
+        const flatX = Math.cos(angle) * orbit.radius;
+        const flatY = Math.sin(angle) * orbit.radius * orbit.lean;
+        return {
+          x: this.renderX + flatX * orbit.cos - flatY * orbit.sin,
+          y: this.renderY + flatX * orbit.sin + flatY * orbit.cos,
+          // Near side positive. Sized and lit by it, so the near half is bigger and brighter.
+          depth: Math.sin(angle),
+        };
+      };
+
+      // The tail is cartoon fire: one flame, drawn the way an animator draws a fireball's. A round
+      // front wrapped round the ball, a body that swells a little behind it and then narrows, and a
+      // back edge that breaks into three tongues — long, middle, short — joined at the root with
+      // soft notches between them, leaning up the way flame leans. The whole silhouette is laid along
+      // the orbit, so it bends with the path the ball is taking.
+      //
+      // Flat layers of solid colour with a clean outline: its own colour outside, a lighter tone,
+      // a warm white heart, each the same silhouette drawn smaller. The outline is that colour taken
+      // deep, so the fire is one thing and not a sticker with a black border.
+      //
+      // Two earlier tries, kept here so they are not tried again: a long thin trail with points down
+      // its sides read as a thorny vine, and three separate prongs read as three sticks.
+      const hot = mix(hue, '#fff6d8', 0.7);
+      const middleTone = mix(hue, '#fff6d8', 0.35);
+      const line = mix(hue, '#1a0c06', 0.45);
+      const beat = Math.floor(this.clock * 9);
+      const jitter = (n: number) => (((n * 7 + beat * 3 + i * 5) % 5) / 4) * 2 - 1;
+      const headPoint = at(orbit.head);
+      const front = this.radius * CometWidth * (1 + headPoint.depth * CometDepth);
+      // Which way across the trail is up on the screen, so the tongues lean upward on either side.
+      const probe = at(orbit.head - orbit.turn * 0.05);
+      const across = { x: -(probe.y - headPoint.y), y: probe.x - headPoint.x };
+      const upward = across.y > 0 ? -1 : 1;
+      // A point of the silhouette: `u` back along the orbit, 0 at the ball and 1 at the tip of the
+      // longest tongue; `v` across it, in fronts, positive upward.
+      const place = (u: number, v: number) => {
+        const angle = orbit.head - orbit.turn * u * CometSweep;
+        const point = at(angle);
+        const ahead = at(angle + orbit.turn * 0.02);
+        let tx = point.x - ahead.x;
+        let ty = point.y - ahead.y;
+        const span = Math.hypot(tx, ty) || 1;
+        tx /= span;
+        ty /= span;
+        const nx = -ty * upward;
+        const ny = tx * upward;
+        return { x: point.x + nx * v * front, y: point.y + ny * v * front - u * u * front * 0.5 };
+      };
+      // The silhouette, from the top of the ball round the back and up the underside. Tips flicker
+      // in length on the beat and sway.
+      const sway = Math.sin(this.clock * 7 + i) * 0.12;
+      const silhouette = [
+        { u: 0.0, v: 1.0, tip: false },
+        { u: 0.22, v: 1.08, tip: false },
+        { u: 0.5, v: 0.85, tip: false },
+        { u: 1.0 + 0.1 * jitter(1), v: 0.55 + sway, tip: true },
+        { u: 0.56, v: 0.2, tip: false },
+        { u: 0.8 + 0.08 * jitter(2), v: -0.2 + sway, tip: true },
+        { u: 0.45, v: -0.5, tip: false },
+        { u: 0.6 + 0.06 * jitter(3), v: -0.95 + sway * 0.6, tip: true },
+        { u: 0.24, v: -1.02, tip: false },
+        { u: 0.0, v: -1.0, tip: false },
+      ];
+      const trace = (inset: number) => {
+        // Smaller copies for the inner layers: drawn in towards the middle line and the ball.
+        const points = silhouette.map((p) => ({ ...place(p.u * (0.25 + 0.75 * inset), p.v * inset), tip: p.tip }));
         context.beginPath();
-        context.arc(this.renderX, this.renderY, radius, start, start + 2.15);
+        // The round front, round the ball from the underside to the top.
+        const top = points[0];
+        const bottom = points[points.length - 1];
+        const a0 = Math.atan2(bottom.y - headPoint.y, bottom.x - headPoint.x);
+        const a1 = Math.atan2(top.y - headPoint.y, top.x - headPoint.x);
+        const radius = Math.hypot(top.x - headPoint.x, top.y - headPoint.y);
+        // The way round that passes in front of the ball, not back through the flame.
+        const behind = place(0.3, 0);
+        const backAngle = Math.atan2(behind.y - headPoint.y, behind.x - headPoint.x);
+        const spanOf = (from: number, to: number) => ((to - from) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+        const clockwiseHitsBack = spanOf(a0, backAngle) < spanOf(a0, a1);
+        context.moveTo(bottom.x, bottom.y);
+        context.arc(headPoint.x, headPoint.y, radius, a0, a1, clockwiseHitsBack);
+        // Then round the back: smooth through the shoulders and notches, sharp at each tip.
+        for (let n = 1; n < points.length; n++) {
+          const here = points[n];
+          const next = points[n + 1];
+          if (here.tip || !next || next.tip) context.lineTo(here.x, here.y);
+          else context.quadraticCurveTo(here.x, here.y, (here.x + next.x) / 2, (here.y + next.y) / 2);
+        }
+        context.closePath();
+      };
+      const middleDepth = at(orbit.head - orbit.turn * 0.4 * CometSweep).depth;
+      if ((middleDepth >= 0 ? 1 : -1) === side) {
+        context.globalAlpha = 0.8 + 0.2 * (headPoint.depth + 1) / 2;
+        context.lineJoin = 'round';
+        trace(1);
+        context.fillStyle = hue;
+        context.fill();
+        context.lineWidth = Math.max(0.8, this.radius * 0.02);
+        context.strokeStyle = line;
         context.stroke();
+        trace(0.62);
+        context.fillStyle = middleTone;
+        context.fill();
+        trace(0.3);
+        context.fillStyle = hot;
+        context.fill();
+      }
+
+      // Sparks: little round ones, outlined, floating up off the flame and winking out.
+      for (let j = 0; j < 4; j++) {
+        const along = 0.15 + j * 0.15;
+        const point = at(orbit.head - orbit.turn * along * CometSweep);
+        if ((point.depth >= 0 ? 1 : -1) !== side) continue;
+        const life = (this.clock * 0.9 + j * 0.37 + i * 0.21) % 1;
+        if (life > 0.85) continue;
+        const near = 1 + point.depth * CometDepth;
+        const size = this.radius * 0.028 * (1 - life * 0.5) * near + 0.5;
+        const sx = point.x + Math.sin(j * 3.1 + i + life * 4) * this.radius * 0.12;
+        const sy = point.y - life * this.radius * 0.45;
+        context.globalAlpha = 1 - life;
+        context.fillStyle = j % 2 === 0 ? hot : middleTone;
+        context.strokeStyle = line;
+        context.lineWidth = 0.8;
+        context.beginPath();
+        context.arc(sx, sy, size, 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+      }
+
+      // The ball: a cartoon fireball with some body to it. A soft halo of its own colour, so it
+      // gives off light; the ball itself a little egg-shaped, drawn out along the way it is going;
+      // shaded white-hot at its leading edge through to its own colour at the back, so it reads as
+      // round rather than as a target of flat rings; a curved gloss on the upper front; and a thin
+      // outline in the flame's own deep colour at partial strength, so it sits in the flame rather
+      // than being ringed off from it. It swells a touch on the same flicker beat as the tail.
+      const head = at(orbit.head);
+      if ((head.depth >= 0 ? 1 : -1) === side) {
+        const near = 1 + head.depth * CometDepth;
+        const pop = 1 + 0.06 * (((beat + i) % 3) - 1);
+        const r = this.radius * 0.1 * near * pop;
+        const lit = 0.8 + 0.2 * (head.depth + 1) / 2;
+        // Which way it is heading, on the screen: away from where the tail goes.
+        const trail = at(orbit.head - orbit.turn * 0.05);
+        const heading = Math.atan2(head.y - trail.y, head.x - trail.x);
+        const fx = Math.cos(heading);
+
+        const halo = context.createRadialGradient(head.x, head.y, r * 0.6, head.x, head.y, r * 2.4);
+        halo.addColorStop(0, hue);
+        halo.addColorStop(1, clear(hue));
+        context.globalAlpha = lit * 0.35;
+        context.fillStyle = halo;
+        context.beginPath();
+        context.arc(head.x, head.y, r * 2.4, 0, Math.PI * 2);
+        context.fill();
+
+        context.save();
+        context.translate(head.x, head.y);
+        context.rotate(heading);
+        // Lit from the front and a little above.
+        const body = context.createRadialGradient(r * 0.35, -r * 0.25, r * 0.1, 0, 0, r * 1.15);
+        body.addColorStop(0, '#ffffff');
+        body.addColorStop(0.3, hot);
+        body.addColorStop(0.7, middleTone);
+        body.addColorStop(1, hue);
+        context.globalAlpha = lit;
+        context.fillStyle = body;
+        context.beginPath();
+        context.ellipse(-r * 0.08, 0, r * 1.12, r * 0.94, 0, 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = lit * 0.75;
+        context.lineWidth = Math.max(0.7, this.radius * 0.016);
+        context.strokeStyle = line;
+        context.stroke();
+        context.restore();
+
+        // The gloss: a short curved stroke on the upper front, the way a cartoon shines a ball —
+        // upper right when it is heading right, upper left when it is heading left. Light comes
+        // from above whichever way it is going.
+        const [from, to] = fx >= 0 ? [-0.42, -0.14] : [-0.86, -0.58];
+        context.globalAlpha = lit * 0.9;
+        context.strokeStyle = '#ffffff';
+        context.lineCap = 'round';
+        context.lineWidth = Math.max(1, r * 0.22);
+        context.beginPath();
+        context.arc(head.x + fx * r * 0.1, head.y, r * 0.6, Math.PI * from, Math.PI * to);
+        context.stroke();
+        context.lineCap = 'butt';
       }
     }
     context.restore();
@@ -2381,7 +2633,7 @@ export class Slime {
           };
 
     this.drawRing(context);
-    this.drawAura(context);
+    this.drawAura(context, -1);
     this.drawOrdealBehind(context);
 
     // The halo. Drawn under everything, and only when there is something to say — a body that is
@@ -2407,8 +2659,9 @@ export class Slime {
       // The mood's palette, not the raw realm one. A dimmed sleeping body with a full-brightness
       // halo around it looks like two different pets overlaid — and the same mismatch was already
       // there awake, with a gold alert body inside a realm-coloured glow.
-      halo.addColorStop(0, palette.core);
-      halo.addColorStop(1, clear(palette.core));
+      const light = lit(palette).core;
+      halo.addColorStop(0, light);
+      halo.addColorStop(1, clear(light));
       context.save();
       context.globalAlpha = glowing;
       context.fillStyle = halo;
@@ -2577,6 +2830,8 @@ export class Slime {
     }
     context.restore();
 
+    // The near half of every comet's orbit, over the body and its face.
+    this.drawAura(context, 1);
     this.drawOrdealFront(context);
     if (this.mood === 'asleep') this.drawSleepMarks(context);
   }
