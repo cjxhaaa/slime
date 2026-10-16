@@ -184,6 +184,10 @@ export interface Dictionary {
     ways: string;
     /** The button that starts the level once all five are picked. */
     start: string;
+    /** Under the title: which level this is, `{level}`. */
+    level: string;
+    /** Added to it at a realm's highest level: `{realm}` can climb no higher than this. */
+    capped: string;
   };
 
   /**
@@ -210,6 +214,11 @@ export interface Dictionary {
      */
     cleared: string;
     overwhelmed: string;
+    /**
+     * Added to `cleared` when the level was the highest `{realm}` may attack: breaking through to
+     * `{next}` is what opens the one above.
+     */
+    capReached: string;
     arena: string;
     /** The two-line breakthrough and failure lines. */
     nourishing: string;

@@ -23,6 +23,31 @@
 /** The last level. */
 export const TopLevel = 99;
 
+/**
+ * **How high a realm can climb.** The tower and the realm ladder were two progressions side by side
+ * with almost nothing between them — a 筑基 pet could walk up to level 99 if it fought well enough,
+ * and a 大乘 one had nothing in the tower to show for four days of 修为. So each realm sets the
+ * highest level it may attack: cultivate to climb further, and the climbing pays 修为 back.
+ *
+ * Read off the measured curves (TODO.md, stage six): a merging 筑基 build clears level 20 reliably
+ * and falls away past 40; 大乘 holds to 50 and can still take 99. The caps sit where each realm has
+ * started to struggle, so the top of every realm's road is a fight, not a formality. Index is the
+ * realm, 练气 to 大乘; past the top of the ladder it is the whole tower.
+ */
+export const RealmCaps = [0, 20, 35, 50, 62, 74, 86, 99];
+
+/** The highest level `realm` may attack. 0 for 练气, which cannot enter at all. */
+export function levelCap(realm: number): number {
+  const rung = Math.max(0, Math.floor(realm));
+  return rung >= RealmCaps.length ? TopLevel : RealmCaps[rung];
+}
+
+/** The first realm whose cap reaches `level`, or null when every realm's does. */
+export function realmFor(level: number): number | null {
+  const at = RealmCaps.findIndex((cap) => cap >= level);
+  return at < 0 ? null : at;
+}
+
 /** A level, made whole and kept on the road. */
 export function clampLevel(level: number): number {
   if (!Number.isFinite(level)) return 1;

@@ -188,6 +188,8 @@ export const ja: Dictionary = {
     arms: '兵器 · 二つ選ぶ',
     ways: '五行 · 三つ選ぶ',
     start: '始める',
+    level: '第 {level} 関',
+    capped: '{realm}で挑める最後の関',
   },
   bar: {
     silver: '銀 {silver}',
@@ -202,6 +204,7 @@ export const ja: Dictionary = {
     pauseLeave: 'やめる',
     cleared: '第{level}関、越えたり\n除魔 {kills} · 修為大いに進む',
     overwhelmed: '護体ことごとく砕けたり\n第{level}関・第{wave}波 · 除魔 {kills} · 修為やや進む',
+    capReached: '{realm}ではここまで · {next}に突破すれば先へ進める',
     arena: '演武終われり\n的中 {kills} · 修為は増えず',
     nourishing: '温養中 · 残り {minutes} 分',
     charmCount: '符籙 {count} 枚',

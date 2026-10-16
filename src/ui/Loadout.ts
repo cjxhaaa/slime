@@ -43,6 +43,8 @@ export class LoadoutPanel {
   private arms: Weapon[] = [];
   private ways: Way[] = [];
   private hot: Target | null = null;
+  /** The line under the title: which level, and whether it is the top of the realm's road. */
+  private heading: { text: string; capped: string | null } | null = null;
   private panel: Rect = { x: 0, y: 0, width: PanelWidth, height: 0 };
   private targets: { target: Target; box: Rect }[] = [];
 
@@ -56,7 +58,8 @@ export class LoadoutPanel {
     return complete(loadout) ? loadout : null;
   }
 
-  show(previous: Loadout | null): void {
+  show(previous: Loadout | null, heading: { text: string; capped: string | null } | null = null): void {
+    this.heading = heading;
     this.open = true;
     this.age = 0;
     this.hot = null;
@@ -146,6 +149,17 @@ export class LoadoutPanel {
     // A sheet of the sect's paper with the question hung across its top on a lacquered board.
     paperPanel(context, { x, y, width: PanelWidth, height: panelHeight }, 8);
     plaque(context, w.loadout.title, x + PanelWidth / 2, y + Margin + 12, 18);
+    if (this.heading) {
+      // Which level, and — at the top of a realm's road — that it is the top, in cinnabar.
+      context.save();
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.font = `700 13px ${BodyFace}`;
+      const line = this.heading.capped ? `${this.heading.text} · ${this.heading.capped}` : this.heading.text;
+      context.fillStyle = this.heading.capped ? Sect.cinnabar : Sect.muted;
+      context.fillText(line, x + PanelWidth / 2, y + Margin + 40);
+      context.restore();
+    }
 
     context.textAlign = 'left';
     context.textBaseline = 'middle';

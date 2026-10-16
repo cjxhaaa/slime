@@ -200,6 +200,8 @@ export const en: Dictionary = {
     arms: 'Arms · pick two',
     ways: 'Phases · pick three',
     start: 'Begin',
+    level: 'Level {level}',
+    capped: 'the last level {realm} can reach',
   },
   bar: {
     silver: 'Silver {silver}',
@@ -214,6 +216,7 @@ export const en: Dictionary = {
     pauseLeave: 'Leave',
     cleared: 'Level {level} cleared\n{kills} slain · progress much advanced',
     overwhelmed: 'The guard is wholly shattered\nLevel {level}, wave {wave} · {kills} slain · progress a little advanced',
+    capReached: '{realm} can go no further · break through to {next} to climb on',
     arena: 'Practice over\n{kills} posts struck · progress unchanged',
     nourishing: 'Nourishing · {minutes} min left',
     charmCount: 'Charms · {count}',

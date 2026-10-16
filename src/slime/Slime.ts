@@ -21,6 +21,23 @@ import { BreakthroughSpread, StageSpread } from '../game/Motes.js';
 import { clear, lightness, mix } from './colour.js';
 import { Classic, type FaceFrame, type Skin } from './skin.js';
 import { smooth } from './ease.js';
+import {
+  type Beats,
+  DropSeconds,
+  HopOffUntil,
+  HopOnFrom,
+  LoungeReach,
+  PackSeconds,
+  Recline,
+  RestBeats,
+  SetUpSeconds,
+  type Spot,
+  drawLoungeBehind,
+  drawLoungeFront,
+  packingBeats,
+  seat,
+  settingBeats,
+} from './Lounge.js';
 
 export type Mood =
   | 'idle'
@@ -184,6 +201,17 @@ const WALK_SPEED = 130;
 const LookRange = 520;
 const SLEEPY_AFTER = 75;
 const ASLEEP_AFTER = 95;
+/**
+ * 海边躺椅: idle this long and the pet may go to the beach instead of heading for a nap — decided
+ * once per stretch of idleness, so it does not keep re-rolling until it says yes. Under
+ * `SLEEPY_AFTER`, so the choice is made before the yawning starts. See `Lounge.ts`.
+ */
+const LOUNGE_AFTER = 30;
+const LoungeChance = 0.5;
+/** How high the hop onto the chair and off it again goes, in body radii. */
+const LoungeHop = 0.9;
+/** Seconds between the slow, contented breaths it takes lying in the chair. */
+const LoungeBreath = 4.5;
 
 /**
  * Seconds between hops while an alert is up.
@@ -531,7 +559,187 @@ export class Slime {
     return this.groundFor(this.envHeight);
   }
 
+  /** True from the moment the sand starts to spread to the moment it is gone. */
+  get isLounging(): boolean {
+    return this.lounge !== null;
+  }
+
+  /**
+   * Goes to the beach, if there is room for the scene on the side the sea would be. The chair goes
+   * a little way towards the sea and the parasol behind it; a pet too near both screen edges for
+   * that stays put and naps instead.
+   */
+  private startLounge(width: number): void {
+    const r = this.radius;
+    const fits = (side: 1 | -1) => {
+      const chair = this.x + side * r * 0.9;
+      // The bank reaches three and a half radii past the chair; the parasol's canopy a little over
+      // three behind it.
+      const seaward = chair + side * r * 3.5;
+      const landward = chair - side * r * 3.2;
+      return seaward > 0 && seaward < width && landward > 0 && landward < width;
+    };
+    const prefer: 1 | -1 = this.facing >= 0 ? 1 : -1;
+    const side = fits(prefer) ? prefer : fits(prefer === 1 ? -1 : 1) ? (prefer === 1 ? -1 : 1) : null;
+    if (side === null) return;
+    this.facing = side;
+    this.hopsLeft = 0;
+    this.lounge = {
+      phase: 'setting',
+      t: 0,
+      x: this.x + side * r * 0.9,
+      side,
+      fromX: this.x,
+      beats: settingBeats(0),
+      breathAt: this.clock + LoungeBreath,
+    };
+    this.mood = 'happy';
+    // Turns to face where it is going, with a little lean towards it.
+    this.blob.squash(-0.1);
+  }
+
+  /** Goes to the beach now, if there is room — for looking at it on purpose, from a dev hook. */
+  goToBeach(width: number): void {
+    if (this.lounge || this.planar || this.grabbed || this.devour || this.alertText) return;
+    this.startLounge(width);
+  }
+
+  /** Lets the scene go where it stands — fading — and hands the body back this frame. */
+  private dropLounge(): void {
+    const lounge = this.lounge;
+    if (!lounge || lounge.phase === 'dropping') return;
+    lounge.phase = 'dropping';
+    lounge.t = 0;
+  }
+
+  /** Runs the beach: the props' beats, and the body whenever the scene has hold of it. */
+  private stepLounge(dt: number, ground: number): void {
+    const lounge = this.lounge;
+    if (!lounge) return;
+    // Belt and braces: whatever has the body — a hand, a meal, a level — drops the scene first.
+    if ((this.grabbed || this.devour || this.planar) && lounge.phase !== 'dropping') this.dropLounge();
+    const r = this.radius;
+    const spot: Spot = { x: lounge.x, ground, radius: r, side: lounge.side, clock: this.clock };
+    const chair = seat(spot);
+    const hold = (x: number, y: number) => {
+      this.x = x;
+      this.y = y;
+      this.vx = 0;
+      this.vy = 0;
+    };
+    const arc = (from: { x: number; y: number }, to: { x: number; y: number }, u: number) => {
+      const k = smooth(Math.max(0, Math.min(1, u)));
+      hold(from.x + (to.x - from.x) * k, from.y + (to.y - from.y) * k - Math.sin(Math.PI * Math.min(1, u)) * r * LoungeHop);
+    };
+    const lean = -lounge.side * Recline;
+
+    if (lounge.phase === 'setting') {
+      lounge.t = Math.min(1, lounge.t + dt / SetUpSeconds);
+      lounge.beats = settingBeats(lounge.t);
+      if (lounge.t >= HopOnFrom) {
+        const u = (lounge.t - HopOnFrom) / (1 - HopOnFrom);
+        arc({ x: lounge.fromX, y: ground }, chair, u);
+        this.loungeTilt = lean * smooth(Math.max(0, (u - 0.6) / 0.4));
+      }
+      if (lounge.t >= 1) {
+        lounge.phase = 'resting';
+        lounge.t = 0;
+        lounge.beats = RestBeats;
+        // Settling into it.
+        this.blob.squash(0.2);
+      }
+      return;
+    }
+
+    if (lounge.phase === 'resting') {
+      hold(chair.x, chair.y);
+      this.loungeTilt = lean;
+      if (this.clock >= lounge.breathAt) {
+        // A long, contented breath.
+        this.blob.pulse(-16);
+        lounge.breathAt = this.clock + LoungeBreath;
+      }
+      // Touched — a poke, the pointer over it — and it packs up. Typing does not count; see
+      // `lastTouched`.
+      if (this.clock - this.lastTouched < 0.25) {
+        lounge.phase = 'packing';
+        lounge.t = 0;
+        this.mood = 'happy';
+        this.blob.squash(-0.12);
+      }
+      return;
+    }
+
+    if (lounge.phase === 'packing') {
+      lounge.t = Math.min(1, lounge.t + dt / PackSeconds);
+      lounge.beats = packingBeats(lounge.t);
+      if (lounge.t < HopOffUntil) {
+        const u = lounge.t / HopOffUntil;
+        // Sits up first, then hops down.
+        this.loungeTilt = lean * (1 - smooth(Math.min(1, u / 0.35)));
+        if (u < 0.3) hold(chair.x, chair.y);
+        else arc(chair, { x: lounge.fromX, y: ground }, (u - 0.3) / 0.7);
+      } else {
+        this.loungeTilt = 0;
+      }
+      if (lounge.t >= 1) {
+        this.lounge = null;
+        this.loungeTilt = 0;
+        this.nextDecisionAt = this.clock + 2;
+      }
+      return;
+    }
+
+    // Dropping: the props fade where they stand; the body is already free.
+    lounge.t = Math.min(1, lounge.t + dt / DropSeconds);
+    this.loungeTilt *= Math.max(0, 1 - dt * 12);
+    if (lounge.t >= 1) {
+      this.lounge = null;
+      this.loungeTilt = 0;
+    }
+  }
+
+  /** The scene's beats as drawn now, with a drop's fade laid over. */
+  private loungeBeats(): Beats | null {
+    const lounge = this.lounge;
+    if (!lounge) return null;
+    if (lounge.phase !== 'dropping') return lounge.beats;
+    return { ...lounge.beats, alpha: 1 - lounge.t };
+  }
+
+  private loungeSpot(): Spot | null {
+    const lounge = this.lounge;
+    if (!lounge) return null;
+    return { x: lounge.x, ground: this.groundFor(this.envHeight), radius: this.radius, side: lounge.side, clock: this.clock };
+  }
+
   private envHeight = 800;
+
+  /**
+   * 海边躺椅, while it is out: which beat, how far through it, where the scene is, and the beats it
+   * was last drawn at (so a scene being dropped fades from wherever it had got to).
+   */
+  private lounge: {
+    phase: 'setting' | 'resting' | 'packing' | 'dropping';
+    t: number;
+    /** Where the chair is and which way the sea is. */
+    x: number;
+    side: 1 | -1;
+    /** Where the body stood when it started, which is where it hops back down to. */
+    fromX: number;
+    beats: Beats;
+    breathAt: number;
+  } | null = null;
+  /** The `lastInteraction` the beach was last decided for, so each idle stretch rolls once. */
+  private loungeRolled = -1;
+  /**
+   * When the pet was last *touched* — the pointer over it, a poke — which is what sends it home from
+   * the beach. Not `lastInteraction`: that also moves when it eats a letter somebody typed, and a
+   * pet that packed up its deck chair every time you pressed a key would never get to lie in it.
+   */
+  private lastTouched = -Infinity;
+  /** How far back the body leans in the chair, in radians. Drawn as a turn about its middle. */
+  private loungeTilt = 0;
 
   /**
    * True during 历练: the world is a plane seen from above rather than a side view with a floor.
@@ -563,6 +771,7 @@ export class Slime {
 
   set planar(on: boolean) {
     if (on === this.onPlane) return;
+    if (on) this.dropLounge();
     this.onPlane = on;
     if (!on) this.stopPlanarMotion();
   }
@@ -670,6 +879,7 @@ export class Slime {
 
   /** Draws qi in from outside and takes it up. Nothing else — see the note on `StageSeconds`. */
   breakStage(): void {
+    this.dropLounge();
     this.lastInteraction = this.clock;
     this.stageBreak = 0;
     this.stageWave = StageWaveSeconds;
@@ -762,6 +972,7 @@ export class Slime {
    * caller has already applied the new palette by the time this is drawn.
    */
   breakRealm(): void {
+    this.dropLounge();
     this.lastInteraction = this.clock;
     this.chaseX = null;
     this.hopsLeft = 0;
@@ -892,6 +1103,7 @@ export class Slime {
 
   /** Starts the ordeal. The caller has already advanced the realm; this is the performance. */
   ascend(): void {
+    this.dropLounge();
     this.lastInteraction = this.clock;
     this.chaseX = null;
     this.hopsLeft = 0;
@@ -1042,6 +1254,8 @@ export class Slime {
       // tests below sees it.
       this.pursuit !== null ||
       this.hop !== null ||
+      // Setting up and packing away move at full rate; lying there is a slow animation, below.
+      (this.lounge !== null && this.lounge.phase !== 'resting') ||
       this.struck > 0.01 ||
       this.mended > 0.01 ||
       (this.vigour !== null && this.vigourTrail - this.vigour > 0.002) ||
@@ -1090,7 +1304,8 @@ export class Slime {
     // fully stands down. Twenty hertz is the same allowance sleep already gets and looks identical
     // at this speed — but it is a real cost, and it is one nobody pays until they have finished a
     // run, which makes it an earned one rather than a default.
-    return this.mood === 'asleep' || this.bodyLook.aura > 0;
+    // The beach is slow too: waves and a breeze, nothing that needs sixty frames a second.
+    return this.mood === 'asleep' || this.bodyLook.aura > 0 || this.lounge !== null;
   }
 
   /** The colour the body is currently wearing, for anything drawn as part of the same stuff. */
@@ -1225,12 +1440,35 @@ export class Slime {
       // else here. Without this it is left uncleared on the desktop when the sequence ends.
       this.realmBreak ? this.renderY + this.radius * (0.8 + ArrayReach * 0.32) : 0,
     );
-    return {
+    const body = {
       x: this.renderX - leftSpan,
       y: top,
       width: leftSpan + rightSpan,
       height: bottom - top,
     };
+    // 海边躺椅 is anchored where it was set up, not to the body. Reserving it as a margin round the
+    // body was wrong the moment the body moved: dragged off the chair, the area being repainted
+    // went with the body and the scene — still fading where it stood — was never cleared, so its
+    // last frame stayed on the desktop. So it is its own rectangle, unioned in for as long as
+    // there is any of it left to draw.
+    const scene = this.loungeArea();
+    if (!scene) return body;
+    const left = Math.min(body.x, scene.x);
+    const upper = Math.min(body.y, scene.y);
+    const right = Math.max(body.x + body.width, scene.x + scene.width);
+    const lower = Math.max(body.y + body.height, scene.y + scene.height);
+    return { x: left, y: upper, width: right - left, height: lower - upper };
+  }
+
+  /** Everything the beach can paint, around where it was set up. Null when there is none. */
+  private loungeArea(): { x: number; y: number; width: number; height: number } | null {
+    const lounge = this.lounge;
+    if (!lounge) return null;
+    const r = this.radius;
+    const floor = this.groundFor(this.envHeight) + r * 0.62;
+    const reach = r * LoungeReach;
+    // From the parasol's top and the breeze above it, down past the front edge of the sandbank.
+    return { x: lounge.x - reach, y: floor - r * 3.9, width: reach * 2, height: r * 4.7 };
   }
 
   hitTest(px: number, py: number): boolean {
@@ -1309,6 +1547,7 @@ export class Slime {
     strain = 0,
   ): void {
     this.grabbed = false;
+    this.dropLounge();
     this.mood = 'devouring';
     this.vx = 0;
     this.vy = 0;
@@ -1438,6 +1677,8 @@ export class Slime {
     // Whether a grab was committed enough to count is the caller's decision, and by the time it
     // calls here it has made it.
     if (this.devour) this.abortDevour();
+    // Picked up off the chair: the body goes with the hand now, and the beach lets go behind it.
+    this.dropLounge();
     this.grabbed = true;
     this.mood = 'dragged';
     // Anchored to the drawn position rather than the simulated one, so a pet caught mid-flight does
@@ -1638,6 +1879,7 @@ export class Slime {
   /** A click that was not a drag: the slime reacts and says so. */
   poke(px: number, py: number): void {
     this.lastInteraction = this.clock;
+    this.lastTouched = this.clock;
     if (this.alertText && this.alertAction) {
       this.alertAction();
       return;
@@ -1666,6 +1908,8 @@ export class Slime {
    * `action` and nothing else, so whatever raised the alert also decides how it ends.
    */
   raiseAlert(text: string, action: () => void): void {
+    // An alert needs the body to hop; it cannot wait for the chair to be packed away.
+    this.dropLounge();
     this.alertText = text;
     this.alertAction = action;
     this.alertAcknowledged = false;
@@ -1760,6 +2004,8 @@ export class Slime {
         }
       }
 
+      // A beach dropped for the meal fades out while it eats.
+      this.stepLounge(dt, ground);
       this.updateFace(dt, env);
       this.blob.update(dt);
       return;
@@ -1858,6 +2104,11 @@ export class Slime {
         }
       }
     }
+
+    // The beach, after the physics, so whatever the scene says about where the body is wins. Always
+    // stepped: picked up, entering a level or anything else that took the body has already dropped
+    // the scene, and a dropped scene still has to finish fading.
+    this.stepLounge(dt, ground);
 
     if (this.vigour !== null) {
       // Chases the true value rather than easing to it: the arc itself is already there, and this
@@ -2139,6 +2390,25 @@ export class Slime {
 
     if (env.cursor && this.hitTest(env.cursor.x, env.cursor.y)) {
       this.lastInteraction = this.clock;
+      this.lastTouched = this.clock;
+    }
+
+    // At the beach: it decides nothing else. Lying back long enough, it dozes off in the chair —
+    // the nap it skipped, taken anyway.
+    if (this.lounge) {
+      if (this.lounge.phase === 'resting') {
+        const dozing = idleFor > ASLEEP_AFTER;
+        if (dozing && this.mood !== 'asleep') this.blob.squash(0.1);
+        this.mood = dozing ? 'asleep' : 'happy';
+      }
+      if (this.lounge.phase !== 'dropping') return;
+    }
+    if (idleFor > LOUNGE_AFTER && idleFor < SLEEPY_AFTER && this.loungeRolled !== this.lastInteraction && this.y >= ground - 1) {
+      this.loungeRolled = this.lastInteraction;
+      if (Math.random() < LoungeChance) {
+        this.startLounge(env.width);
+        if (this.lounge) return;
+      }
     }
 
     if (idleFor > ASLEEP_AFTER) {
@@ -2635,6 +2905,9 @@ export class Slime {
     this.drawRing(context);
     this.drawAura(context, -1);
     this.drawOrdealBehind(context);
+    const lounging = this.loungeBeats();
+    const beach = this.loungeSpot();
+    if (lounging && beach) drawLoungeBehind(context, beach, lounging);
 
     // The halo. Drawn under everything, and only when there is something to say — a body that is
     // barely into a stage has none at all, so this is not permanent glare around the pet. It stays
@@ -2703,6 +2976,8 @@ export class Slime {
     // different shapes, which is the whole reason the dirty rect could be wrong.
     context.save();
     context.translate(this.renderX, this.renderY);
+    // Leaning back in the chair: the whole body, face and all, turned about its middle.
+    if (this.loungeTilt !== 0) context.rotate(this.loungeTilt);
 
     const skin = this.skin;
     const frame = this.fillFrame();
@@ -2830,6 +3105,7 @@ export class Slime {
     }
     context.restore();
 
+    if (lounging && beach) drawLoungeFront(context, beach, lounging);
     // The near half of every comet's orbit, over the body and its face.
     this.drawAura(context, 1);
     this.drawOrdealFront(context);

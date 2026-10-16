@@ -187,6 +187,8 @@ export const ko: Dictionary = {
     arms: '병기 · 둘 고르기',
     ways: '오행 · 셋 고르기',
     start: '시작',
+    level: '제{level}관',
+    capped: '{realm}이 오를 수 있는 마지막 관',
   },
   bar: {
     silver: '은 {silver}',
@@ -201,6 +203,7 @@ export const ko: Dictionary = {
     pauseLeave: '나가기',
     cleared: '{level}관을 넘었다\n퇴마 {kills} · 공력이 크게 늘었다',
     overwhelmed: '호체가 다 깨졌다\n{level}관 {wave}번째 물결 · 퇴마 {kills} · 공력이 조금 늘었다',
+    capReached: '{realm}로는 여기까지 · {next}로 돌파하면 더 오를 수 있다',
     arena: '연무를 마쳤다\n명중 {kills} · 공력은 늘지 않았다',
     nourishing: '온양 중 · {minutes}분 남음',
     charmCount: '부적 {count}장',

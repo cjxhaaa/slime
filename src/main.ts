@@ -20,7 +20,7 @@ import { Volley, charmsForFling } from './game/Volley';
 import { Menu } from './ui/Menu';
 import { Trial, harvest } from './game/Trial';
 import type { Kind, Rank } from './game/menaces';
-import { TopLevel, clampLevel } from './game/levels';
+import { clampLevel, levelCap, realmFor, TopLevel } from './game/levels';
 import { drawWaveRow, waveRowBounds } from './ui/WaveRow';
 import { Pack } from './game/Pack';
 import { Purse } from './game/purse';
@@ -772,7 +772,8 @@ function enterTrial(width: number, height: number): void {
   trialReturn = { x: slime.x, y: slime.y };
   slime.planar = true;
   slime.centreIn(width, height);
-  trial.start(towerLevel);
+  // The next level up, unless the realm cannot reach it: then the highest one it can, again.
+  trial.start(Math.min(towerLevel, levelCap(cultivation.realm)));
   // Esc is borrowed for the length of the run and handed straight back by `leaveTrial`. It is a
   // system-wide registration — see `watch_escape` in lib.rs for why it is not the keyboard hook,
   // and why it is not held permanently.
@@ -790,7 +791,15 @@ function enterTrial(width: number, height: number): void {
   slime.clearAlert();
   // The five first. Nothing can be bought until they are picked, so nothing arrives either.
   scope = null;
-  picker.show(lastLoadout);
+  const cap = levelCap(cultivation.realm);
+  const realmNames = words().realms;
+  picker.show(lastLoadout, {
+    text: fill(words().loadout.level, { level: trial.level }),
+    capped:
+      trial.level >= cap && cap < TopLevel
+        ? fill(words().loadout.capped, { realm: realmNames[Math.min(realmNames.length - 1, cultivation.realm)] })
+        : null,
+  });
   fullRepaint = true;
 }
 
@@ -924,6 +933,15 @@ function settleTrial(): void {
     trial.outcome === 'cleared'
       ? fill(words().trial.cleared, { level: trial.level, kills: trial.killCount })
       : fill(words().trial.overwhelmed, { level: trial.level, wave: trial.wave + 1, kills: trial.killCount });
+  // At the top of the realm's road: say what opens the next level, once, where the result is said.
+  const next = realmFor(trial.level + 1);
+  if (trial.outcome === 'cleared' && trial.level >= levelCap(cultivation.realm) && next !== null) {
+    const names = words().realms;
+    trialSaid += `\n${fill(words().trial.capReached, {
+      realm: names[Math.min(names.length - 1, cultivation.realm)],
+      next: names[Math.min(names.length - 1, next)],
+    })}`;
+  }
   leaveTrial();
   requestSave(currentSave());
 }
@@ -2336,6 +2354,8 @@ async function main(): Promise<void> {
     const debugHooks = window as unknown as Record<string, unknown>;
     // Handle for inspecting the simulation from a devtools console.
     debugHooks.__slime = slime;
+    // 海边躺椅 on demand, rather than waiting half a minute for a coin to come up.
+    debugHooks.__beach = () => slime.goToBeach(window.innerWidth);
     // The bar's state, for laying out a merge to try by hand without buying for a minute first.
     debugHooks.__pack = pack;
     debugHooks.__purse = purse;

@@ -63,10 +63,13 @@ import {
   harvest,
 } from './Trial.js';
 import {
+  RealmCaps,
   TopLevel,
   arrivalRate,
   clampLevel,
   haste,
+  levelCap,
+  realmFor,
   menaceSpeed,
   schedule,
   toughness,
@@ -757,6 +760,19 @@ checkTrue('and never digs below certainty', thin.shortfallAt(0) === 0);
 // ---------------------------------------------------------------------------------------------
 // 历练 — 关卡与波次. The level is the door now, and the claim is that every level is a harder door
 // than the one below it, on every curve, with nothing allowed to dip.
+
+// **Each realm caps how high it can climb.** Cultivating is what opens the next stretch of the
+// tower; the climbing pays 修为 back. The caps only ever go up, 练气 cannot enter, the top of the
+// ladder reaches the whole tower, and `realmFor` names the first realm that can reach a level.
+check('练气 cannot enter the tower at all', levelCap(0), 0);
+check('筑基, the first realm that can, reaches level twenty', levelCap(1), 20);
+check('大乘 reaches the top', levelCap(7), TopLevel);
+check('and past the ladder it is still the whole tower', levelCap(8), TopLevel);
+checkTrue('every realm reaches further than the one below it', RealmCaps.every((cap, i) => i === 0 || cap > RealmCaps[i - 1]));
+check('level twenty is 筑基\'s', realmFor(20) ?? -1, 1);
+check('level twenty-one needs 金丹', realmFor(21) ?? -1, 2);
+check('level ninety-nine needs 大乘', realmFor(TopLevel) ?? -1, 7);
+check('and there is nothing past the top to need', realmFor(TopLevel + 1) === null ? 1 : 0, 1);
 
 check('below the bottom is level one', clampLevel(0), 1);
 check('past the top is the top', clampLevel(TopLevel + 40), TopLevel);
@@ -4010,6 +4026,63 @@ checkTrue('the locale is put back', locale() === wasLocale);
     const parsed = parseManifest(raw, present);
     checkTrue(`the bundled skin "${pack}" parses${parsed.ok ? '' : ': ' + parsed.error}`, parsed.ok);
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// 海边躺椅 — the second idle. Left alone long enough it may go to the beach instead of napping; it
+// ends up off the ground, on the chair; a poke packs it all away and puts it back on its feet; and
+// being picked up drops the scene at once rather than leaving props behind.
+{
+  const env = { width: 1600, height: 900, cursor: null };
+  const realRandom = Math.random;
+  // Always says yes to the beach, and keeps the idle scheduler from hopping anywhere first.
+  Math.random = () => 0.1;
+  const idleFor = (pet: Slime, seconds: number) => {
+    for (let t = 0; t < seconds; t += 1 / 60) pet.update(1 / 60, env);
+  };
+  const fresh = () => {
+    const pet = new Slime(800, 0);
+    pet.teleportTo(800, pet.groundY);
+    return pet;
+  };
+
+  const pet = fresh();
+  idleFor(pet, 29);
+  checkTrue('not before half a minute of being left alone', !pet.isLounging);
+  idleFor(pet, 2);
+  checkTrue('then it goes to the beach', pet.isLounging);
+  idleFor(pet, 4);
+  checkTrue(`and is up on the chair, off the ground (${Math.round(pet.groundY - pet.y)}px up)`, pet.groundY - pet.y > 20);
+  pet.poke(pet.x, pet.y);
+  idleFor(pet, 2.5);
+  checkTrue('a poke packs it all away', !pet.isLounging);
+  checkTrue(`and puts it back on the ground (${Math.round(pet.groundY - pet.y)}px up)`, Math.abs(pet.groundY - pet.y) < 2);
+
+  const held = fresh();
+  idleFor(held, 34);
+  checkTrue('a second pet at the beach too', held.isLounging);
+  const beachAt = held.x;
+  held.grab(held.x, held.y);
+  // Carried well away while the props are still fading where they stood: the area repainted has
+  // to keep covering the beach, or its last frame is left on the desktop — which is what happened.
+  held.dragTo(beachAt + 600, held.y - 200, 0, 0);
+  held.update(1 / 60, env);
+  held.beginFrame(1);
+  const area = held.bounds();
+  checkTrue(
+    `carried off mid-fade, the repaint still covers where the beach was (${Math.round(area.x)}..${Math.round(area.x + area.width)} against ${Math.round(beachAt)})`,
+    area.x < beachAt && area.x + area.width > beachAt + 600,
+  );
+  idleFor(held, 0.6);
+  checkTrue('picked up, the scene is gone within a moment', !held.isLounging);
+  held.release(0, 0);
+
+  const planed = fresh();
+  idleFor(planed, 34);
+  planed.planar = true;
+  idleFor(planed, 0.6);
+  checkTrue('and entering a level drops it too', !planed.isLounging);
+  Math.random = realRandom;
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);

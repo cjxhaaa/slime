@@ -175,6 +175,8 @@ export const zhHans: Dictionary = {
     arms: '兵器 · 选二',
     ways: '五行 · 选三',
     start: '开打',
+    level: '第 {level} 关',
+    capped: '{realm}能闯的最后一关',
   },
   bar: {
     silver: '银 {silver}',
@@ -189,6 +191,7 @@ export const zhHans: Dictionary = {
     pauseLeave: '不打了',
     cleared: '第 {level} 关已过\n除邪 {kills} · 修为大进',
     overwhelmed: '护体尽碎 · 第 {level} 关第 {wave} 波\n除邪 {kills} · 修为略进',
+    capReached: '{realm}只能闯到这里 · 突破到{next}可再往上',
     arena: '演武已毕\n中桩 {kills} · 修为无增',
     nourishing: '温养中 · 还余 {minutes} 分钟',
     charmCount: '符箓 {count} 张',

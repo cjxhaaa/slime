@@ -183,6 +183,8 @@ export const zhHant: Dictionary = {
     arms: '兵器 · 選二',
     ways: '五行 · 選三',
     start: '開打',
+    level: '第 {level} 關',
+    capped: '{realm}能闖的最後一關',
   },
   bar: {
     silver: '銀 {silver}',
@@ -197,6 +199,7 @@ export const zhHant: Dictionary = {
     pauseLeave: '不打了',
     cleared: '第 {level} 關已過\n除邪 {kills} · 修為大進',
     overwhelmed: '護體盡碎 · 第 {level} 關第 {wave} 波\n除邪 {kills} · 修為略進',
+    capReached: '{realm}只能闖到這裡 · 突破到{next}可再往上',
     arena: '演武已畢\n中樁 {kills} · 修為無增',
     nourishing: '溫養中 · 還餘 {minutes} 分鐘',
     charmCount: '符籙 {count} 張',
